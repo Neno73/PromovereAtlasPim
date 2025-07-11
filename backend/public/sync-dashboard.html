@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PromoAtlas - Promidata Sync Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f6f6f9;
+            color: #32324d;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            color: #4945ff;
+            margin-bottom: 10px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #4945ff;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #666;
+            text-transform: uppercase;
+            font-size: 0.8em;
+            letter-spacing: 1px;
+        }
+
+        .actions {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .btn {
+            background: #4945ff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: #3c3aa0;
+        }
+
+        .btn-secondary {
+            background: #f6f6f9;
+            color: #32324d;
+            border: 2px solid #ddd;
+        }
+
+        .btn-secondary:hover {
+            background: #eee;
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .suppliers-table {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .table-header {
+            background: #f6f6f9;
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background: #f6f6f9;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-never {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        .status-completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-running {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .toggle {
+            position: relative;
+            width: 50px;
+            height: 24px;
+            background: #ccc;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .toggle.active {
+            background: #4945ff;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .toggle.active .toggle-slider {
+            transform: translateX(26px);
+        }
+
+        .alert {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            width: 30px;
+            height: 30px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4945ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .sync-log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+
+        .log-timestamp {
+            color: #666;
+            margin-right: 10px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            margin: 50px auto;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 500px;
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 28px;
+            font-weight: bold;
+            color: #aaa;
+            cursor: pointer;
+        }
+
+        .modal-close:hover {
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔄 Promidata Sync Dashboard</h1>
+            <p>Manage product synchronization from Promidata suppliers</p>
+        </div>
+
+        <!-- Alert Messages -->
+        <div id="alerts"></div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Processing...</p>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number" id="total-suppliers">-</div>
+                <div class="stat-label">Total Suppliers</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="active-suppliers">-</div>
+                <div class="stat-label">Active Suppliers</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="auto-import-suppliers">-</div>
+                <div class="stat-label">Auto Import Enabled</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="total-products">-</div>
+                <div class="stat-label">Total Products</div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="actions">
+            <h3 style="margin-bottom: 15px;">Quick Actions</h3>
+            <button class="btn" onclick="testConnection()">🔗 Test Promidata Connection</button>
+            <button class="btn" onclick="importCategories()">📁 Import Categories</button>
+            <button class="btn" onclick="syncAllSuppliers()">🔄 Sync All Auto-Import Suppliers</button>
+            <button class="btn btn-secondary" onclick="refreshData()">🔄 Refresh Data</button>
+        </div>
+
+        <!-- Suppliers Table -->
+        <div class="suppliers-table">
+            <div class="table-header">
+                <h3>Suppliers Management</h3>
+                <p>Configure which suppliers should be automatically synchronized</p>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Auto Import</th>
+                        <th>Last Sync</th>
+                        <th>Sync Status</th>
+                        <th>Products</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="suppliers-tbody">
+                    <tr>
+                        <td colspan="8" style="text-align: center; padding: 40px;">
+                            Loading suppliers...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Sync Log -->
+        <div class="sync-log" id="sync-log" style="display: none;">
+            <h4>Sync Log</h4>
+            <div id="log-entries"></div>
+        </div>
+    </div>
+
+    <!-- Supplier Sync Modal -->
+    <div id="supplier-modal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeModal()">&times;</span>
+            <h3>Sync Supplier</h3>
+            <p id="modal-supplier-info"></p>
+            <div style="margin: 20px 0;">
+                <button class="btn" onclick="confirmSupplierSync()">Start Sync</button>
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_TOKEN = '160e49880f218b1b8e5f81a5ea0c215689f3daaed4f3fbb0ce7e4b03afff9997d0d7d69b45c4f5358d491b5613134a39b61e949e176cd7caf9d090467eb78f5286ee5f620ddda2ee3c64d0410d4eef43fe94e9714d8bdd08c3e6f538fed12a0b280dcae0e566019d2ff04ba46f9d4dfd4a1ef3a772017444d68e8c2529bccf92';
+        const API_BASE = 'http://localhost:1337/api';
+        
+        let suppliers = [];
+        let selectedSupplierId = null;
+
+        // API Helper
+        async function apiCall(endpoint, options = {}) {
+            const response = await fetch(`${API_BASE}${endpoint}`, {
+                ...options,
+                headers: {
+                    'Authorization': `Bearer ${API_TOKEN}`,
+                    'Content-Type': 'application/json',
+                    ...options.headers,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error(`API Error: ${response.statusText}`);
+            }
+
+            return response.json();
+        }
+
+        // Show/Hide Loading
+        function setLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        // Show Alert
+        function showAlert(type, message) {
+            const alertsDiv = document.getElementById('alerts');
+            const alertClass = `alert-${type}`;
+            
+            const alertEl = document.createElement('div');
+            alertEl.className = `alert ${alertClass}`;
+            alertEl.innerHTML = `
+                ${message}
+                <button onclick="this.parentElement.remove()" style="float: right; background: none; border: none; font-size: 16px; cursor: pointer;">&times;</button>
+            `;
+            
+            alertsDiv.appendChild(alertEl);
+            
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                if (alertEl.parentElement) {
+                    alertEl.remove();
+                }
+            }, 5000);
+        }
+
+        // Add Log Entry
+        function addLogEntry(message) {
+            const logDiv = document.getElementById('sync-log');
+            const entriesDiv = document.getElementById('log-entries');
+            
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `
+                <span class="log-timestamp">${new Date().toLocaleTimeString()}</span>
+                ${message}
+            `;
+            
+            entriesDiv.appendChild(entry);
+            logDiv.style.display = 'block';
+            
+            // Scroll to bottom
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        // Load Suppliers
+        async function loadSuppliers() {
+            try {
+                const response = await apiCall('/suppliers?populate=*&pagination[limit]=100');
+                suppliers = response.data;
+                renderSuppliers();
+                updateStats();
+            } catch (error) {
+                showAlert('error', `Failed to load suppliers: ${error.message}`);
+            }
+        }
+
+        // Render Suppliers Table
+        function renderSuppliers() {
+            const tbody = document.getElementById('suppliers-tbody');
+            
+            if (suppliers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px;">No suppliers found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = suppliers.map(supplier => `
+                <tr>
+                    <td><strong>${supplier.code}</strong></td>
+                    <td>${supplier.name}</td>
+                    <td>
+                        <span class="status-badge ${supplier.is_active ? 'status-active' : 'status-inactive'}">
+                            ${supplier.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="toggle ${supplier.auto_import ? 'active' : ''}" 
+                             onclick="toggleAutoImport('${supplier.id}', ${!supplier.auto_import})">
+                            <div class="toggle-slider"></div>
+                        </div>
+                    </td>
+                    <td>${supplier.last_sync_date ? new Date(supplier.last_sync_date).toLocaleDateString() : 'Never'}</td>
+                    <td>
+                        <span class="status-badge status-${supplier.last_sync_status || 'never'}">
+                            ${supplier.last_sync_status || 'Never'}
+                        </span>
+                    </td>
+                    <td>${supplier.products_count || 0}</td>
+                    <td>
+                        <button class="btn" style="font-size: 12px; padding: 6px 12px;" 
+                                onclick="openSupplierModal('${supplier.id}')"
+                                ${!supplier.is_active ? 'disabled' : ''}>
+                            Sync Now
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Update Stats
+        function updateStats() {
+            const totalSuppliers = suppliers.length;
+            const activeSuppliers = suppliers.filter(s => s.is_active).length;
+            const autoImportSuppliers = suppliers.filter(s => s.auto_import).length;
+            const totalProducts = suppliers.reduce((sum, s) => sum + (s.products_count || 0), 0);
+
+            document.getElementById('total-suppliers').textContent = totalSuppliers;
+            document.getElementById('active-suppliers').textContent = activeSuppliers;
+            document.getElementById('auto-import-suppliers').textContent = autoImportSuppliers;
+            document.getElementById('total-products').textContent = totalProducts;
+        }
+
+        // Toggle Auto Import
+        async function toggleAutoImport(supplierId, autoImport) {
+            try {
+                await apiCall(`/suppliers/${supplierId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        data: { auto_import: autoImport }
+                    })
+                });
+
+                // Update local data
+                const supplier = suppliers.find(s => s.id === supplierId);
+                if (supplier) {
+                    supplier.auto_import = autoImport;
+                }
+
+                renderSuppliers();
+                updateStats();
+                showAlert('success', `Auto-import ${autoImport ? 'enabled' : 'disabled'} for supplier`);
+            } catch (error) {
+                showAlert('error', `Failed to update supplier: ${error.message}`);
+            }
+        }
+
+        // Test Promidata Connection
+        async function testConnection() {
+            try {
+                setLoading(true);
+                addLogEntry('Testing Promidata API connection...');
+                
+                const response = await apiCall('/promidata-sync/test-connection');
+                
+                if (response.success) {
+                    showAlert('success', `Connection successful! Found ${response.data.suppliersFound} suppliers in Promidata.`);
+                    addLogEntry(`✅ Connection test passed - ${response.data.suppliersFound} suppliers found`);
+                } else {
+                    showAlert('error', `Connection failed: ${response.data.error}`);
+                    addLogEntry(`❌ Connection test failed: ${response.data.error}`);
+                }
+            } catch (error) {
+                showAlert('error', `Connection test failed: ${error.message}`);
+                addLogEntry(`❌ Connection test error: ${error.message}`);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // Import Categories
+        async function importCategories() {
+            if (!confirm('Import categories from Promidata? This will update existing categories.')) {
+                return;
+            }
+
+            try {
+                setLoading(true);
+                addLogEntry('Starting category import from CAT.csv...');
+                
+                const response = await apiCall('/promidata-sync/import-categories', {
+                    method: 'POST'
+                });
+                
+                if (response.success) {
+                    showAlert('success', `Categories imported! Total: ${response.data.total}, Imported: ${response.data.imported}, Errors: ${response.data.errors}`);
+                    addLogEntry(`✅ Categories imported - Total: ${response.data.total}, Imported: ${response.data.imported}, Errors: ${response.data.errors}`);
+                } else {
+                    showAlert('error', 'Category import failed');
+                    addLogEntry('❌ Category import failed');
+                }
+            } catch (error) {
+                showAlert('error', `Category import failed: ${error.message}`);
+                addLogEntry(`❌ Category import error: ${error.message}`);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // Sync All Auto-Import Suppliers
+        async function syncAllSuppliers() {
+            const autoImportSuppliers = suppliers.filter(s => s.is_active && s.auto_import);
+            
+            if (autoImportSuppliers.length === 0) {
+                showAlert('info', 'No suppliers configured for auto-import');
+                return;
+            }
+
+            if (!confirm(`Start sync for ${autoImportSuppliers.length} auto-import suppliers?`)) {
+                return;
+            }
+
+            try {
+                setLoading(true);
+                addLogEntry(`Starting sync for ${autoImportSuppliers.length} suppliers...`);
+
+                const response = await apiCall('/promidata-sync/start', {
+                    method: 'POST'
+                });
+
+                if (response.success) {
+                    showAlert('success', `Sync completed for ${response.data.suppliersProcessed} suppliers`);
+                    addLogEntry(`✅ Sync completed for ${response.data.suppliersProcessed} suppliers`);
+                    
+                    // Log individual results
+                    response.data.results.forEach(result => {
+                        const status = result.success ? '✅' : '❌';
+                        addLogEntry(`${status} ${result.supplier}: ${result.message || result.error}`);
+                    });
+                } else {
+                    showAlert('error', 'Sync failed');
+                    addLogEntry('❌ Sync failed');
+                }
+
+                await loadSuppliers(); // Refresh data
+            } catch (error) {
+                showAlert('error', `Sync failed: ${error.message}`);
+                addLogEntry(`❌ Sync error: ${error.message}`);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // Open Supplier Modal
+        function openSupplierModal(supplierId) {
+            const supplier = suppliers.find(s => s.id === supplierId);
+            if (!supplier) return;
+
+            selectedSupplierId = supplierId;
+            document.getElementById('modal-supplier-info').innerHTML = `
+                <strong>${supplier.code} - ${supplier.name}</strong><br>
+                Status: ${supplier.is_active ? 'Active' : 'Inactive'}<br>
+                Last Sync: ${supplier.last_sync_date ? new Date(supplier.last_sync_date).toLocaleString() : 'Never'}<br>
+                Products: ${supplier.products_count || 0}
+            `;
+            
+            document.getElementById('supplier-modal').style.display = 'block';
+        }
+
+        // Close Modal
+        function closeModal() {
+            document.getElementById('supplier-modal').style.display = 'none';
+            selectedSupplierId = null;
+        }
+
+        // Confirm Supplier Sync
+        async function confirmSupplierSync() {
+            if (!selectedSupplierId) return;
+
+            const supplier = suppliers.find(s => s.id === selectedSupplierId);
+            closeModal();
+
+            try {
+                setLoading(true);
+                addLogEntry(`Starting sync for supplier ${supplier.code}...`);
+
+                const response = await apiCall('/promidata-sync/start', {
+                    method: 'POST',
+                    body: JSON.stringify({ supplierId: selectedSupplierId })
+                });
+
+                if (response.success && response.data.results) {
+                    const result = response.data.results[0];
+                    if (result.success) {
+                        showAlert('success', `Sync completed for ${supplier.code}: ${result.message}`);
+                        addLogEntry(`✅ ${supplier.code}: ${result.message}`);
+                    } else {
+                        showAlert('error', `Sync failed for ${supplier.code}: ${result.error}`);
+                        addLogEntry(`❌ ${supplier.code}: ${result.error}`);
+                    }
+                } else {
+                    showAlert('error', 'Sync failed');
+                    addLogEntry(`❌ Sync failed for ${supplier.code}`);
+                }
+
+                await loadSuppliers(); // Refresh data
+            } catch (error) {
+                showAlert('error', `Sync failed: ${error.message}`);
+                addLogEntry(`❌ Sync error for ${supplier.code}: ${error.message}`);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // Refresh Data
+        async function refreshData() {
+            await loadSuppliers();
+            showAlert('info', 'Data refreshed');
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSuppliers();
+            addLogEntry('Sync dashboard initialized');
+        });
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('supplier-modal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html>

@@ -544,6 +544,42 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiPromidataSyncPromidataSync extends Struct.SingleTypeSchema {
+  collectionName: 'promidata_syncs';
+  info: {
+    description: 'Promidata synchronization management';
+    displayName: 'Promidata Sync';
+    pluralName: 'promidata-syncs';
+    singularName: 'promidata-sync';
+  };
+  options: {
+    comment: '';
+    draftAndPublish: false;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    last_global_sync: Schema.Attribute.DateTime;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::promidata-sync.promidata-sync'
+    > &
+      Schema.Attribute.Private;
+    publishedAt: Schema.Attribute.DateTime;
+    sync_in_progress: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    sync_settings: Schema.Attribute.JSON;
+    total_categories: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    total_products: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    total_suppliers: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiSupplierSupplier extends Struct.CollectionTypeSchema {
   collectionName: 'suppliers';
   info: {
@@ -568,6 +604,13 @@ export interface ApiSupplierSupplier extends Struct.CollectionTypeSchema {
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
     is_active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    last_hash: Schema.Attribute.String;
+    last_sync_date: Schema.Attribute.DateTime;
+    last_sync_message: Schema.Attribute.Text;
+    last_sync_status: Schema.Attribute.Enumeration<
+      ['never', 'running', 'completed', 'failed']
+    > &
+      Schema.Attribute.DefaultTo<'never'>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
       'oneToMany',
@@ -581,6 +624,7 @@ export interface ApiSupplierSupplier extends Struct.CollectionTypeSchema {
         minLength: 1;
       }>;
     products: Schema.Attribute.Relation<'oneToMany', 'api::product.product'>;
+    products_count: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
     publishedAt: Schema.Attribute.DateTime;
     sync_config: Schema.Attribute.Relation<
       'oneToOne',
@@ -1146,6 +1190,7 @@ declare module '@strapi/strapi' {
       'admin::user': AdminUser;
       'api::category.category': ApiCategoryCategory;
       'api::product.product': ApiProductProduct;
+      'api::promidata-sync.promidata-sync': ApiPromidataSyncPromidataSync;
       'api::supplier.supplier': ApiSupplierSupplier;
       'api::sync-configuration.sync-configuration': ApiSyncConfigurationSyncConfiguration;
       'plugin::content-releases.release': PluginContentReleasesRelease;

@@ -33,6 +33,24 @@
       "type": "boolean",
       "default": false
     },
+    "last_sync_date": {
+      "type": "datetime"
+    },
+    "last_sync_status": {
+      "type": "enumeration",
+      "enum": ["never", "running", "completed", "failed"],
+      "default": "never"
+    },
+    "last_sync_message": {
+      "type": "text"
+    },
+    "products_count": {
+      "type": "integer",
+      "default": 0
+    },
+    "last_hash": {
+      "type": "string"
+    },
     "products": {
       "type": "relation",
       "relation": "oneToMany",

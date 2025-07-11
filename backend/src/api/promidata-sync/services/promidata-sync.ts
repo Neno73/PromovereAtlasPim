@@ -349,40 +349,56 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       let skipped = 0;
       const errors = [];
 
-      // Process each product URL individually (limit to 5 for testing)
+      // Process each product URL individually (limit to 5 for testing, import first 5 new products)
       const testLimit = 5;
-      const productsToProcess = productUrlsWithHashes.slice(0, testLimit);
-      strapi.log.info(`Processing ${productsToProcess.length} products (limited to ${testLimit} for testing)`);
       
+      // First, delete all existing A23 products to test fresh import with images
+      strapi.log.info('Deleting existing A23 products for fresh import test...');
+      const existingA23Products = await strapi.entityService.findMany('api::product.product', {
+        filters: { supplier: supplier.id },
+        fields: ['id']
+      });
+      
+      for (const product of existingA23Products) {
+        await strapi.entityService.delete('api::product.product', product.id);
+      }
+      strapi.log.info(`Deleted ${existingA23Products.length} existing A23 products`);
+      
+      const productsToProcess = productUrlsWithHashes.slice(0, 5); // Take first 5 products for fresh import
+      strapi.log.info(`Processing ${productsToProcess.length} products (limited to ${testLimit} for testing)`);
+      if (productsToProcess.length === 0) {
+        strapi.log.error('No products to process!');
+        return { message: 'No products found to process' };
+      }
+      
+      strapi.log.info(`Products to process: ${productsToProcess.map(p => p.url.split('/').pop()).join(', ')}`);
+      
+      strapi.log.info('About to start product processing loop...');
       for (const { url, hash } of productsToProcess) {
         try {
-          // First, check if we need to fetch this product by looking at existing hashes
+          strapi.log.info(`Processing URL: ${url}`);
+          
           // Extract product code from URL to find existing product
           const urlParts = url.split('/');
           const fileName = urlParts[urlParts.length - 1];
           const productCode = fileName.replace('.json', '');
           
-          const existingProduct = existingProductsMap.get(productCode);
+          strapi.log.info(`Product code: ${productCode}`);
           
-          // Check if product needs updating based on hash
-          if (existingProduct && existingProduct.promidata_hash === hash) {
-            skipped++;
-            strapi.log.debug(`Product ${productCode} unchanged (hash: ${hash}), skipping`);
-            continue;
-          }
-
           // Fetch the actual product data using the clean URL
-          strapi.log.debug(`Fetching product data from: ${url}`);
+          strapi.log.info(`Fetching product data from: ${url}`);
           const productData = await this.fetchProductData(url);
+          
+          strapi.log.info(`Product data fetched, creating/updating product...`);
           
           // Create or update product
           const result = await this.createOrUpdateProduct(productData, supplier, hash, url);
           if (result.created) {
             imported++;
-            strapi.log.debug(`Product ${productCode} created with hash: ${hash}`);
+            strapi.log.info(`Product ${productCode} created with hash: ${hash}`);
           } else {
             updated++;
-            strapi.log.debug(`Product ${productCode} updated with hash: ${hash}`);
+            strapi.log.info(`Product ${productCode} updated with hash: ${hash}`);
           }
 
         } catch (error) {
@@ -456,7 +472,15 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
    * For Promidata structure, the product code is typically in the URL filename
    */
   extractProductCode(productData: any, supplier: any, url?: string): string | null {
-    // For Promidata, try to extract from URL first since the JSON structure doesn't have a simple SKU field
+    // For Promidata, try to extract from root level SKU fields first
+    if (productData.Sku) {
+      return productData.Sku;
+    }
+    if (productData.SupplierSku) {
+      return productData.SupplierSku;
+    }
+    
+    // Fallback to URL extraction
     if (url) {
       const urlParts = url.split('/');
       const fileName = urlParts[urlParts.length - 1];
@@ -466,7 +490,7 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       }
     }
     
-    // Fallback to checking various possible fields in the JSON
+    // Last resort: check other possible fields
     return productData.articlenumber || productData.sku_supplier || productData.SKU || 
            productData.Code || productData.code || productData.id || productData.sku ||
            productData.ProductCode || productData.ItemCode || productData.ArtNr || null;
@@ -494,33 +518,102 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       const nameJson: any = {};
       if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].ProductDetails) {
         const details = productData.ChildProducts[0].ProductDetails;
-        if (details['en'] && details['en'].Name) nameJson['en'] = details['en'].Name;
-        if (details['de'] && details['de'].Name) nameJson['de'] = details['de'].Name;
-        if (details['fr'] && details['fr'].Name) nameJson['fr'] = details['fr'].Name;
-        if (details['nl'] && details['nl'].Name) nameJson['nl'] = details['nl'].Name;
+        if (details.en && details.en.Name) nameJson.en = details.en.Name;
+        if (details.de && details.de.Name) nameJson.de = details.de.Name;
+        if (details.fr && details.fr.Name) nameJson.fr = details.fr.Name;
+        if (details.nl && details.nl.Name) nameJson.nl = details.nl.Name;
       }
       
       // Extract description from Promidata structure (multilingual JSON)
       const descriptionJson: any = {};
       if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].ProductDetails) {
         const details = productData.ChildProducts[0].ProductDetails;
-        if (details['en'] && details['en'].Description) descriptionJson['en'] = details['en'].Description;
-        if (details['de'] && details['de'].Description) descriptionJson['de'] = details['de'].Description;
-        if (details['fr'] && details['fr'].Description) descriptionJson['fr'] = details['fr'].Description;
-        if (details['nl'] && details['nl'].Description) descriptionJson['nl'] = details['nl'].Description;
+        if (details.en && details.en.Description) descriptionJson.en = details.en.Description;
+        if (details.de && details.de.Description) descriptionJson.de = details.de.Description;
+        if (details.fr && details.fr.Description) descriptionJson.fr = details.fr.Description;
+        if (details.nl && details.nl.Description) descriptionJson.nl = details.nl.Description;
       }
       
-      // Extract price from Promidata structure
-      let productPrice = null;
+      // Extract multiple price tiers from Promidata structure
+      const priceTiers = [];
       if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].ProductPriceCountryBased) {
         const priceData = productData.ChildProducts[0].ProductPriceCountryBased;
         // Try to get BENELUX price first, then other regions
         const region = priceData.BENELUX || Object.values(priceData)[0];
-        if (region && region.GeneralBuyingPrice && region.GeneralBuyingPrice[0]) {
-          productPrice = region.GeneralBuyingPrice[0].Price;
+        if (region && region.GeneralBuyingPrice) {
+          region.GeneralBuyingPrice.forEach((priceInfo: any) => {
+            priceTiers.push({
+              quantity: priceInfo.Quantity,
+              price: parseFloat(priceInfo.Price)
+            });
+          });
         }
       }
-      
+
+      // Extract images from Promidata structure (multilingual)
+      let mainImageUrl = null;
+      const galleryImageUrls = [];
+      if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].ProductDetails) {
+        const details = productData.ChildProducts[0].ProductDetails;
+        // Try to get main image from English first, then other languages
+        const langDetails = details.en || details.de || details.fr || details.nl || Object.values(details)[0];
+        if (langDetails && langDetails.Image && langDetails.Image.Url) {
+          mainImageUrl = langDetails.Image.Url;
+        }
+        // Extract gallery images
+        if (langDetails && langDetails.MediaGalleryImages) {
+          langDetails.MediaGalleryImages.forEach((img: any) => {
+            if (img.Url) {
+              galleryImageUrls.push(img.Url);
+            }
+          });
+        }
+      }
+
+      // Extract color information from Promidata structure
+      const colorNameJson: any = {};
+      let searchColor = null;
+      let colorCode = null;
+      if (productData.ChildProducts && productData.ChildProducts[0]) {
+        const childProduct = productData.ChildProducts[0];
+        
+        // Extract color names from ConfigurationFields
+        if (childProduct.ProductDetails) {
+          Object.keys(childProduct.ProductDetails).forEach(lang => {
+            const langDetails = childProduct.ProductDetails[lang];
+            if (langDetails.ConfigurationFields) {
+              const colorField = langDetails.ConfigurationFields.find((field: any) => 
+                field.ConfigurationName === 'Color'
+              );
+              if (colorField && colorField.ConfigurationValue) {
+                colorNameJson[lang] = colorField.ConfigurationValue;
+              }
+            }
+            // Extract PMS color code
+            if (langDetails.UnstructuredInformation && langDetails.UnstructuredInformation.PMSValue) {
+              colorCode = langDetails.UnstructuredInformation.PMSValue;
+            }
+          });
+        }
+        
+        // Extract search color
+        if (childProduct.NonLanguageDependedProductDetails && childProduct.NonLanguageDependedProductDetails.SearchColor) {
+          searchColor = childProduct.NonLanguageDependedProductDetails.SearchColor;
+        }
+      }
+
+      // Extract material information (multilingual)
+      const materialJson: any = {};
+      if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].ProductDetails) {
+        const details = productData.ChildProducts[0].ProductDetails;
+        Object.keys(details).forEach(lang => {
+          const langDetails = details[lang];
+          if (langDetails.WebShopInformation && langDetails.WebShopInformation.Material && langDetails.WebShopInformation.Material.InformationValue) {
+            materialJson[lang] = langDetails.WebShopInformation.Material.InformationValue;
+          }
+        });
+      }
+
       // Extract weight from Promidata structure
       let weightValue = null;
       if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].NonLanguageDependedProductDetails) {
@@ -533,23 +626,77 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       // Extract additional fields from Promidata structure
       let categoryValue = null;
       let dimensionsValue = null;
+      let brandValue = null;
+      let countryOfOrigin = null;
+      let customsTariffNumber = null;
+      let eanValue = null;
+      
       if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].NonLanguageDependedProductDetails) {
         const details = productData.ChildProducts[0].NonLanguageDependedProductDetails;
         categoryValue = details.Category;
+        brandValue = details.Brand;
+        countryOfOrigin = details.CountryOfOrigin;
+        customsTariffNumber = details.CustomsTariffNumber;
+        
         if (details.DimensionsLength || details.DimensionsWidth || details.DimensionsHeight) {
           dimensionsValue = `${details.DimensionsLength || 0} x ${details.DimensionsWidth || 0} x ${details.DimensionsHeight || 0} mm`;
         }
+        
+        // EAN might be in different places, check common locations
+        eanValue = details.EAN || details.Ean || details.ean || null;
+      }
+      
+      // Also check root level for EAN (more common location in Promidata)
+      if (!eanValue && productData.Ean) {
+        eanValue = productData.Ean;
+      }
+
+      // Upload images to Strapi media library
+      let mainImageId = null;
+      const galleryImageIds = [];
+      
+      try {
+        // Upload main image
+        if (mainImageUrl) {
+          mainImageId = await this.uploadImageFromUrl(mainImageUrl, `${productCode}-main`);
+        }
+        
+        // Upload gallery images (limit to first 3 for performance)
+        const galleryUrlsToProcess = galleryImageUrls.slice(0, 3);
+        for (let i = 0; i < galleryUrlsToProcess.length; i++) {
+          try {
+            const galleryImageId = await this.uploadImageFromUrl(galleryUrlsToProcess[i], `${productCode}-gallery-${i + 1}`);
+            if (galleryImageId) {
+              galleryImageIds.push(galleryImageId);
+            }
+          } catch (error) {
+            strapi.log.warn(`Failed to upload gallery image ${i + 1} for ${productCode}:`, error.message);
+          }
+        }
+      } catch (error) {
+        strapi.log.warn(`Image upload failed for ${productCode}:`, error.message);
       }
 
       const data = {
         sku: productCode,
+        sku_supplier: productData.SupplierSku || productCode, // Use SupplierSku if available
         name: nameJson,
         description: descriptionJson,
         supplier: supplier.id,
-        price_tiers: productPrice ? [{ quantity: 1, price: parseFloat(productPrice) }] : [],
+        price_tiers: priceTiers,
         weight: weightValue,
         dimension: dimensionsValue,
         main_category: categoryValue,
+        brand: brandValue,
+        material: materialJson,
+        color_name: colorNameJson,
+        color_code: colorCode,
+        search_color: searchColor,
+        country_of_origin: countryOfOrigin,
+        customs_tariff_number: customsTariffNumber,
+        ean: eanValue,
+        main_image: mainImageId,
+        gallery_images: galleryImageIds,
         promidata_hash: hash,
         last_synced: new Date().toISOString(),
         is_active: true
@@ -640,6 +787,62 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
     } catch (error) {
       strapi.log.error('Failed to get sync history:', error);
       throw error;
+    }
+  },
+
+  /**
+   * Upload image from URL to Strapi media library
+   */
+  async uploadImageFromUrl(imageUrl: string, fileName: string): Promise<number | null> {
+    try {
+      strapi.log.debug(`Uploading image from URL: ${imageUrl}`);
+      
+      // Download image from URL
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download image: ${response.statusText}`);
+      }
+      
+      // Get image buffer and content type
+      const imageBuffer = await response.buffer();
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      
+      // Extract file extension from content type or URL
+      let extension = 'jpg';
+      if (contentType.includes('png')) extension = 'png';
+      else if (contentType.includes('gif')) extension = 'gif';
+      else if (contentType.includes('webp')) extension = 'webp';
+      else if (imageUrl.includes('.png')) extension = 'png';
+      else if (imageUrl.includes('.gif')) extension = 'gif';
+      else if (imageUrl.includes('.webp')) extension = 'webp';
+      
+      const cleanFileName = `${fileName}.${extension}`;
+      
+      // Create file object for Strapi upload
+      const fileData = {
+        name: cleanFileName,
+        type: contentType,
+        size: imageBuffer.length,
+        buffer: imageBuffer
+      };
+      
+      // Upload to Strapi using the upload service
+      const uploadedFiles = await strapi.plugins.upload.services.upload.upload({
+        data: {},
+        files: {
+          files: fileData
+        }
+      });
+      
+      if (uploadedFiles && uploadedFiles.length > 0) {
+        strapi.log.debug(`Image uploaded successfully: ${uploadedFiles[0].id}`);
+        return uploadedFiles[0].id;
+      }
+      
+      return null;
+    } catch (error) {
+      strapi.log.error(`Failed to upload image from ${imageUrl}:`, error.message);
+      return null;
     }
   },
 

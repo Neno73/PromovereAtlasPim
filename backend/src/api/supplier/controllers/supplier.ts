@@ -19,16 +19,79 @@ export default factories.createCoreController('api::supplier.supplier', ({ strap
         return ctx.notFound('Supplier not found');
       }
 
-      // Trigger sync
-      const result = await strapi.service('api::promidata-sync.promidata-sync').syncSupplier(supplier);
-      
-      ctx.body = {
-        message: 'Sync completed successfully',
-        supplier: supplier.code,
-        ...result
-      };
+      // Update status to running
+      await strapi.entityService.update('api::supplier.supplier', id, {
+        data: {
+          last_sync_status: 'running',
+          last_sync_message: 'Sync in progress...'
+        }
+      });
+
+      try {
+        // Trigger sync
+        const result = await strapi.service('api::promidata-sync.promidata-sync').syncSupplier(supplier);
+        
+        // Update success status
+        await strapi.entityService.update('api::supplier.supplier', id, {
+          data: {
+            last_sync_date: new Date(),
+            last_sync_status: 'completed',
+            last_sync_message: `Successfully processed ${result.imported + result.updated || 0} products`
+          }
+        });
+
+        ctx.body = {
+          success: true,
+          message: 'Sync completed successfully',
+          supplier: supplier.code,
+          ...result
+        };
+      } catch (syncError) {
+        // Update failure status
+        await strapi.entityService.update('api::supplier.supplier', id, {
+          data: {
+            last_sync_date: new Date(),
+            last_sync_status: 'failed',
+            last_sync_message: syncError.message
+          }
+        });
+        throw syncError;
+      }
     } catch (error) {
       strapi.log.error('Supplier sync failed:', error);
+      ctx.throw(500, error.message);
+    }
+  },
+
+  /**
+   * Get sync status for a specific supplier
+   */
+  async getSyncStatus(ctx) {
+    try {
+      const { id } = ctx.params;
+      
+      const supplier = await strapi.entityService.findOne('api::supplier.supplier', id, {
+        fields: ['id', 'code', 'name', 'last_sync_date', 'last_sync_status', 'last_sync_message', 'auto_import']
+      });
+
+      if (!supplier) {
+        return ctx.notFound('Supplier not found');
+      }
+
+      ctx.body = {
+        supplier: {
+          id: supplier.id,
+          code: supplier.code,
+          name: supplier.name,
+          lastSyncAt: supplier.last_sync_date,
+          syncStatus: supplier.last_sync_status || 'never',
+          syncMessage: supplier.last_sync_message,
+          autoImport: supplier.auto_import,
+          isRunning: supplier.last_sync_status === 'running'
+        }
+      };
+    } catch (error) {
+      strapi.log.error('Get sync status error:', error);
       ctx.throw(500, error.message);
     }
   },

@@ -8,7 +8,6 @@ export default ({ env }) => ({
         endpoint: env('R2_ENDPOINT'),
         region: 'auto',
         params: {
-          ACL: 'public-read',
           signedUrlExpires: 15 * 60,
           Bucket: env('R2_BUCKET_NAME'),
         },

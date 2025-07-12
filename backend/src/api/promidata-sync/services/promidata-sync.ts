@@ -818,28 +818,46 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       
       const cleanFileName = `${fileName}.${extension}`;
       
-      // Create file object for Strapi upload
-      const fileData = {
-        name: cleanFileName,
-        type: contentType,
-        size: imageBuffer.length,
-        buffer: imageBuffer
-      };
-      
-      // Upload to Strapi using the upload service
-      const uploadedFiles = await strapi.plugins.upload.services.upload.upload({
-        data: {},
-        files: {
-          files: fileData
-        }
+      const r2 = new (require('@aws-sdk/client-s3').S3Client)({
+        region: 'auto',
+        endpoint: process.env.R2_ENDPOINT,
+        credentials: {
+          accessKeyId: process.env.R2_ACCESS_KEY_ID,
+          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        },
       });
-      
-      if (uploadedFiles && uploadedFiles.length > 0) {
-        strapi.log.debug(`Image uploaded successfully: ${uploadedFiles[0].id}`);
-        return uploadedFiles[0].id;
-      }
-      
-      return null;
+
+      const uploadParams = {
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: cleanFileName,
+        Body: imageBuffer,
+        ContentType: contentType,
+      };
+
+      await r2.send(new (require('@aws-sdk/client-s3').PutObjectCommand)(uploadParams));
+
+      const fileStat = { size: imageBuffer.length };
+
+      const file = {
+        name: cleanFileName,
+        hash: crypto.createHash('md5').update(cleanFileName).digest('hex'),
+        ext: `.${extension}`,
+        mime: contentType,
+        size: fileStat.size / 1024,
+        url: `${process.env.R2_PUBLIC_URL}/${cleanFileName}`,
+        provider: 'aws-s3',
+        provider_metadata: {
+          public_id: cleanFileName,
+          resource_type: 'image',
+        },
+        folderPath: '/',
+      };
+
+      const uploadedFile = await strapi.entityService.create('plugin::upload.file', {
+        data: file,
+      });
+
+      return Number(uploadedFile.id);
     } catch (error) {
       strapi.log.error(`Failed to upload image from ${imageUrl}:`, error.message);
       return null;

@@ -102,7 +102,7 @@ export const FilterBar: FC<FilterBarProps> = ({ onFiltersChange, loading }) => {
             <option value="">All Categories</option>
             {categories && categories.map((category) => (
               <option key={category.id} value={category.id}>
-                {getLocalizedText(category.attributes?.name)}
+                {getLocalizedText(category.name)}
               </option>
             ))}
           </select>
@@ -120,7 +120,7 @@ export const FilterBar: FC<FilterBarProps> = ({ onFiltersChange, loading }) => {
             <option value="">All Suppliers</option>
             {suppliers && suppliers.map((supplier) => (
               <option key={supplier.id} value={supplier.id}>
-                {supplier.attributes?.name}
+                {supplier.name}
               </option>
             ))}
           </select>

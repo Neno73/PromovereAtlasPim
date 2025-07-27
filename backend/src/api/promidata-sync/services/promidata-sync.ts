@@ -349,23 +349,11 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       let skipped = 0;
       const errors = [];
 
-      // Process each product URL individually (limit to 5 for testing, import first 5 new products)
-      const testLimit = 5;
+      // Process all product URLs for production import
+      strapi.log.info(`Found ${productUrlsWithHashes.length} products for supplier ${supplier.code}`);
       
-      // First, delete all existing A23 products to test fresh import with images
-      strapi.log.info('Deleting existing A23 products for fresh import test...');
-      const existingA23Products = await strapi.entityService.findMany('api::product.product', {
-        filters: { supplier: supplier.id },
-        fields: ['id']
-      });
-      
-      for (const product of existingA23Products) {
-        await strapi.entityService.delete('api::product.product', product.id);
-      }
-      strapi.log.info(`Deleted ${existingA23Products.length} existing A23 products`);
-      
-      const productsToProcess = productUrlsWithHashes.slice(0, 5); // Take first 5 products for fresh import
-      strapi.log.info(`Processing ${productsToProcess.length} products (limited to ${testLimit} for testing)`);
+      const productsToProcess = productUrlsWithHashes; // Process all products
+      strapi.log.info(`Processing ${productsToProcess.length} products for ${supplier.code}`);
       if (productsToProcess.length === 0) {
         strapi.log.error('No products to process!');
         return { message: 'No products found to process' };
@@ -385,6 +373,26 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
           
           strapi.log.info(`Product code: ${productCode}`);
           
+          // Check if product exists and compare hash for incremental sync
+          const existingProduct = existingProductsMap.get(productCode);
+          const newHash = hash.trim();
+          
+          if (existingProduct && existingProduct.promidata_hash) {
+            const existingHash = existingProduct.promidata_hash.trim();
+            
+            // Skip if hash hasn't changed (incremental sync)
+            if (existingHash === newHash) {
+              skipped++;
+              strapi.log.info(`✓ Skipping ${productCode} - hash unchanged: ${newHash}`);
+              continue;
+            } else {
+              strapi.log.info(`⚡ Processing ${productCode} - hash changed: ${existingHash} → ${newHash}`);
+            }
+          } else {
+            // New product or no existing hash
+            strapi.log.info(`🆕 Processing ${productCode} - ${existingProduct ? 'missing hash' : 'new product'}: ${newHash}`);
+          }
+          
           // Fetch the actual product data using the clean URL
           strapi.log.info(`Fetching product data from: ${url}`);
           const productData = await this.fetchProductData(url);
@@ -395,10 +403,10 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
           const result = await this.createOrUpdateProduct(productData, supplier, hash, url);
           if (result.created) {
             imported++;
-            strapi.log.info(`Product ${productCode} created with hash: ${hash}`);
+            strapi.log.info(`✅ Product ${productCode} created with hash: ${hash}`);
           } else {
             updated++;
-            strapi.log.info(`Product ${productCode} updated with hash: ${hash}`);
+            strapi.log.info(`🔄 Product ${productCode} updated with hash: ${hash}`);
           }
 
         } catch (error) {
@@ -415,13 +423,21 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         }
       }
 
+      const totalProcessed = imported + updated;
+      const totalAvailable = productsToProcess.length;
+      const efficiencyPercent = totalAvailable > 0 ? Math.round((skipped / totalAvailable) * 100) : 0;
+      
       strapi.log.info(`Sync completed for supplier: ${supplier.code} - Imported: ${imported}, Updated: ${updated}, Skipped: ${skipped}, Errors: ${errors.length}`);
+      strapi.log.info(`Incremental sync efficiency: ${efficiencyPercent}% skipped (${skipped}/${totalAvailable} unchanged)`);
+      
       return {
-        message: 'Sync completed successfully',
-        productsProcessed: productsToProcess.length,
+        message: `Sync completed successfully - ${totalProcessed} processed, ${skipped} skipped (${efficiencyPercent}% efficiency)`,
+        productsProcessed: totalProcessed,
+        productsAvailable: totalAvailable,
         imported,
         updated,
         skipped,
+        efficiency: `${efficiencyPercent}%`,
         errors: errors.length,
         errorDetails: errors
       };

@@ -27,7 +27,13 @@ export default ({ env }) => [
       },
     },
   },
-  'strapi::cors',
+  {
+    name: 'strapi::cors',
+    config: {
+      headers: ['*'],
+      origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:5173'],
+    },
+  },
   'strapi::poweredBy',
   'strapi::query',
   'strapi::body',

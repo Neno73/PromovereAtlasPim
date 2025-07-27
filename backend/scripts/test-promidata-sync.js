@@ -6,7 +6,7 @@
 const { default: fetch } = require('node-fetch');
 
 const STRAPI_BASE_URL = 'http://localhost:1337';
-const STRAPI_API_TOKEN = '160e49880f218b1b8e5f81a5ea0c215689f3daaed4f3fbb0ce7e4b03afff9997d0d7d69b45c4f5358d491b5613134a39b61e949e176cd7caf9d090467eb78f5286ee5f620ddda2ee3c64d0410d4eef43fe94e9714d8bdd08c3e6f538fed12a0b280dcae0e566019d2ff04ba46f9d4dfd4a1ef3a772017444d68e8c2529bccf92';
+const STRAPI_API_TOKEN = '0647198f632dcccda7edc4514e41a8c556f03d98bc9c40249051b90be3400140a42d1c4bcdaef060595aa30768cf1542b68412ae0627458f119378d7f2a1f6dcb694597c2c47e559c23ed045a6d1c7d9c1b5b73acf4942fa07198b6b573aeba01c396d868a2e3f5dda8fb275ab5b741f820dbe23bacfca0c341ddb4b02332a97';
 
 async function testPromidataConnection() {
   console.log('🔍 Testing Promidata API connection...');

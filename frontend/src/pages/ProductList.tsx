@@ -67,8 +67,8 @@ export const ProductList: FC = () => {
   };
 
   // Handle product click
-  const handleProductClick = (productId: number) => {
-    navigate(`/products/${productId}`);
+  const handleProductClick = (productDocumentId: string) => {
+    navigate(`/products/${productDocumentId}`);
   };
 
   // Handle sort change
@@ -140,7 +140,7 @@ export const ProductList: FC = () => {
                         <ProductCard
                           key={product.id}
                           product={product}
-                          onClick={handleProductClick}
+                          onClick={() => handleProductClick(product.documentId)}
                         />
                       );
                     })}

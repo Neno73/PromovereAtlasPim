@@ -2,9 +2,7 @@ import { Product, Category, Supplier, ApiResponse } from '../types';
 
 interface BrandProduct {
   id: number;
-  attributes: {
-    brand?: string;
-  };
+  brand?: string;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:1337/api';
@@ -87,8 +85,8 @@ class ApiService {
     return this.fetch<ApiResponse<Product[]>>(endpoint);
   }
 
-  async getProduct(id: number): Promise<ApiResponse<Product>> {
-    return this.fetch<ApiResponse<Product>>(`/products/${id}?populate=*`);
+  async getProduct(documentId: string): Promise<ApiResponse<Product>> {
+    return this.fetch<ApiResponse<Product>>(`/products/${documentId}?populate=*`);
   }
 
   // Categories
@@ -109,7 +107,7 @@ class ApiService {
         return [];
       }
       const brands = response.data
-        .map(product => product.attributes.brand)
+        .map(product => product.brand)
         .filter((brand): brand is string => brand !== undefined && brand !== null && brand.trim() !== '')
         .filter((brand, index, array) => array.indexOf(brand) === index)
         .sort();

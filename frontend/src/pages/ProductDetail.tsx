@@ -24,14 +24,14 @@ interface ImageWithType {
 }
 
 export const ProductDetail: FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const { id: documentId } = useParams<{ id: string }>();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   useEffect(() => {
-    if (!id) {
+    if (!documentId) {
       setError('Product ID is required');
       setLoading(false);
       return;
@@ -41,7 +41,7 @@ export const ProductDetail: FC = () => {
       try {
         setLoading(true);
         setError(null);
-        const response: ApiResponse<Product> = await apiService.getProduct(parseInt(id));
+        const response: ApiResponse<Product> = await apiService.getProduct(documentId);
         setProduct(response.data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load product');
@@ -52,7 +52,7 @@ export const ProductDetail: FC = () => {
     };
 
     loadProduct();
-  }, [id]);
+  }, [documentId]);
 
   if (loading) {
     return (
@@ -90,29 +90,32 @@ export const ProductDetail: FC = () => {
     );
   }
 
-  const { attributes: productData } = product;
+  const productData = product;
   
   // Collect all product images
   const getAllImages = (): ImageWithType[] => {
     const images: ImageWithType[] = [];
     
-    if (productData.main_image?.data) {
+    if (productData.main_image) {
       images.push({
-        ...productData.main_image.data,
+        id: productData.main_image.id,
+        attributes: productData.main_image,
         type: 'main' as const
       });
     }
     
-    if (productData.gallery_images?.data) {
-      images.push(...productData.gallery_images.data.map(img => ({
-        ...img,
+    if (productData.gallery_images) {
+      images.push(...productData.gallery_images.map(img => ({
+        id: img.id,
+        attributes: img,
         type: 'gallery' as const
       })));
     }
     
-    if (productData.model_image?.data) {
+    if (productData.model_image) {
       images.push({
-        ...productData.model_image.data,
+        id: productData.model_image.id,
+        attributes: productData.model_image,
         type: 'model' as const
       });
     }
@@ -129,8 +132,8 @@ export const ProductDetail: FC = () => {
   const modelName = getLocalizedText(productData.model_name);
   const material = getLocalizedText(productData.material);
 
-  const categories = productData.categories?.data || [];
-  const supplier = productData.supplier?.data;
+  const categories = productData.categories || [];
+  const supplier = productData.supplier;
   const dimensions = productData.dimensions;
   const priceTiers = productData.price_tiers || [];
 
@@ -155,7 +158,7 @@ export const ProductDetail: FC = () => {
             <>
               <div className="main-image">
                 <img
-                  src={`http://localhost:1337${selectedImage.attributes.url}`}
+                  src={selectedImage.attributes.url}
                   alt={selectedImage.attributes.alternativeText || name}
                 />
                 <div className="image-type-badge">
@@ -173,7 +176,7 @@ export const ProductDetail: FC = () => {
                       onClick={() => setSelectedImageIndex(index)}
                     >
                       <img
-                        src={`http://localhost:1337${image.attributes.url}`}
+                        src={image.attributes.url}
                         alt={image.attributes.alternativeText || name}
                       />
                     </button>
@@ -224,7 +227,7 @@ export const ProductDetail: FC = () => {
             {supplier && (
               <div className="meta-item">
                 <span className="label">Supplier:</span>
-                <span className="value">{supplier.attributes.name}</span>
+                <span className="value">{supplier.name}</span>
               </div>
             )}
           </div>
@@ -244,7 +247,7 @@ export const ProductDetail: FC = () => {
               <div className="category-tags">
                 {categories.map((category) => (
                   <span key={category.id} className="category-tag">
-                    {getLocalizedText(category.attributes.name)}
+                    {getLocalizedText(category.name)}
                   </span>
                 ))}
               </div>

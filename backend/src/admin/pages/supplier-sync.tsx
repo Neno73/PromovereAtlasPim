@@ -31,7 +31,7 @@ const SupplierSyncPage = () => {
 
   const fetchSuppliers = async () => {
     try {
-      const response = await get('/content-manager/collection-types/api::supplier.supplier?pagination[pageSize]=100');
+      const response = await get('/content-manager/collection-types/api::supplier.supplier?page=1&pageSize=100&sort=code:ASC');
       setSuppliers(response.data.results || []);
     } catch (error) {
       console.error('Failed to fetch suppliers:', error);
@@ -51,9 +51,10 @@ const SupplierSyncPage = () => {
       const response = await post(`/api/suppliers/${supplier.id}/sync`);
       
       if (response.data.success) {
+        const { imported = 0, updated = 0, skipped = 0, efficiency = '0%' } = response.data;
         toggleNotification({
           type: 'success',
-          message: `✅ Sync completed for ${supplier.code}: ${response.data.productsProcessed} products processed (${response.data.imported} imported, ${response.data.updated} updated)`,
+          message: `✅ Sync completed for ${supplier.code}: ${imported} imported, ${updated} updated, ${skipped} skipped (${efficiency} efficiency)`,
         });
         
         // Refresh suppliers list

@@ -32,11 +32,13 @@ export default factories.createCoreController('api::supplier.supplier', ({ strap
         const result = await strapi.service('api::promidata-sync.promidata-sync').syncSupplier(supplier);
         
         // Update success status
+        const totalProcessed = (result.imported || 0) + (result.updated || 0);
+        const efficiency = result.efficiency || '0%';
         await strapi.entityService.update('api::supplier.supplier', id, {
           data: {
             last_sync_date: new Date(),
             last_sync_status: 'completed',
-            last_sync_message: `Successfully processed ${result.imported + result.updated || 0} products`
+            last_sync_message: `Processed ${totalProcessed}, skipped ${result.skipped || 0} (${efficiency} efficiency)`
           }
         });
 

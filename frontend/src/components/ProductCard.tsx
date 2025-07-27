@@ -5,7 +5,7 @@ import './ProductCard.css';
 
 interface ProductCardProps {
   product: Product;
-  onClick: (id: number) => void;
+  onClick: () => void;
 }
 
 export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
@@ -14,24 +14,24 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
     return null;
   }
 
-  const { attributes: productData } = product;
+  const productData = product;
 
   // Get the best available image
   const getProductImage = () => {
-    if (productData.main_image?.data) {
-      return productData.main_image.data;
+    if (productData.main_image) {
+      return productData.main_image;
     }
-    if (productData.gallery_images?.data?.[0]) {
-      return productData.gallery_images.data[0];
+    if (productData.gallery_images?.[0]) {
+      return productData.gallery_images[0];
     }
-    if (productData.model_image?.data) {
-      return productData.model_image.data;
+    if (productData.model_image) {
+      return productData.model_image;
     }
     return null;
   };
 
   const productImage = getProductImage();
-  const imageUrl = productImage ? productImage.attributes.url : null;
+  const imageUrl = productImage ? productImage.url : null;
   
   const name = getLocalizedText(productData.name);
   const description = getLocalizedText(productData.description);
@@ -49,16 +49,16 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
   };
 
   const lowestPrice = getLowestPrice();
-  const primaryCategory = productData.categories?.data?.[0];
-  const supplier = productData.supplier?.data;
+  const primaryCategory = productData.categories?.[0];
+  const supplier = productData.supplier;
 
   return (
-    <div className="product-card" onClick={() => onClick(product.id)}>
+    <div className="product-card" onClick={onClick}>
       <div className="product-image">
         {imageUrl ? (
           <img 
             src={imageUrl} 
-            alt={productImage?.attributes.alternativeText || name}
+            alt={productImage?.alternativeText || name}
             loading="lazy"
           />
         ) : (
@@ -105,13 +105,13 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
         <div className="product-details">
           {primaryCategory && (
             <span className="product-category">
-              {getLocalizedText(primaryCategory.attributes.name)}
+              {getLocalizedText(primaryCategory.name)}
             </span>
           )}
           
           {supplier && (
             <span className="product-supplier">
-              {supplier.attributes.name}
+              {supplier.name}
             </span>
           )}
         </div>

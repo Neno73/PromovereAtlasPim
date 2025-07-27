@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # Strapi Backend
+  backend:
+    build:
+      context: ./backend
+      target: dev
+    container_name: promoatlas-backend
+    restart: unless-stopped
+    ports:
+      - "1337:1337"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=${DATABASE_URL}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
+      - R2_PUBLIC_URL=${R2_PUBLIC_URL}
+      - R2_ENDPOINT=${R2_ENDPOINT}
+      - APP_KEYS=${APP_KEYS}
+      - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET}
+      - API_TOKEN_SALT=${API_TOKEN_SALT}
+      - STRAPI_TELEMETRY_DISABLED=true
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - promoatlas-network
+    depends_on:
+      - postgres
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    container_name: promoatlas-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:5173"
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:1337
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - promoatlas-network
+    depends_on:
+      - backend
+
+  # PostgreSQL Database (for development)
+  postgres:
+    image: postgres:15-alpine
+    container_name: promoatlas-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: promoatlas
+      POSTGRES_USER: strapi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strapi123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - promoatlas-network
+
+  # Redis (optional, for caching)
+  redis:
+    image: redis:7-alpine
+    container_name: promoatlas-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - promoatlas-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  promoatlas-network:
+    driver: bridge

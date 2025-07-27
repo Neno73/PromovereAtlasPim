@@ -1,0 +1,10 @@
+#\!/usr/bin/expect -f
+set timeout 30
+spawn ssh root@49.12.199.93
+expect "password:"
+send "PromoAtlas2025\!\r"
+expect "# "
+send "cd /opt/promoatlas && docker-compose -f docker-compose.prod.yml ps\r"
+expect "# "
+send "exit\r"
+expect eof

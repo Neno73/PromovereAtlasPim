@@ -1,0 +1,37 @@
+# Security and sensitive files
+*.env
+*.env.*
+.env.local
+.env.production
+.env.development
+production.env
+SECURITY_AUDIT.md
+DEPLOYMENT_KEYS.md
+*_KEYS.md
+*_SECRETS.md
+*_CREDENTIALS.md
+
+# Private notes
+PRIVATE_*
+TODO_SECURITY.md
+
+# SSH Keys
+*.pem
+*.key
+*.pub
+id_rsa*
+id_ed25519*
+
+# Certificates
+*.crt
+*.cer
+*.p12
+
+# Local config
+.DS_Store
+node_modules/
+dist/
+build/
+.tmp/
+.cache/
+*.log

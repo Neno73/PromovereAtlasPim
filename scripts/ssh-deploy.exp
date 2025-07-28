@@ -1,0 +1,29 @@
+#!/usr/bin/expect -f
+
+set timeout 30
+set host "49.12.199.93"
+set user "root"
+set password "cwCsLkTjUAuvEUKWWtbr"
+
+# First, add SSH key
+spawn ssh -o StrictHostKeyChecking=no $user@$host
+expect "password:"
+send "$password\r"
+
+expect "# "
+send "mkdir -p ~/.ssh\r"
+expect "# "
+send "chmod 700 ~/.ssh\r"
+expect "# "
+
+# Add the SSH key
+send "echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDpLzSi0r5YDG3e6npEBtaiyXaV4FPFqdSMlQziYrmFAcxthhYieA/kG3sLuVNp8GhwVJBksqVc4hEdI2FMP2yhUZllH1GHQsKZPWeV5FVaadALewKq8l3h322FmEyyKRMpST8fhxSHal1iNl7nVWUmOBSRxB5B4KoFuxzfJiJyVrDPJP98Ai+Zn0za/G+YEkI6KE5n2ymQbg5SI0vTo1p8yGA9wo35wLgx3nu3dz26ARObSpl6mBylkDBht2lRdIFy+DhsDuX2ZrQHWRgwN5pRgYiPRtzBq1/VEoIsnohyeaqHL/1aaeCTkk4QEbLAXg+yGRQx8GZsG9IH9SkkX8aE7fWQvw/2E63vTBKw2yaElramiDvYUbwoC5Kr6h7OeLVfExkafpvTJY1xGrGsFDVIozcB9zSkp2rfipYwAvK9lPdmdAmxpVipzCl+/dvnYsqXOQicLWo9VHEBFPlEP42gzrYQEU0zQSHjRQ2zzxvZdA1PxEL9hT0KEC3vE8inif07M2T29ddheeVHKl6XcMjV5Cg6V7R8Ik2516k5kV4sUs/Gx9gmxMXLDsrE5MwYfpBk7rU5MgVCfe6wGYCiVi/tRl65hYeFm8bVBpiI9/H3vRK7HscqHkYLU8a9xFXtM0j4GtnZTiFA1POz7p3o6VU1NULdgeB4sUHKvZ5cBNfzNw== claude-promoatlas@deployment' >> ~/.ssh/authorized_keys\r"
+expect "# "
+send "chmod 600 ~/.ssh/authorized_keys\r"
+expect "# "
+
+# Now check Docker containers
+send "cd /app && docker ps\r"
+expect "# "
+send "exit\r"
+expect eof

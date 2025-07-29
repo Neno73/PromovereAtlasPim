@@ -52,14 +52,12 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package*.json ./
 
-# Copy compiled configuration files
+# Copy COMPILED configuration files from dist, not source
 COPY --from=builder /app/dist/config ./config
 COPY --from=builder /app/database ./database
 
-# Create necessary directories and admin symlink for Strapi 5
+# Create necessary directories and set permissions
 RUN mkdir -p /app/.tmp && \
-    mkdir -p /app/node_modules/@strapi/admin/dist/server/server && \
-    ln -sf /app/dist/build /app/node_modules/@strapi/admin/dist/server/server/build && \
     chown -R strapi:strapi /app/.tmp /app/dist /app/public /app/config /app/database /app/package*.json
 
 # Run as root for now to avoid permission issues

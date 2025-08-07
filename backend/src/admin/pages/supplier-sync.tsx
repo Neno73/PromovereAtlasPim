@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Main,
   Box,
@@ -13,10 +13,10 @@ import {
   Badge,
   Flex,
   Tooltip,
-  Loader
-} from '@strapi/design-system';
-import { Play, Clock, CheckCircle, Information } from '@strapi/icons';
-import { useFetchClient, useNotification } from '@strapi/strapi/admin';
+  Loader,
+} from "@strapi/design-system";
+import { Play, Clock, CheckCircle, Information } from "@strapi/icons";
+import { useFetchClient, useNotification } from "@strapi/strapi/admin";
 
 const SupplierSyncPage = () => {
   const [suppliers, setSuppliers] = useState([]);
@@ -31,13 +31,15 @@ const SupplierSyncPage = () => {
 
   const fetchSuppliers = async () => {
     try {
-      const response = await get('/content-manager/collection-types/api::supplier.supplier?page=1&pageSize=100&sort=code:ASC');
+      const response = await get(
+        "/content-manager/collection-types/api::supplier.supplier?page=1&pageSize=100&sort=code:ASC"
+      );
       setSuppliers(response.data.results || []);
     } catch (error) {
-      console.error('Failed to fetch suppliers:', error);
+      console.error("Failed to fetch suppliers:", error);
       toggleNotification({
-        type: 'warning',
-        message: 'Failed to load suppliers',
+        type: "warning",
+        message: "Failed to load suppliers",
       });
     } finally {
       setLoading(false);
@@ -45,33 +47,38 @@ const SupplierSyncPage = () => {
   };
 
   const handleSync = async (supplier: any) => {
-    setSyncingSuppliers(prev => new Set(prev).add(supplier.id));
+    setSyncingSuppliers((prev) => new Set(prev).add(supplier.id));
 
     try {
       const response = await post(`/api/suppliers/${supplier.id}/sync`);
-      
+
       if (response.data.success) {
-        const { imported = 0, updated = 0, skipped = 0, efficiency = '0%' } = response.data;
+        const {
+          imported = 0,
+          updated = 0,
+          skipped = 0,
+          efficiency = "0%",
+        } = response.data;
         toggleNotification({
-          type: 'success',
+          type: "success",
           message: `✅ Sync completed for ${supplier.code}: ${imported} imported, ${updated} updated, ${skipped} skipped (${efficiency} efficiency)`,
         });
-        
+
         // Refresh suppliers list
         await fetchSuppliers();
       } else {
         toggleNotification({
-          type: 'danger',
-          message: response.data.message || 'Sync failed',
+          type: "danger",
+          message: response.data.message || "Sync failed",
         });
       }
     } catch (error: any) {
       toggleNotification({
-        type: 'danger',
+        type: "danger",
         message: `❌ Sync failed for ${supplier.code}: ${error.response?.data?.error?.message || error.message}`,
       });
     } finally {
-      setSyncingSuppliers(prev => {
+      setSyncingSuppliers((prev) => {
         const newSet = new Set(prev);
         newSet.delete(supplier.id);
         return newSet;
@@ -81,7 +88,7 @@ const SupplierSyncPage = () => {
 
   const getStatusBadge = (supplier: any) => {
     const isCurrentlyLoading = syncingSuppliers.has(supplier.id);
-    
+
     if (isCurrentlyLoading) {
       return (
         <Badge backgroundColor="secondary500" textColor="neutral0">
@@ -110,7 +117,9 @@ const SupplierSyncPage = () => {
     return (
       <Main>
         <Box padding={8}>
-          <Typography variant="alpha" tag="h1">Supplier Sync Management</Typography>
+          <Typography variant="alpha" tag="h1">
+            Supplier Sync Management
+          </Typography>
           <Box padding={8} background="neutral100" marginTop={4} hasRadius>
             <Flex direction="column" alignItems="center" gap={4}>
               <Loader />
@@ -131,7 +140,7 @@ const SupplierSyncPage = () => {
         <Typography variant="omega" textColor="neutral600" marginBottom={6}>
           Manage individual sync operations for {suppliers.length} suppliers
         </Typography>
-        
+
         <Box padding={6} background="neutral0" shadow="filterShadow" hasRadius>
           <Table colCount={4} rowCount={suppliers.length}>
             <Thead>
@@ -163,11 +172,11 @@ const SupplierSyncPage = () => {
                       {supplier.code}
                     </Typography>
                   </Td>
+                  <Td>{getStatusBadge(supplier)}</Td>
                   <Td>
-                    {getStatusBadge(supplier)}
-                  </Td>
-                  <Td>
-                    <Tooltip description={`Click to sync ${supplier.name} products`}>
+                    <Tooltip
+                      description={`Click to sync ${supplier.name} products`}
+                    >
                       <Button
                         onClick={() => handleSync(supplier)}
                         loading={syncingSuppliers.has(supplier.id)}

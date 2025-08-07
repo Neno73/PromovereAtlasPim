@@ -2,6 +2,8 @@
  * sync-configuration router
  */
 
-import { factories } from '@strapi/strapi';
+import { createStandardRouter } from "../../../utils/api-factory";
 
-export default factories.createCoreRouter('api::sync-configuration.sync-configuration');
+export default createStandardRouter(
+  "api::sync-configuration.sync-configuration"
+);

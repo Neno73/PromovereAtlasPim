@@ -2,6 +2,6 @@
  * product router
  */
 
-import { factories } from '@strapi/strapi';
+import { createStandardRouter } from "../../../utils/api-factory";
 
-export default factories.createCoreRouter('api::product.product');
+export default createStandardRouter("api::product.product");

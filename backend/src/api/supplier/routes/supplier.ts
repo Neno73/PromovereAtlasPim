@@ -2,6 +2,6 @@
  * supplier router
  */
 
-import { factories } from '@strapi/strapi';
+import { createStandardRouter } from "../../../utils/api-factory";
 
-export default factories.createCoreRouter('api::supplier.supplier');
+export default createStandardRouter("api::supplier.supplier");

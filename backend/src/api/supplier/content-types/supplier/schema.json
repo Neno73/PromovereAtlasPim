@@ -48,9 +48,6 @@
       "type": "integer",
       "default": 0
     },
-    "last_hash": {
-      "type": "string"
-    },
     "products": {
       "type": "relation",
       "relation": "oneToMany",

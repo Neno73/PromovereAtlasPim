@@ -2,6 +2,6 @@
  * product controller
  */
 
-import { factories } from '@strapi/strapi'
+import { createStandardController } from "../../../utils/api-factory";
 
-export default factories.createCoreController('api::product.product');
+export default createStandardController("api::product.product");

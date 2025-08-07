@@ -3,112 +3,62 @@
  * Handles API endpoints for managing Promidata synchronization
  */
 
-// Define a simple context type
-interface Context {
-  request: {
-    body: any;
-  };
-  query: any;
-  body: any;
-  badRequest: (message: string, details?: any) => void;
-}
+import {
+  withErrorHandling,
+  getService,
+  successResponse,
+  createControllerMethod,
+  StandardContext,
+} from "../../../utils/controller-helpers";
+
+const SYNC_SERVICE = "api::promidata-sync.promidata-sync";
 
 export default {
   /**
    * Start manual sync for all suppliers or a specific supplier
    */
-  async startSync(ctx: Context) {
-    try {
-      const { supplierId } = ctx.request.body;
-      
-      // Get sync service
-      const syncService = strapi.service('api::promidata-sync.promidata-sync');
-      
-      // Start sync
-      const result = await syncService.startSync(supplierId);
-      
-      ctx.body = {
-        success: true,
-        message: 'Sync started successfully',
-        data: result
-      };
-    } catch (error) {
-      ctx.badRequest('Sync failed', { details: error.message });
-    }
-  },
+  startSync: withErrorHandling(async (ctx: StandardContext) => {
+    const { supplierId } = ctx.request.body;
+    const service = getService(SYNC_SERVICE);
+    const result = await service.startSync(supplierId);
+
+    ctx.body = successResponse(result, "Sync started successfully");
+  }),
 
   /**
    * Get sync status for all suppliers
    */
-  async getSyncStatus(ctx: Context) {
-    try {
-      const syncService = strapi.service('api::promidata-sync.promidata-sync');
-      const status = await syncService.getSyncStatus();
-      
-      ctx.body = {
-        success: true,
-        data: status
-      };
-    } catch (error) {
-      ctx.badRequest('Failed to get sync status', { details: error.message });
-    }
-  },
+  getSyncStatus: createControllerMethod(SYNC_SERVICE, "getSyncStatus"),
 
   /**
    * Get sync history/logs
    */
-  async getSyncHistory(ctx: Context) {
-    try {
-      const { page = 1, pageSize = 25 } = ctx.query;
-      const syncService = strapi.service('api::promidata-sync.promidata-sync');
-      
-      const history = await syncService.getSyncHistory({
-        page: Number(page),
-        pageSize: Number(pageSize)
-      });
-      
-      ctx.body = {
-        success: true,
-        data: history
-      };
-    } catch (error) {
-      ctx.badRequest('Failed to get sync history', { details: error.message });
-    }
-  },
+  getSyncHistory: withErrorHandling(async (ctx: StandardContext) => {
+    const { page = 1, pageSize = 25 } = ctx.query;
+    const service = getService(SYNC_SERVICE);
+    const history = await service.getSyncHistory({
+      page: Number(page),
+      pageSize: Number(pageSize),
+    });
+
+    ctx.body = successResponse(history);
+  }),
 
   /**
    * Import categories from CAT.csv
    */
-  async importCategories(ctx: Context) {
-    try {
-      const syncService = strapi.service('api::promidata-sync.promidata-sync');
-      const result = await syncService.importCategories();
-      
-      ctx.body = {
-        success: true,
-        message: 'Categories imported successfully',
-        data: result
-      };
-    } catch (error) {
-      ctx.badRequest('Category import failed', { details: error.message });
-    }
-  },
+  importCategories: createControllerMethod(
+    SYNC_SERVICE,
+    "importCategories",
+    "Categories imported successfully"
+  ),
 
   /**
    * Test connection to Promidata API
    */
-  async testConnection(ctx: Context) {
-    try {
-      const syncService = strapi.service('api::promidata-sync.promidata-sync');
-      const result = await syncService.testConnection();
-      
-      ctx.body = {
-        success: true,
-        message: 'Connection test successful',
-        data: result
-      };
-    } catch (error) {
-      ctx.badRequest('Connection test failed', { details: error.message });
-    }
-  }
+  testConnection: createControllerMethod(
+    SYNC_SERVICE,
+    "testConnection",
+    "Connection test successful"
+  ),
 };

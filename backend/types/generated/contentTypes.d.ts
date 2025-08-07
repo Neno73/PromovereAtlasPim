@@ -604,7 +604,6 @@ export interface ApiSupplierSupplier extends Struct.CollectionTypeSchema {
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
     is_active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
-    last_hash: Schema.Attribute.String;
     last_sync_date: Schema.Attribute.DateTime;
     last_sync_message: Schema.Attribute.Text;
     last_sync_status: Schema.Attribute.Enumeration<
@@ -653,8 +652,6 @@ export interface ApiSyncConfigurationSyncConfiguration
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
     enabled: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
-    last_hash: Schema.Attribute.Text;
-    last_sync: Schema.Attribute.DateTime;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
       'oneToMany',
@@ -669,10 +666,6 @@ export interface ApiSyncConfigurationSyncConfiguration
     supplier: Schema.Attribute.Relation<'oneToOne', 'api::supplier.supplier'>;
     sync_error: Schema.Attribute.Text;
     sync_log: Schema.Attribute.Text;
-    sync_status: Schema.Attribute.Enumeration<
-      ['idle', 'running', 'completed', 'failed']
-    > &
-      Schema.Attribute.DefaultTo<'idle'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;

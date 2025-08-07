@@ -22,17 +22,6 @@
       "type": "boolean",
       "default": false
     },
-    "last_sync": {
-      "type": "datetime"
-    },
-    "last_hash": {
-      "type": "text"
-    },
-    "sync_status": {
-      "type": "enumeration",
-      "enum": ["idle", "running", "completed", "failed"],
-      "default": "idle"
-    },
     "sync_log": {
       "type": "text"
     },

@@ -2,6 +2,6 @@
  * category controller
  */
 
-import { factories } from '@strapi/strapi'
+import { createStandardController } from "../../../utils/api-factory";
 
-export default factories.createCoreController('api::category.category');
+export default createStandardController("api::category.category");

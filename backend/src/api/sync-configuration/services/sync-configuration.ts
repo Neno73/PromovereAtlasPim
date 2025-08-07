@@ -2,6 +2,8 @@
  * sync-configuration service
  */
 
-import { factories } from '@strapi/strapi';
+import { createStandardService } from "../../../utils/api-factory";
 
-export default factories.createCoreService('api::sync-configuration.sync-configuration');
+export default createStandardService(
+  "api::sync-configuration.sync-configuration"
+);

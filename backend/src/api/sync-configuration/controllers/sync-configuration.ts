@@ -2,6 +2,8 @@
  * sync-configuration controller
  */
 
-import { factories } from '@strapi/strapi'
+import { createStandardController } from "../../../utils/api-factory";
 
-export default factories.createCoreController('api::sync-configuration.sync-configuration');
+export default createStandardController(
+  "api::sync-configuration.sync-configuration"
+);

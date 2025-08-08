@@ -373,40 +373,110 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
           
           strapi.log.info(`Product code: ${productCode}`);
           
-          // Check if product exists and compare hash for incremental sync
-          const existingProduct = existingProductsMap.get(productCode);
-          const newHash = hash.trim();
-          
-          if (existingProduct && existingProduct.promidata_hash) {
-            const existingHash = existingProduct.promidata_hash.trim();
-            
-            // Skip if hash hasn't changed (incremental sync)
-            if (existingHash === newHash) {
-              skipped++;
-              strapi.log.info(`✓ Skipping ${productCode} - hash unchanged: ${newHash}`);
-              continue;
-            } else {
-              strapi.log.info(`⚡ Processing ${productCode} - hash changed: ${existingHash} → ${newHash}`);
-            }
-          } else {
-            // New product or no existing hash
-            strapi.log.info(`🆕 Processing ${productCode} - ${existingProduct ? 'missing hash' : 'new product'}: ${newHash}`);
-          }
-          
-          // Fetch the actual product data using the clean URL
+          // Fetch the actual product data first to check child products
           strapi.log.info(`Fetching product data from: ${url}`);
           const productData = await this.fetchProductData(url);
           
+          // Check if we should skip based on hash comparison
+          // For products with ChildProducts, we need to check if ANY child needs updating
+          let shouldSkip = false;
+          let allChildrenUpToDate = true;
+          
+          if (productData.ChildProducts && Array.isArray(productData.ChildProducts)) {
+            strapi.log.info(`Found ${productData.ChildProducts.length} child products in ${productCode}`);
+            
+            // Check each child product's hash status
+            for (const childProduct of productData.ChildProducts) {
+              const childSku = childProduct.Sku || childProduct.SupplierSku;
+              if (!childSku) continue;
+              
+              const existingChild = existingProductsMap.get(childSku);
+              const newHash = hash.trim();
+              
+              if (existingChild && existingChild.promidata_hash) {
+                const existingHash = existingChild.promidata_hash.trim();
+                if (existingHash !== newHash) {
+                  allChildrenUpToDate = false;
+                  strapi.log.info(`⚡ Child ${childSku} needs update - hash changed: ${existingHash} → ${newHash}`);
+                  break;
+                }
+              } else {
+                allChildrenUpToDate = false;
+                strapi.log.info(`🆕 Child ${childSku} is new or missing hash`);
+                break;
+              }
+            }
+            
+            if (allChildrenUpToDate) {
+              shouldSkip = true;
+              skipped += productData.ChildProducts.length; // Count all skipped children
+              strapi.log.info(`✓ Skipping ${productCode} - all ${productData.ChildProducts.length} child products up to date with hash: ${hash.trim()}`);
+            }
+          } else {
+            // Fallback for products without ChildProducts array (legacy handling)
+            const existingProduct = existingProductsMap.get(productCode);
+            const newHash = hash.trim();
+            
+            if (existingProduct && existingProduct.promidata_hash) {
+              const existingHash = existingProduct.promidata_hash.trim();
+              
+              if (existingHash === newHash) {
+                shouldSkip = true;
+                skipped++;
+                strapi.log.info(`✓ Skipping ${productCode} - hash unchanged: ${newHash}`);
+              } else {
+                strapi.log.info(`⚡ Processing ${productCode} - hash changed: ${existingHash} → ${newHash}`);
+              }
+            } else {
+              strapi.log.info(`🆕 Processing ${productCode} - ${existingProduct ? 'missing hash' : 'new product'}: ${newHash}`);
+            }
+          }
+          
+          // Skip processing if all children are up to date
+          if (shouldSkip) {
+            continue;
+          }
+          
           strapi.log.info(`Product data fetched, creating/updating product...`);
           
-          // Create or update product
-          const result = await this.createOrUpdateProduct(productData, supplier, hash, url);
-          if (result.created) {
-            imported++;
-            strapi.log.info(`✅ Product ${productCode} created with hash: ${hash}`);
+          // Process child products individually
+          if (productData.ChildProducts && Array.isArray(productData.ChildProducts) && productData.ChildProducts.length > 0) {
+            strapi.log.info(`Processing ${productData.ChildProducts.length} child products from ${productCode}`);
+            
+            for (let childIndex = 0; childIndex < productData.ChildProducts.length; childIndex++) {
+              try {
+                const childProduct = productData.ChildProducts[childIndex];
+                const result = await this.createOrUpdateChildProduct(childProduct, supplier, hash, childIndex);
+                
+                if (result.created) {
+                  imported++;
+                  strapi.log.info(`✅ Created child product ${result.childProductCode}`);
+                } else {
+                  updated++;
+                  strapi.log.info(`🔄 Updated child product ${result.childProductCode}`);
+                }
+              } catch (error) {
+                const childProductCode = productData.ChildProducts[childIndex]?.Sku || 
+                                        productData.ChildProducts[childIndex]?.SupplierSku || 
+                                        `${productCode}-child-${childIndex}`;
+                errors.push({
+                  productCode: childProductCode,
+                  url: url,
+                  error: `Child ${childIndex}: ${error.message}`
+                });
+                strapi.log.error(`Error processing child product ${childIndex}: ${childProductCode}`, error.message);
+              }
+            }
           } else {
-            updated++;
-            strapi.log.info(`🔄 Product ${productCode} updated with hash: ${hash}`);
+            // Fallback for products without ChildProducts (legacy handling)
+            const result = await this.createOrUpdateProduct(productData, supplier, hash, url);
+            if (result.created) {
+              imported++;
+              strapi.log.info(`✅ Product ${productCode} created with hash: ${hash}`);
+            } else {
+              updated++;
+              strapi.log.info(`🔄 Product ${productCode} updated with hash: ${hash}`);
+            }
           }
 
         } catch (error) {
@@ -513,64 +583,74 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
   },
 
   /**
-   * Create or update a product with hash tracking
+   * Create or update a single child product
    */
-  async createOrUpdateProduct(productData: any, supplier: any, hash: string, url?: string) {
+  async createOrUpdateChildProduct(childProduct: any, supplier: any, hash: string, childIndex: number) {
     try {
-      const productCode = this.extractProductCode(productData, supplier, url);
-      if (!productCode) {
-        throw new Error('No valid product code found');
+      // Extract the SKU for this specific child product
+      const childProductCode = childProduct.Sku || childProduct.SupplierSku;
+      if (!childProductCode) {
+        throw new Error(`No valid SKU found for child product at index ${childIndex}`);
       }
 
-      // Check if product exists
+      // Check if this specific child product exists
       const existing = await strapi.entityService.findMany('api::product.product', {
         filters: { 
-          sku: productCode,
+          sku: childProductCode,
           supplier: supplier.id 
         }
       });
       
-      // Extract product name from Promidata structure (multilingual JSON)
+      // Extract product name from child product (multilingual JSON)
       const nameJson: any = {};
-      if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].ProductDetails) {
-        const details = productData.ChildProducts[0].ProductDetails;
+      if (childProduct.ProductDetails) {
+        const details = childProduct.ProductDetails;
         if (details.en && details.en.Name) nameJson.en = details.en.Name;
         if (details.de && details.de.Name) nameJson.de = details.de.Name;
         if (details.fr && details.fr.Name) nameJson.fr = details.fr.Name;
         if (details.nl && details.nl.Name) nameJson.nl = details.nl.Name;
       }
       
-      // Extract description from Promidata structure (multilingual JSON)
+      // Extract description from child product (multilingual JSON)
       const descriptionJson: any = {};
-      if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].ProductDetails) {
-        const details = productData.ChildProducts[0].ProductDetails;
+      if (childProduct.ProductDetails) {
+        const details = childProduct.ProductDetails;
         if (details.en && details.en.Description) descriptionJson.en = details.en.Description;
         if (details.de && details.de.Description) descriptionJson.de = details.de.Description;
         if (details.fr && details.fr.Description) descriptionJson.fr = details.fr.Description;
         if (details.nl && details.nl.Description) descriptionJson.nl = details.nl.Description;
       }
       
-      // Extract multiple price tiers from Promidata structure
+      // Extract price tiers from child product
       const priceTiers = [];
-      if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].ProductPriceCountryBased) {
-        const priceData = productData.ChildProducts[0].ProductPriceCountryBased;
-        // Try to get BENELUX price first, then other regions
-        const region = priceData.BENELUX || Object.values(priceData)[0];
-        if (region && region.GeneralBuyingPrice) {
-          region.GeneralBuyingPrice.forEach((priceInfo: any) => {
-            priceTiers.push({
-              quantity: priceInfo.Quantity,
-              price: parseFloat(priceInfo.Price)
-            });
+      if (childProduct.ProductPriceCountryBased) {
+        const priceData = childProduct.ProductPriceCountryBased;
+        // Try to get EURO price first, then BENELUX, then other regions
+        const region = priceData.EURO || priceData.BENELUX || Object.values(priceData)[0];
+        if (region) {
+          // Process RecommendedSellingPrice (most common) and GeneralBuyingPrice
+          const priceArrays = [region.RecommendedSellingPrice, region.GeneralBuyingPrice].filter(Boolean);
+          
+          priceArrays.forEach((priceArray: any[]) => {
+            if (Array.isArray(priceArray)) {
+              priceArray.forEach((priceInfo: any) => {
+                if (priceInfo.Quantity && priceInfo.Price !== undefined) {
+                  priceTiers.push({
+                    quantity: priceInfo.Quantity,
+                    price: parseFloat(priceInfo.Price)
+                  });
+                }
+              });
+            }
           });
         }
       }
 
-      // Extract images from Promidata structure (multilingual)
+      // Extract images from child product (multilingual)
       let mainImageUrl = null;
       const galleryImageUrls = [];
-      if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].ProductDetails) {
-        const details = productData.ChildProducts[0].ProductDetails;
+      if (childProduct.ProductDetails) {
+        const details = childProduct.ProductDetails;
         // Try to get main image from English first, then other languages
         const langDetails = details.en || details.de || details.fr || details.nl || Object.values(details)[0];
         if (langDetails && langDetails.Image && langDetails.Image.Url) {
@@ -586,42 +666,48 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         }
       }
 
-      // Extract color information from Promidata structure
+      // Extract color information from child product
       const colorNameJson: any = {};
       let searchColor = null;
       let colorCode = null;
-      if (productData.ChildProducts && productData.ChildProducts[0]) {
-        const childProduct = productData.ChildProducts[0];
-        
-        // Extract color names from ConfigurationFields
-        if (childProduct.ProductDetails) {
-          Object.keys(childProduct.ProductDetails).forEach(lang => {
-            const langDetails = childProduct.ProductDetails[lang];
-            if (langDetails.ConfigurationFields) {
-              const colorField = langDetails.ConfigurationFields.find((field: any) => 
-                field.ConfigurationName === 'Color'
-              );
-              if (colorField && colorField.ConfigurationValue) {
-                colorNameJson[lang] = colorField.ConfigurationValue;
-              }
+      
+      // Extract color names from ConfigurationFields
+      if (childProduct.ProductDetails) {
+        Object.keys(childProduct.ProductDetails).forEach(lang => {
+          const langDetails = childProduct.ProductDetails[lang];
+          if (langDetails.ConfigurationFields) {
+            const colorField = langDetails.ConfigurationFields.find((field: any) => 
+              field.ConfigurationName && 
+              (field.ConfigurationName.toLowerCase().includes('color') || 
+               field.ConfigurationName.toLowerCase().includes('kleur') ||
+               field.ConfigurationName.toLowerCase().includes('farbe') ||
+               field.ConfigurationName.includes('CONFIG_2') ||
+               field.ConfigurationNameTranslated && 
+               (field.ConfigurationNameTranslated.toLowerCase().includes('color') ||
+                field.ConfigurationNameTranslated.toLowerCase().includes('kleur') ||
+                field.ConfigurationNameTranslated.toLowerCase().includes('farbe') ||
+                field.ConfigurationNameTranslated.toLowerCase().includes('colour')))
+            );
+            if (colorField && colorField.ConfigurationValue) {
+              colorNameJson[lang] = colorField.ConfigurationValue;
             }
-            // Extract PMS color code
-            if (langDetails.UnstructuredInformation && langDetails.UnstructuredInformation.PMSValue) {
-              colorCode = langDetails.UnstructuredInformation.PMSValue;
-            }
-          });
-        }
-        
-        // Extract search color
-        if (childProduct.NonLanguageDependedProductDetails && childProduct.NonLanguageDependedProductDetails.SearchColor) {
-          searchColor = childProduct.NonLanguageDependedProductDetails.SearchColor;
-        }
+          }
+          // Extract PMS color code
+          if (langDetails.UnstructuredInformation && langDetails.UnstructuredInformation.PMSValue) {
+            colorCode = langDetails.UnstructuredInformation.PMSValue;
+          }
+        });
+      }
+      
+      // Extract search color from NonLanguageDependedProductDetails
+      if (childProduct.NonLanguageDependedProductDetails && childProduct.NonLanguageDependedProductDetails.SearchColor) {
+        searchColor = childProduct.NonLanguageDependedProductDetails.SearchColor;
       }
 
-      // Extract material information (multilingual)
+      // Extract material information from child product (multilingual)
       const materialJson: any = {};
-      if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].ProductDetails) {
-        const details = productData.ChildProducts[0].ProductDetails;
+      if (childProduct.ProductDetails) {
+        const details = childProduct.ProductDetails;
         Object.keys(details).forEach(lang => {
           const langDetails = details[lang];
           if (langDetails.WebShopInformation && langDetails.WebShopInformation.Material && langDetails.WebShopInformation.Material.InformationValue) {
@@ -630,16 +716,8 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         });
       }
 
-      // Extract weight from Promidata structure
+      // Extract weight and other details from child product
       let weightValue = null;
-      if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].NonLanguageDependedProductDetails) {
-        const details = productData.ChildProducts[0].NonLanguageDependedProductDetails;
-        if (details.Weight) {
-          weightValue = details.Weight; // Weight is already in grams in Promidata
-        }
-      }
-      
-      // Extract additional fields from Promidata structure
       let categoryValue = null;
       let dimensionsValue = null;
       let brandValue = null;
@@ -647,8 +725,9 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       let customsTariffNumber = null;
       let eanValue = null;
       
-      if (productData.ChildProducts && productData.ChildProducts[0] && productData.ChildProducts[0].NonLanguageDependedProductDetails) {
-        const details = productData.ChildProducts[0].NonLanguageDependedProductDetails;
+      if (childProduct.NonLanguageDependedProductDetails) {
+        const details = childProduct.NonLanguageDependedProductDetails;
+        weightValue = details.Weight || null;
         categoryValue = details.Category;
         brandValue = details.Brand;
         countryOfOrigin = details.CountryOfOrigin;
@@ -662,9 +741,9 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         eanValue = details.EAN || details.Ean || details.ean || null;
       }
       
-      // Also check root level for EAN (more common location in Promidata)
-      if (!eanValue && productData.Ean) {
-        eanValue = productData.Ean;
+      // Also check child product root level for EAN
+      if (!eanValue && childProduct.Ean) {
+        eanValue = childProduct.Ean;
       }
 
       // Upload images to Strapi media library
@@ -672,30 +751,30 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       const galleryImageIds = [];
       
       try {
-        // Upload main image
+        // Upload main image with unique filename for this child
         if (mainImageUrl) {
-          mainImageId = await this.uploadImageFromUrl(mainImageUrl, `${productCode}-main`);
+          mainImageId = await this.uploadImageFromUrl(mainImageUrl, `${childProductCode}-main`);
         }
         
         // Upload gallery images (limit to first 3 for performance)
         const galleryUrlsToProcess = galleryImageUrls.slice(0, 3);
         for (let i = 0; i < galleryUrlsToProcess.length; i++) {
           try {
-            const galleryImageId = await this.uploadImageFromUrl(galleryUrlsToProcess[i], `${productCode}-gallery-${i + 1}`);
+            const galleryImageId = await this.uploadImageFromUrl(galleryUrlsToProcess[i], `${childProductCode}-gallery-${i + 1}`);
             if (galleryImageId) {
               galleryImageIds.push(galleryImageId);
             }
           } catch (error) {
-            strapi.log.warn(`Failed to upload gallery image ${i + 1} for ${productCode}:`, error.message);
+            strapi.log.warn(`Failed to upload gallery image ${i + 1} for ${childProductCode}:`, error.message);
           }
         }
       } catch (error) {
-        strapi.log.warn(`Image upload failed for ${productCode}:`, error.message);
+        strapi.log.warn(`Image upload failed for ${childProductCode}:`, error.message);
       }
 
       const data = {
-        sku: productCode,
-        sku_supplier: productData.SupplierSku || productCode, // Use SupplierSku if available
+        sku: childProductCode,
+        sku_supplier: childProduct.SupplierSku || childProductCode,
         name: nameJson,
         description: descriptionJson,
         supplier: supplier.id,
@@ -718,6 +797,61 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         is_active: true
       };
 
+      let product;
+      let created = false;
+
+      if (existing.length > 0) {
+        // Update existing child product
+        product = await strapi.entityService.update('api::product.product', existing[0].id, { data });
+        created = false;
+      } else {
+        // Create new child product
+        product = await strapi.entityService.create('api::product.product', { data });
+        created = true;
+      }
+
+      return { product, created, childProductCode };
+
+    } catch (error) {
+      strapi.log.error(`Failed to create/update child product at index ${childIndex}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Create or update a product with hash tracking (legacy method for products without ChildProducts)
+   */
+  async createOrUpdateProduct(productData: any, supplier: any, hash: string, url?: string) {
+    try {
+      // This is a legacy method for products without ChildProducts array
+      // Most products should use the ChildProducts array and go through createOrUpdateChildProduct instead
+      
+      const productCode = this.extractProductCode(productData, supplier, url);
+      if (!productCode) {
+        throw new Error('No valid product code found');
+      }
+
+      // Check if product exists
+      const existing = await strapi.entityService.findMany('api::product.product', {
+        filters: { 
+          sku: productCode,
+          supplier: supplier.id 
+        }
+      });
+
+      // Basic product data structure for legacy products
+      const data = {
+        sku: productCode,
+        sku_supplier: productData.SupplierSku || productCode,
+        name: { en: productData.name || productCode },
+        description: { en: productData.description || '' },
+        supplier: supplier.id,
+        price_tiers: [],
+        promidata_hash: hash,
+        last_synced: new Date().toISOString(),
+        is_active: true
+      };
+
       if (existing.length > 0) {
         // Update existing
         const product = await strapi.entityService.update('api::product.product', existing[0].id, { data });
@@ -728,7 +862,7 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         return { product, created: true };
       }
     } catch (error) {
-      strapi.log.error(`Failed to create/update product ${this.extractProductCode(productData, supplier, url)}:`, error);
+      strapi.log.error(`Failed to create/update legacy product ${this.extractProductCode(productData, supplier, url)}:`, error);
       throw error;
     }
   },

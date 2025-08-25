@@ -129,7 +129,7 @@ export const ProductDetail: FC = () => {
   const name = getLocalizedText(productData.name);
   const description = getLocalizedText(productData.description);
   const colorName = getLocalizedText(productData.color_name);
-  const modelName = getLocalizedText(productData.model_name);
+  // const modelName = getLocalizedText(productData.model_name);
   const material = getLocalizedText(productData.material);
 
   const categories = productData.categories || [];

@@ -11,7 +11,7 @@ function App() {
           <div className="header-content">
             <h1 className="logo">PromoAtlas</h1>
             <nav className="main-nav">
-              <a href="https://promovere-atlas-pim.vercel.app/products" className="nav-link">Products</a>
+              <a href="https://promovere-atlas-pim.vercel.app/" className="nav-link">Products</a>
             </nav>
           </div>
         </header>

@@ -15,13 +15,14 @@ import {
   Tooltip,
   Loader,
 } from "@strapi/design-system";
-import { Play, Clock, CheckCircle, Information } from "@strapi/icons";
+import { Play, Clock, CheckCircle, Information, Download } from "@strapi/icons";
 import { useFetchClient, useNotification } from "@strapi/strapi/admin";
 
 const SupplierSyncPage = () => {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncingSuppliers, setSyncingSuppliers] = useState(new Set());
+  const [exporting, setExporting] = useState(false);
   const { get, post } = useFetchClient();
   const { toggleNotification } = useNotification();
 
@@ -134,9 +135,64 @@ const SupplierSyncPage = () => {
   return (
     <Main>
       <Box padding={8}>
-        <Typography variant="alpha" tag="h1" marginBottom={2}>
-          Supplier Sync Management
-        </Typography>
+        <Flex
+          justifyContent="space-between"
+          alignItems="center"
+          marginBottom={2}
+        >
+          <Typography variant="alpha" tag="h1">
+            Supplier Sync Management
+          </Typography>
+          <Button
+            onClick={async () => {
+              setExporting(true);
+              try {
+                // Fetch all suppliers with populated relations
+                const response = await get(
+                  "/content-manager/collection-types/api::supplier.supplier?page=1&pageSize=1000&populate=*"
+                );
+
+                const suppliersData = response.data.results || [];
+
+                // Create JSON blob and download
+                const jsonData = JSON.stringify(suppliersData, null, 2);
+                const blob = new Blob([jsonData], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+
+                // Create download link
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = `suppliers-export-${new Date().toISOString().split("T")[0]}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                // Clean up
+                URL.revokeObjectURL(url);
+
+                toggleNotification({
+                  type: "success",
+                  message: `✅ Exported ${suppliersData.length} suppliers as JSON`,
+                });
+              } catch (error) {
+                console.error("Export failed:", error);
+                toggleNotification({
+                  type: "danger",
+                  message: `❌ Export failed: ${error.message}`,
+                });
+              } finally {
+                setExporting(false);
+              }
+            }}
+            loading={exporting}
+            disabled={exporting}
+            variant="secondary"
+            size="S"
+            startIcon={<Download />}
+          >
+            Export
+          </Button>
+        </Flex>
         <Typography variant="omega" textColor="neutral600" marginBottom={6}>
           Manage individual sync operations for {suppliers.length} suppliers
         </Typography>

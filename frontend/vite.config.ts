@@ -9,7 +9,7 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:1337',
+        target: 'https://atlas-strapi.solsdev.com',
         changeOrigin: true,
         secure: false,
         ws: true,

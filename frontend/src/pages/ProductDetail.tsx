@@ -69,7 +69,7 @@ export const ProductDetail: FC = () => {
       <div className="product-detail-page">
         <div className="error-message">
           <p>Error: {error}</p>
-          <button onClick={() => navigate('/products')}>
+          <button onClick={() => navigate('https://promovere-atlas-pim.vercel.app/products')}>
             Back to Products
           </button>
         </div>
@@ -82,7 +82,7 @@ export const ProductDetail: FC = () => {
       <div className="product-detail-page">
         <div className="error-message">
           <p>Product not found</p>
-          <button onClick={() => navigate('/products')}>
+          <button onClick={() => navigate('https://promovere-atlas-pim.vercel.app/products')}>
             Back to Products
           </button>
         </div>
@@ -129,7 +129,7 @@ export const ProductDetail: FC = () => {
   const name = getLocalizedText(productData.name);
   const description = getLocalizedText(productData.description);
   const colorName = getLocalizedText(productData.color_name);
-  const modelName = getLocalizedText(productData.model_name);
+  // const modelName = getLocalizedText(productData.model_name);
   const material = getLocalizedText(productData.material);
 
   const categories = productData.categories || [];
@@ -141,7 +141,7 @@ export const ProductDetail: FC = () => {
     <div className="product-detail-page">
       {/* Header */}
       <div className="page-header">
-        <button onClick={() => navigate('/products')} className="back-btn">
+        <button onClick={() => navigate('https://promovere-atlas-pim.vercel.app/products')} className="back-btn">
           ← Back to Products
         </button>
         <div className="product-status">

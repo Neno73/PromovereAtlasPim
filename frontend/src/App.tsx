@@ -1,4 +1,3 @@
-import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ProductList } from './pages/ProductList';
 import { ProductDetail } from './pages/ProductDetail';
@@ -12,7 +11,7 @@ function App() {
           <div className="header-content">
             <h1 className="logo">PromoAtlas</h1>
             <nav className="main-nav">
-              <a href="/products" className="nav-link">Products</a>
+              <a href="https://promovere-atlas-pim.vercel.app/products" className="nav-link">Products</a>
             </nav>
           </div>
         </header>

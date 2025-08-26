@@ -24,6 +24,19 @@
       "type": "string",
       "default": "EUR",
       "maxLength": 3
+    },
+    "country_code": {
+      "type": "string",
+      "maxLength": 5
+    },
+    "price_type": {
+      "type": "enumeration",
+      "enum": ["selling", "buying", "recommended"],
+      "default": "selling"
+    },
+    "region": {
+      "type": "string",
+      "maxLength": 20
     }
   }
 }

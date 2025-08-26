@@ -554,6 +554,32 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
   },
 
   /**
+   * Extract child product SKU with supplier-specific rules
+   */
+  extractChildProductSku(childProduct: any, supplierCode: string, childIndex: number): string | null {
+    // Apply supplier-specific SKU extraction rules
+    if (supplierCode === 'A73') {
+      // A73: Always use -BLSales variant as primary, remove variant suffixes
+      let sku = childProduct.Sku || childProduct.SupplierSku;
+      if (sku) {
+        // Remove variant suffixes: -BLSales, -BOR6X4, -BOR8X4, -DiFC, etc.
+        sku = sku.replace(/-BLSales$/, '').replace(/-BOR6X4$/, '').replace(/-BOR8X4$/, '').replace(/-DiFC$/, '');
+        return sku;
+      }
+    } else if (supplierCode === 'A113') {
+      // A113: Each color variant becomes separate product
+      let sku = childProduct.Sku || childProduct.SupplierSku;
+      if (sku) {
+        // Keep full color model code (e.g., A113-W5501 for Black, A113-W5594 for Ebony gray)
+        return sku;
+      }
+    }
+    
+    // Universal fallback: use Sku or SupplierSku as-is
+    return childProduct.Sku || childProduct.SupplierSku || null;
+  },
+
+  /**
    * Extract product code from product data
    * For Promidata structure, the product code is typically in the URL filename
    */
@@ -587,8 +613,8 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
    */
   async createOrUpdateChildProduct(childProduct: any, supplier: any, hash: string, childIndex: number) {
     try {
-      // Extract the SKU for this specific child product
-      const childProductCode = childProduct.Sku || childProduct.SupplierSku;
+      // Apply supplier-specific SKU extraction rules
+      const childProductCode = this.extractChildProductSku(childProduct, supplier.code, childIndex);
       if (!childProductCode) {
         throw new Error(`No valid SKU found for child product at index ${childIndex}`);
       }
@@ -621,29 +647,49 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         if (details.nl && details.nl.Description) descriptionJson.nl = details.nl.Description;
       }
       
-      // Extract price tiers from child product
+      // Extract price tiers from child product with enhanced structure
       const priceTiers = [];
       if (childProduct.ProductPriceCountryBased) {
         const priceData = childProduct.ProductPriceCountryBased;
-        // Try to get EURO price first, then BENELUX, then other regions
-        const region = priceData.EURO || priceData.BENELUX || Object.values(priceData)[0];
-        if (region) {
-          // Process RecommendedSellingPrice (most common) and GeneralBuyingPrice
-          const priceArrays = [region.RecommendedSellingPrice, region.GeneralBuyingPrice].filter(Boolean);
+        
+        // Process all regions (EURO, BENELUX, etc.)
+        Object.keys(priceData).forEach(regionCode => {
+          const region = priceData[regionCode];
           
-          priceArrays.forEach((priceArray: any[]) => {
-            if (Array.isArray(priceArray)) {
-              priceArray.forEach((priceInfo: any) => {
-                if (priceInfo.Quantity && priceInfo.Price !== undefined) {
-                  priceTiers.push({
-                    quantity: priceInfo.Quantity,
-                    price: parseFloat(priceInfo.Price)
-                  });
-                }
-              });
-            }
-          });
-        }
+          // Process RecommendedSellingPrice
+          if (region.RecommendedSellingPrice && Array.isArray(region.RecommendedSellingPrice)) {
+            region.RecommendedSellingPrice.forEach((priceInfo: any) => {
+              if (priceInfo.Quantity && priceInfo.Price !== undefined) {
+                priceTiers.push({
+                  quantity: priceInfo.Quantity,
+                  price: parseFloat(priceInfo.Price),
+                  buying_price: null,
+                  currency: 'EUR',
+                  country_code: regionCode,
+                  price_type: 'recommended',
+                  region: regionCode
+                });
+              }
+            });
+          }
+          
+          // Process GeneralBuyingPrice
+          if (region.GeneralBuyingPrice && Array.isArray(region.GeneralBuyingPrice)) {
+            region.GeneralBuyingPrice.forEach((priceInfo: any) => {
+              if (priceInfo.Quantity && priceInfo.Price !== undefined) {
+                priceTiers.push({
+                  quantity: priceInfo.Quantity,
+                  price: parseFloat(priceInfo.Price),
+                  buying_price: parseFloat(priceInfo.Price),
+                  currency: 'EUR',
+                  country_code: regionCode,
+                  price_type: 'buying',
+                  region: regionCode
+                });
+              }
+            });
+          }
+        });
       }
 
       // Extract images from child product (multilingual)
@@ -664,6 +710,34 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
             }
           });
         }
+      }
+
+      // Extract size information and handle variant aggregation
+      let sizeValue = null;
+      let availableSizes = [];
+      
+      // Extract size from ConfigurationFields
+      if (childProduct.ProductDetails) {
+        Object.keys(childProduct.ProductDetails).forEach(lang => {
+          const langDetails = childProduct.ProductDetails[lang];
+          if (langDetails.ConfigurationFields) {
+            const sizeField = langDetails.ConfigurationFields.find((field: any) => 
+              field.ConfigurationName && 
+              (field.ConfigurationName.toLowerCase().includes('size') || 
+               field.ConfigurationName.toLowerCase().includes('maat') ||
+               field.ConfigurationName.toLowerCase().includes('größe') ||
+               field.ConfigurationName.includes('CONFIG_3') ||
+               field.ConfigurationNameTranslated && 
+               (field.ConfigurationNameTranslated.toLowerCase().includes('size') ||
+                field.ConfigurationNameTranslated.toLowerCase().includes('maat') ||
+                field.ConfigurationNameTranslated.toLowerCase().includes('größe')))
+            );
+            if (sizeField && sizeField.ConfigurationValue && !sizeValue) {
+              sizeValue = sizeField.ConfigurationValue;
+              availableSizes.push(sizeField.ConfigurationValue);
+            }
+          }
+        });
       }
 
       // Extract color information from child product
@@ -741,9 +815,108 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         eanValue = details.EAN || details.Ean || details.ean || null;
       }
       
-      // Also check child product root level for EAN
+      // CRITICAL FIX: Extract EAN from correct JSON path - ImprintPositions
+      if (!eanValue && childProduct.ImprintPositions && Array.isArray(childProduct.ImprintPositions)) {
+        for (const imprintPos of childProduct.ImprintPositions) {
+          if (imprintPos.Ean) {
+            eanValue = imprintPos.Ean;
+            break; // Use first found EAN
+          }
+        }
+      }
+      
+      // Also check child product root level for EAN (fallback)
       if (!eanValue && childProduct.Ean) {
         eanValue = childProduct.Ean;
+      }
+
+      // Extract missing critical fields
+      let requiredCertificates = null;
+      let batteryInformation = null;
+      let webShopInfo = null;
+      let productFilters = null;
+      let deliveryTimeDays = null;
+      let shortDescriptionJson = {};
+      let hexColor = null;
+      let supplierColorCode = null;
+      let pmsColor = null;
+      let imprintPositions = [];
+
+      // Extract required certificates
+      if (childProduct.RequiredCertificates) {
+        requiredCertificates = Array.isArray(childProduct.RequiredCertificates) 
+          ? childProduct.RequiredCertificates.join(', ') 
+          : childProduct.RequiredCertificates;
+      }
+
+      // Extract battery information
+      if (childProduct.BatteryInformation) {
+        batteryInformation = childProduct.BatteryInformation;
+      }
+
+      // Extract delivery time from UnstructuredInformation
+      if (childProduct.ProductDetails) {
+        Object.keys(childProduct.ProductDetails).forEach(lang => {
+          const langDetails = childProduct.ProductDetails[lang];
+          if (langDetails.UnstructuredInformation) {
+            if (langDetails.UnstructuredInformation.DeliveryTimeInDays) {
+              deliveryTimeDays = parseInt(langDetails.UnstructuredInformation.DeliveryTimeInDays);
+            }
+            if (langDetails.UnstructuredInformation.PMSValue) {
+              pmsColor = langDetails.UnstructuredInformation.PMSValue;
+            }
+          }
+          // Extract short description
+          if (langDetails.ShortDescription) {
+            shortDescriptionJson[lang] = langDetails.ShortDescription;
+          }
+          // Extract web shop information
+          if (langDetails.WebShopInformation) {
+            webShopInfo = webShopInfo || {};
+            webShopInfo[lang] = langDetails.WebShopInformation;
+          }
+        });
+      }
+
+      // Extract product filters from NonLanguageDependedProductDetails
+      if (childProduct.NonLanguageDependedProductDetails && childProduct.NonLanguageDependedProductDetails.ProductFiltersByGroup) {
+        productFilters = childProduct.NonLanguageDependedProductDetails.ProductFiltersByGroup;
+      }
+
+      // Extract color codes
+      if (childProduct.SupplierColorCode) {
+        supplierColorCode = childProduct.SupplierColorCode;
+      }
+      if (childProduct.HexColor) {
+        hexColor = childProduct.HexColor;
+      }
+
+      // Extract imprint positions
+      if (childProduct.ImprintPositions && Array.isArray(childProduct.ImprintPositions)) {
+        childProduct.ImprintPositions.forEach((imprintPos, index) => {
+          const imprintData = {
+            position_code: imprintPos.PositionCode || `pos-${index}`,
+            position_name: {},
+            ean: imprintPos.Ean || null,
+            max_colors: imprintPos.MaxColors || 1,
+            print_technique: imprintPos.PrintTechnique || null,
+            max_dimensions: imprintPos.MaxDimensions || null,
+            setup_costs: imprintPos.SetupCosts || null,
+            print_costs: imprintPos.PrintCosts || null,
+            is_active: true
+          };
+
+          // Extract multilingual position names
+          if (imprintPos.ImprintLocationTexts) {
+            Object.keys(imprintPos.ImprintLocationTexts).forEach(lang => {
+              if (imprintPos.ImprintLocationTexts[lang] && imprintPos.ImprintLocationTexts[lang].Name) {
+                imprintData.position_name[lang] = imprintPos.ImprintLocationTexts[lang].Name;
+              }
+            });
+          }
+
+          imprintPositions.push(imprintData);
+        });
       }
 
       // Upload images to Strapi media library
@@ -777,6 +950,7 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         sku_supplier: childProduct.SupplierSku || childProductCode,
         name: nameJson,
         description: descriptionJson,
+        short_description: shortDescriptionJson,
         supplier: supplier.id,
         price_tiers: priceTiers,
         weight: weightValue,
@@ -787,8 +961,19 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         color_name: colorNameJson,
         color_code: colorCode,
         search_color: searchColor,
+        size: sizeValue,
+        available_sizes: availableSizes,
+        hex_color: hexColor,
+        supplier_color_code: supplierColorCode,
+        pms_color: pmsColor,
         country_of_origin: countryOfOrigin,
         customs_tariff_number: customsTariffNumber,
+        delivery_time_days: deliveryTimeDays,
+        required_certificates: requiredCertificates,
+        battery_information: batteryInformation,
+        web_shop_info: webShopInfo,
+        product_filters: productFilters,
+        imprint_positions: imprintPositions,
         ean: eanValue,
         main_image: mainImageId,
         gallery_images: galleryImageIds,

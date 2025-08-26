@@ -180,6 +180,45 @@
     "is_active": {
       "type": "boolean",
       "default": true
+    },
+    "required_certificates": {
+      "type": "text"
+    },
+    "battery_information": {
+      "type": "json"
+    },
+    "web_shop_info": {
+      "type": "json"
+    },
+    "product_filters": {
+      "type": "json"
+    },
+    "delivery_time_days": {
+      "type": "integer",
+      "min": 0
+    },
+    "imprint_positions": {
+      "type": "component",
+      "repeatable": true,
+      "component": "product.imprint-position"
+    },
+    "short_description": {
+      "type": "json"
+    },
+    "hex_color": {
+      "type": "string",
+      "maxLength": 7
+    },
+    "supplier_color_code": {
+      "type": "string",
+      "maxLength": 50
+    },
+    "pms_color": {
+      "type": "string",
+      "maxLength": 20
+    },
+    "available_sizes": {
+      "type": "json"
     }
   }
 }

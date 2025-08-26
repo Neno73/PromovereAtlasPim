@@ -1,0 +1,47 @@
+{
+  "collectionName": "components_product_imprint_positions",
+  "info": {
+    "displayName": "Imprint Position",
+    "description": "Product customization and imprint positions"
+  },
+  "options": {},
+  "attributes": {
+    "position_code": {
+      "type": "string",
+      "required": true,
+      "maxLength": 50
+    },
+    "position_name": {
+      "type": "json",
+      "required": true
+    },
+    "ean": {
+      "type": "string",
+      "maxLength": 20
+    },
+    "max_colors": {
+      "type": "integer",
+      "min": 0,
+      "default": 1
+    },
+    "print_technique": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "max_dimensions": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "setup_costs": {
+      "type": "decimal",
+      "min": 0
+    },
+    "print_costs": {
+      "type": "json"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}

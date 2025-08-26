@@ -433,6 +433,8 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 100;
       }>;
+    available_sizes: Schema.Attribute.JSON;
+    battery_information: Schema.Attribute.JSON;
     brand: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 100;
@@ -462,6 +464,13 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 50;
       }>;
+    delivery_time_days: Schema.Attribute.Integer &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      >;
     description: Schema.Attribute.JSON;
     dimension: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{
@@ -477,6 +486,14 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
         maxLength: 500;
       }>;
     gallery_images: Schema.Attribute.Media<'images', true>;
+    hex_color: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 7;
+      }>;
+    imprint_positions: Schema.Attribute.Component<
+      'product.imprint-position',
+      true
+    >;
     is_active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
     last_synced: Schema.Attribute.DateTime;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -502,11 +519,16 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     must_have_imprint: Schema.Attribute.Boolean &
       Schema.Attribute.DefaultTo<false>;
     name: Schema.Attribute.JSON & Schema.Attribute.Required;
+    pms_color: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 20;
+      }>;
     price_tiers: Schema.Attribute.Component<'product.price-tier', true>;
     print_option_group: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 100;
       }>;
+    product_filters: Schema.Attribute.JSON;
     promidata_hash: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 64;
@@ -515,10 +537,12 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     refining: Schema.Attribute.JSON;
     refining_dimensions: Schema.Attribute.JSON;
     refining_location: Schema.Attribute.JSON;
+    required_certificates: Schema.Attribute.Text;
     search_color: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 50;
       }>;
+    short_description: Schema.Attribute.JSON;
     size: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 50;
@@ -535,11 +559,16 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
         maxLength: 100;
       }>;
     supplier: Schema.Attribute.Relation<'manyToOne', 'api::supplier.supplier'>;
+    supplier_color_code: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 50;
+      }>;
     tax: Schema.Attribute.Enumeration<['H', 'L']> &
       Schema.Attribute.DefaultTo<'H'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    web_shop_info: Schema.Attribute.JSON;
     weight: Schema.Attribute.Decimal;
   };
 }

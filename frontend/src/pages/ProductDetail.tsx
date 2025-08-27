@@ -139,13 +139,11 @@ export const ProductDetail: FC = () => {
     if (img) {
       const aspectRatio = img.naturalWidth / img.naturalHeight;
       
-      // Use 'contain' for extreme ratios, 'cover' for normal ratios
-      // More aggressive thresholds to handle various supplier image formats
-      if (aspectRatio > 2.0 || aspectRatio < 0.6) {
-        setMainImageFitStrategy('contain');
-      } else {
-        setMainImageFitStrategy('cover');
-      }
+      // Default to 'contain' to prevent cropping, only use 'cover' for very standard ratios
+      // This ensures no important image content gets cropped in detail view
+      const strategy = (aspectRatio >= 1.2 && aspectRatio <= 1.8) ? 'cover' : 'contain';
+      console.log(`Detail image aspect ratio: ${aspectRatio.toFixed(2)}, strategy: ${strategy}, dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
+      setMainImageFitStrategy(strategy);
     }
   };
 

@@ -46,9 +46,9 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
       setImageAspectRatio(aspectRatio);
       
       // Determine fitting strategy based on aspect ratio
-      // Use 'contain' for extreme ratios, 'cover' for normal ratios
-      // More aggressive thresholds to handle Malfini's tall images
-      const strategy = (aspectRatio > 2.0 || aspectRatio < 0.6) ? 'contain' : 'cover';
+      // Default to 'contain' to prevent cropping, only use 'cover' for very standard ratios
+      // This ensures no important image content gets cropped
+      const strategy = (aspectRatio >= 1.2 && aspectRatio <= 1.8) ? 'cover' : 'contain';
       
       // Debug log to see what's happening
       console.log(`Image aspect ratio: ${aspectRatio.toFixed(2)}, strategy: ${strategy}, dimensions: ${img.naturalWidth}x${img.naturalHeight}`);

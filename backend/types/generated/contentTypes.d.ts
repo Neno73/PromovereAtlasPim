@@ -547,6 +547,7 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 50;
       }>;
+    size_skus: Schema.Attribute.JSON;
     sku: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.Unique &
@@ -568,6 +569,8 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    variant_type: Schema.Attribute.Enumeration<['single', 'multi_size']> &
+      Schema.Attribute.DefaultTo<'single'>;
     web_shop_info: Schema.Attribute.JSON;
     weight: Schema.Attribute.Decimal;
   };

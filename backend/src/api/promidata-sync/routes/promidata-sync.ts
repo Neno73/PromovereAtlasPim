@@ -50,5 +50,15 @@ export default {
         middlewares: [],
       },
     },
+    {
+      method: 'GET',
+      path: '/promidata-sync/export/:supplierId',
+      handler: 'promidata-sync.exportSupplierProducts',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false, // Allow access without API token authentication
+      },
+    },
   ],
 };

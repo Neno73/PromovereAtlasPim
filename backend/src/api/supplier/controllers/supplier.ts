@@ -11,16 +11,19 @@ export default factories.createCoreController('api::supplier.supplier', ({ strap
    */
   async syncSupplier(ctx) {
     try {
-      const { id } = ctx.params;
+      const { id } = ctx.params; // This is actually the documentId in Strapi 5
       
-      // Get supplier
-      const supplier = await strapi.entityService.findOne('api::supplier.supplier', id);
+      // Get supplier by documentId (Strapi 5)
+      const supplier = await strapi.documents('api::supplier.supplier').findOne({
+        documentId: id
+      });
+      
       if (!supplier) {
         return ctx.notFound('Supplier not found');
       }
 
-      // Update status to running
-      await strapi.entityService.update('api::supplier.supplier', id, {
+      // Update status to running using numeric id
+      await strapi.entityService.update('api::supplier.supplier', supplier.id, {
         data: {
           last_sync_status: 'running',
           last_sync_message: 'Sync in progress...'
@@ -34,7 +37,7 @@ export default factories.createCoreController('api::supplier.supplier', ({ strap
         // Update success status
         const totalProcessed = (result.imported || 0) + (result.updated || 0);
         const efficiency = result.efficiency || '0%';
-        await strapi.entityService.update('api::supplier.supplier', id, {
+        await strapi.entityService.update('api::supplier.supplier', supplier.id, {
           data: {
             last_sync_date: new Date(),
             last_sync_status: 'completed',
@@ -50,7 +53,7 @@ export default factories.createCoreController('api::supplier.supplier', ({ strap
         };
       } catch (syncError) {
         // Update failure status
-        await strapi.entityService.update('api::supplier.supplier', id, {
+        await strapi.entityService.update('api::supplier.supplier', supplier.id, {
           data: {
             last_sync_date: new Date(),
             last_sync_status: 'failed',
@@ -70,9 +73,10 @@ export default factories.createCoreController('api::supplier.supplier', ({ strap
    */
   async getSyncStatus(ctx) {
     try {
-      const { id } = ctx.params;
+      const { id } = ctx.params; // This is actually the documentId in Strapi 5
       
-      const supplier = await strapi.entityService.findOne('api::supplier.supplier', id, {
+      const supplier = await strapi.documents('api::supplier.supplier').findOne({
+        documentId: id,
         fields: ['id', 'code', 'name', 'last_sync_date', 'last_sync_status', 'last_sync_message', 'auto_import']
       });
 

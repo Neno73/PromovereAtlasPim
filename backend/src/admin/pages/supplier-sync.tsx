@@ -15,13 +15,14 @@ import {
   Tooltip,
   Loader,
 } from "@strapi/design-system";
-import { Play, Clock, CheckCircle, Information } from "@strapi/icons";
+import { Play, Clock, CheckCircle, Information, Download } from "@strapi/icons";
 import { useFetchClient, useNotification } from "@strapi/strapi/admin";
 
 const SupplierSyncPage = () => {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncingSuppliers, setSyncingSuppliers] = useState(new Set());
+  const [exportingSuppliers, setExportingSuppliers] = useState(new Set());
   const { get, post } = useFetchClient();
   const { toggleNotification } = useNotification();
 
@@ -86,6 +87,54 @@ const SupplierSyncPage = () => {
     }
   };
 
+  const handleExport = async (supplier: any) => {
+    setExportingSuppliers((prev) => new Set(prev).add(supplier.id));
+
+    try {
+      // Make a raw fetch call to the API endpoint since it's not an admin route
+      const response = await fetch(`/api/promidata-sync/export/${supplier.documentId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      // Get the response as text since it returns JSON string directly
+      const exportData = await response.text();
+      
+      // Create blob and trigger download
+      const blob = new Blob([exportData], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${supplier.code}_products_export.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toggleNotification({
+        type: "success",
+        message: `✅ Export completed for ${supplier.code}. File downloaded successfully.`,
+      });
+    } catch (error: any) {
+      toggleNotification({
+        type: "danger",
+        message: `❌ Export failed for ${supplier.code}: ${error.message}`,
+      });
+    } finally {
+      setExportingSuppliers((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(supplier.id);
+        return newSet;
+      });
+    }
+  };
+
   const getStatusBadge = (supplier: any) => {
     const isCurrentlyLoading = syncingSuppliers.has(supplier.id);
 
@@ -142,7 +191,7 @@ const SupplierSyncPage = () => {
         </Typography>
 
         <Box padding={6} background="neutral0" shadow="filterShadow" hasRadius>
-          <Table colCount={4} rowCount={suppliers.length}>
+          <Table colCount={5} rowCount={suppliers.length}>
             <Thead>
               <Tr>
                 <Th>
@@ -155,7 +204,10 @@ const SupplierSyncPage = () => {
                   <Typography variant="sigma">Status</Typography>
                 </Th>
                 <Th>
-                  <Typography variant="sigma">Actions</Typography>
+                  <Typography variant="sigma">Sync</Typography>
+                </Th>
+                <Th>
+                  <Typography variant="sigma">Export</Typography>
                 </Th>
               </Tr>
             </Thead>
@@ -186,6 +238,22 @@ const SupplierSyncPage = () => {
                         startIcon={<Play />}
                       >
                         Sync
+                      </Button>
+                    </Tooltip>
+                  </Td>
+                  <Td>
+                    <Tooltip
+                      description={`Export ${supplier.name} products for AutoRAG`}
+                    >
+                      <Button
+                        onClick={() => handleExport(supplier)}
+                        loading={exportingSuppliers.has(supplier.id)}
+                        disabled={exportingSuppliers.has(supplier.id) || !supplier.is_active}
+                        variant="tertiary"
+                        size="S"
+                        startIcon={<Download />}
+                      >
+                        {exportingSuppliers.has(supplier.id) ? 'Exporting...' : 'Export'}
                       </Button>
                     </Tooltip>
                   </Td>

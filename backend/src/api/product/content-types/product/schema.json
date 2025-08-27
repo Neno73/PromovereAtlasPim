@@ -218,7 +218,18 @@
       "maxLength": 20
     },
     "available_sizes": {
-      "type": "json"
+      "type": "json",
+      "description": "Array of available sizes for this color variant"
+    },
+    "size_skus": {
+      "type": "json",
+      "description": "Mapping of sizes to their specific SKUs for ordering"
+    },
+    "variant_type": {
+      "type": "enumeration",
+      "enum": ["single", "multi_size"],
+      "default": "single",
+      "description": "Type of product variant - single or consolidated multi-size"
     }
   }
 }

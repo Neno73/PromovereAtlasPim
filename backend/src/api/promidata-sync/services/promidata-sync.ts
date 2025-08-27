@@ -439,32 +439,54 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
           
           strapi.log.info(`Product data fetched, creating/updating product...`);
           
-          // Process child products individually
+          // Process child products with size consolidation
           if (productData.ChildProducts && Array.isArray(productData.ChildProducts) && productData.ChildProducts.length > 0) {
-            strapi.log.info(`Processing ${productData.ChildProducts.length} child products from ${productCode}`);
+            strapi.log.info(`Processing ${productData.ChildProducts.length} child products from ${productCode} with size consolidation`);
             
-            for (let childIndex = 0; childIndex < productData.ChildProducts.length; childIndex++) {
-              try {
-                const childProduct = productData.ChildProducts[childIndex];
-                const result = await this.createOrUpdateChildProduct(childProduct, supplier, hash, childIndex);
-                
-                if (result.created) {
-                  imported++;
-                  strapi.log.info(`✅ Created child product ${result.childProductCode}`);
-                } else {
-                  updated++;
-                  strapi.log.info(`🔄 Updated child product ${result.childProductCode}`);
-                }
-              } catch (error) {
-                const childProductCode = productData.ChildProducts[childIndex]?.Sku || 
-                                        productData.ChildProducts[childIndex]?.SupplierSku || 
-                                        `${productCode}-child-${childIndex}`;
+            try {
+              // Use consolidation for A113 and other suppliers that benefit from size consolidation
+              const processedCount = await this.processConsolidatedProducts(productData.ChildProducts, supplier, hash);
+              
+              imported += processedCount.created;
+              updated += processedCount.updated;
+              
+              if (processedCount.errors > 0) {
                 errors.push({
-                  productCode: childProductCode,
+                  productCode: productCode,
                   url: url,
-                  error: `Child ${childIndex}: ${error.message}`
+                  error: `${processedCount.errors} child products failed during consolidation`
                 });
-                strapi.log.error(`Error processing child product ${childIndex}: ${childProductCode}`, error.message);
+              }
+              
+              strapi.log.info(`📦 Consolidated ${productData.ChildProducts.length} child products into ${processedCount.created + processedCount.updated} products (${processedCount.created} new, ${processedCount.updated} updated)`);
+              
+            } catch (error) {
+              // Fallback to individual processing if consolidation fails
+              strapi.log.warn(`Consolidation failed for ${productCode}, falling back to individual processing:`, error.message);
+              
+              for (let childIndex = 0; childIndex < productData.ChildProducts.length; childIndex++) {
+                try {
+                  const childProduct = productData.ChildProducts[childIndex];
+                  const result = await this.createOrUpdateChildProduct(childProduct, supplier, hash, childIndex);
+                  
+                  if (result.created) {
+                    imported++;
+                    strapi.log.info(`✅ Created child product ${result.childProductCode}`);
+                  } else {
+                    updated++;
+                    strapi.log.info(`🔄 Updated child product ${result.childProductCode}`);
+                  }
+                } catch (childError) {
+                  const childProductCode = productData.ChildProducts[childIndex]?.Sku || 
+                                          productData.ChildProducts[childIndex]?.SupplierSku || 
+                                          `${productCode}-child-${childIndex}`;
+                  errors.push({
+                    productCode: childProductCode,
+                    url: url,
+                    error: `Child ${childIndex}: ${childError.message}`
+                  });
+                  strapi.log.error(`Error processing child product ${childIndex}: ${childProductCode}`, childError.message);
+                }
               }
             }
           } else {
@@ -609,7 +631,425 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
   },
 
   /**
-   * Create or update a single child product
+   * Group child products by variant (supplier + model + color) for consolidation
+   */
+  groupProductsByVariant(childProducts: any[], supplierCode: string): Map<string, any[]> {
+    const productGroups = new Map<string, any[]>();
+    
+    for (const childProduct of childProducts) {
+      // Create grouping key based on supplier + model + color
+      const groupKey = this.createVariantGroupKey(childProduct, supplierCode);
+      
+      if (!productGroups.has(groupKey)) {
+        productGroups.set(groupKey, []);
+      }
+      productGroups.get(groupKey)!.push(childProduct);
+    }
+    
+    strapi.log.info(`Grouped ${childProducts.length} child products into ${productGroups.size} variants`);
+    return productGroups;
+  },
+
+  /**
+   * Create grouping key for product variants
+   */
+  createVariantGroupKey(childProduct: any, supplierCode: string): string {
+    // Extract model and color from ProductDetails.en.ConfigurationFields
+    let model = '';
+    let colorValue = '';
+    let size = '';
+    
+    if (childProduct.ProductDetails?.en?.ConfigurationFields) {
+      for (const field of childProduct.ProductDetails.en.ConfigurationFields) {
+        if (field.ConfigurationName === 'Color') {
+          colorValue = field.ConfigurationValue || '';
+        } else if (field.ConfigurationName === 'Size') {
+          size = field.ConfigurationValue || '';
+        } else if (field.ConfigurationName === 'Model') {
+          model = field.ConfigurationValue || '';
+        }
+      }
+    }
+    
+    // Fallback to SKU prefix if model not found
+    if (!model && childProduct.SKU) {
+      const skuParts = childProduct.SKU.split('-');
+      model = skuParts.length > 1 ? skuParts.slice(0, -1).join('-') : skuParts[0];
+    }
+    
+    // Create grouping key: supplier + model + color (NOT size - sizes should be grouped together)
+    const primaryKey = `${model}-${colorValue}`.replace(/[^a-zA-Z0-9-_]/g, '-');
+    
+    return `${supplierCode}-${primaryKey}`;
+  },
+
+  /**
+   * Select base variant from grouped products (for consolidated product)
+   */
+  selectBaseVariant(products: any[]): any {
+    // Prefer first product or one with most complete data
+    return products.reduce((best, current) => {
+      const bestScore = this.calculateProductCompleteness(best);
+      const currentScore = this.calculateProductCompleteness(current);
+      return currentScore > bestScore ? current : best;
+    }, products[0]);
+  },
+
+  /**
+   * Calculate completeness score for a product variant
+   */
+  calculateProductCompleteness(product: any): number {
+    let score = 0;
+    
+    // Basic fields
+    if (product.Sku || product.SupplierSku) score += 10;
+    if (product.ProductDetails?.en?.Name) score += 5;
+    if (product.ProductDetails?.en?.Description) score += 5;
+    if (product.Model) score += 3;
+    if (product.ColorCode) score += 3;
+    if (product.Size) score += 2;
+    
+    // Images
+    if (product.Images && Array.isArray(product.Images) && product.Images.length > 0) score += 8;
+    
+    // Pricing
+    if (product.Prices && Array.isArray(product.Prices) && product.Prices.length > 0) score += 5;
+    
+    return score;
+  },
+
+  /**
+   * Create size-to-SKU mapping from grouped products
+   */
+  createSizeSkuMapping(products: any[]): any {
+    const sizeSkus: any = {};
+    
+    for (const product of products) {
+      const size = product.Size || product.size || 'One Size';
+      const sku = product.Sku || product.SupplierSku;
+      if (sku) {
+        sizeSkus[size] = sku;
+      }
+    }
+    
+    return sizeSkus;
+  },
+
+  /**
+   * Extract all available sizes from grouped products
+   */
+  extractAvailableSizes(products: any[]): string[] {
+    const sizes = new Set<string>();
+    
+    for (const product of products) {
+      const size = product.Size || product.size;
+      if (size && size.trim()) {
+        sizes.add(size.trim());
+      }
+    }
+    
+    // Return sorted sizes array, or default if none found
+    const sizeArray = Array.from(sizes);
+    return sizeArray.length > 0 ? sizeArray.sort() : ['One Size'];
+  },
+
+  /**
+   * Merge pricing tiers from all size variants
+   */
+  mergePricingTiers(products: any[]): any[] {
+    const allPrices: any[] = [];
+    
+    for (const product of products) {
+      if (product.Prices && Array.isArray(product.Prices)) {
+        allPrices.push(...product.Prices);
+      }
+    }
+    
+    // Remove duplicates and sort by quantity
+    const uniquePrices = allPrices.filter((price, index, arr) => 
+      arr.findIndex(p => p.Quantity === price.Quantity) === index
+    );
+    
+    return uniquePrices.sort((a, b) => (a.Quantity || 0) - (b.Quantity || 0));
+  },
+
+  /**
+   * Process consolidated products from child product groups
+   */
+  async processConsolidatedProducts(childProducts: any[], supplier: any, hash: string) {
+    const productGroups = this.groupProductsByVariant(childProducts, supplier.code);
+    const processedCount = { created: 0, updated: 0, errors: 0 };
+    
+    for (const [groupKey, groupedProducts] of productGroups) {
+      try {
+        const consolidatedProduct = await this.createConsolidatedProduct(groupedProducts, supplier, hash);
+        
+        if (consolidatedProduct.isNew) {
+          processedCount.created++;
+        } else {
+          processedCount.updated++;
+        }
+        
+        strapi.log.info(`✅ ${consolidatedProduct.isNew ? 'Created' : 'Updated'} consolidated product ${consolidatedProduct.sku} (${groupedProducts.length} sizes)`);
+        
+      } catch (error) {
+        processedCount.errors++;
+        strapi.log.error(`❌ Failed to process consolidated product group ${groupKey}:`, error.message);
+      }
+    }
+    
+    return processedCount;
+  },
+
+  /**
+   * Create consolidated product from grouped variants
+   */
+  async createConsolidatedProduct(groupedProducts: any[], supplier: any, hash: string) {
+    const baseProduct = this.selectBaseVariant(groupedProducts);
+    const availableSizes = this.extractAvailableSizes(groupedProducts);
+    const sizeSkus = this.createSizeSkuMapping(groupedProducts);
+    const mergedPrices = this.mergePricingTiers(groupedProducts);
+    
+    // Generate base SKU for the consolidated product
+    const baseSku = this.generateConsolidatedSku(baseProduct, supplier.code);
+    
+    // Check if consolidated product exists
+    const existing = await strapi.entityService.findMany('api::product.product', {
+      filters: { 
+        sku: baseSku,
+        supplier: supplier.id 
+      }
+    });
+    
+    // Build consolidated product data using base product as template
+    const productData = await this.buildConsolidatedProductData(
+      baseProduct, 
+      supplier, 
+      hash, 
+      baseSku,
+      availableSizes,
+      sizeSkus,
+      mergedPrices
+    );
+    
+    let result;
+    if (existing.length > 0) {
+      // Update existing consolidated product
+      result = await strapi.entityService.update('api::product.product', existing[0].id, {
+        data: productData
+      });
+      result.isNew = false;
+    } else {
+      // Create new consolidated product
+      result = await strapi.entityService.create('api::product.product', {
+        data: productData
+      });
+      result.isNew = true;
+    }
+    
+    result.sku = baseSku;
+    return result;
+  },
+
+  /**
+   * Generate consolidated SKU from base product
+   */
+  generateConsolidatedSku(baseProduct: any, supplierCode: string): string {
+    const baseSku = baseProduct.Sku || baseProduct.SupplierSku;
+    
+    if (baseSku) {
+      // Remove size-specific suffixes if present
+      return baseSku.replace(/-[A-Z0-9]{1,3}$/, '').replace(/_[A-Z0-9]{1,3}$/, '');
+    }
+    
+    // Fallback generation
+    const model = baseProduct.Model || baseProduct.model || 'MODEL';
+    const colorCode = baseProduct.ColorCode || baseProduct.color_code || '00';
+    return `${supplierCode}-${model}${colorCode}`;
+  },
+
+  /**
+   * Process pricing tiers from merged prices
+   */
+  async processPricingTiers(mergedPrices: any[]): Promise<any[]> {
+    const priceTiers: any[] = [];
+    
+    for (const priceInfo of mergedPrices) {
+      if (priceInfo.Quantity && priceInfo.Price !== undefined) {
+        priceTiers.push({
+          quantity: priceInfo.Quantity,
+          price: parseFloat(priceInfo.Price),
+          buying_price: priceInfo.BuyingPrice ? parseFloat(priceInfo.BuyingPrice) : null,
+          currency: priceInfo.Currency || 'EUR',
+          country_code: priceInfo.CountryCode || null,
+          price_type: priceInfo.PriceType || 'selling',
+          region: priceInfo.Region || null
+        });
+      }
+    }
+    
+    return priceTiers;
+  },
+
+  /**
+   * Process main image from base product
+   */
+  async processMainImage(baseProduct: any): Promise<number | null> {
+    let mainImageUrl = null;
+    
+    if (baseProduct.ProductDetails) {
+      const details = baseProduct.ProductDetails;
+      // Try to get main image from English first, then other languages
+      const langDetails = details.en || details.de || details.fr || details.nl || Object.values(details)[0];
+      if (langDetails && langDetails.Image && langDetails.Image.Url) {
+        mainImageUrl = langDetails.Image.Url;
+      }
+    }
+    
+    if (mainImageUrl) {
+      const fileName = `${baseProduct.Sku || baseProduct.SupplierSku}-main.jpg`;
+      return await this.uploadImageFromUrl(mainImageUrl, fileName);
+    }
+    
+    return null;
+  },
+
+  /**
+   * Process gallery images from base product
+   */
+  async processGalleryImages(baseProduct: any): Promise<number[]> {
+    const galleryImageIds: number[] = [];
+    const galleryImageUrls: string[] = [];
+    
+    if (baseProduct.ProductDetails) {
+      const details = baseProduct.ProductDetails;
+      const langDetails = details.en || details.de || details.fr || details.nl || Object.values(details)[0];
+      
+      // Extract gallery images
+      if (langDetails && langDetails.MediaGalleryImages) {
+        langDetails.MediaGalleryImages.forEach((img: any) => {
+          if (img.Url) {
+            galleryImageUrls.push(img.Url);
+          }
+        });
+      }
+    }
+    
+    // Upload gallery images
+    for (let i = 0; i < galleryImageUrls.length; i++) {
+      const fileName = `${baseProduct.Sku || baseProduct.SupplierSku}-gallery-${i + 1}.jpg`;
+      const imageId = await this.uploadImageFromUrl(galleryImageUrls[i], fileName);
+      if (imageId) {
+        galleryImageIds.push(imageId);
+      }
+    }
+    
+    return galleryImageIds;
+  },
+
+  /**
+   * Extract material information from product
+   */
+  extractMaterial(product: any): any {
+    const materialJson: any = {};
+    
+    if (product.ProductDetails) {
+      Object.keys(product.ProductDetails).forEach(lang => {
+        const langDetails = product.ProductDetails[lang];
+        
+        // Look for material in various fields
+        if (langDetails.Material) {
+          materialJson[lang] = langDetails.Material;
+        } else if (langDetails.UnstructuredInformation) {
+          const material = langDetails.UnstructuredInformation.Material || 
+                          langDetails.UnstructuredInformation.material ||
+                          langDetails.UnstructuredInformation.Composition ||
+                          langDetails.UnstructuredInformation.composition;
+          if (material) {
+            materialJson[lang] = material;
+          }
+        }
+      });
+    }
+    
+    return Object.keys(materialJson).length > 0 ? materialJson : null;
+  },
+
+  /**
+   * Build consolidated product data structure
+   */
+  async buildConsolidatedProductData(baseProduct: any, supplier: any, hash: string, baseSku: string, availableSizes: string[], sizeSkus: any, mergedPrices: any[]) {
+    // Extract multilingual data from base product
+    const nameJson: any = {};
+    const descriptionJson: any = {};
+    const colorNameJson: any = {};
+    const modelNameJson: any = {};
+    const shortDescriptionJson: any = {};
+    
+    if (baseProduct.ProductDetails) {
+      const details = baseProduct.ProductDetails;
+      ['en', 'de', 'fr', 'nl'].forEach(lang => {
+        if (details[lang]) {
+          if (details[lang].Name) nameJson[lang] = details[lang].Name;
+          if (details[lang].Description) descriptionJson[lang] = details[lang].Description;
+          if (details[lang].ShortDescription) shortDescriptionJson[lang] = details[lang].ShortDescription;
+          if (details[lang].ModelName) modelNameJson[lang] = details[lang].ModelName;
+          if (details[lang].ColorName) colorNameJson[lang] = details[lang].ColorName;
+        }
+      });
+    }
+    
+    // Process pricing tiers
+    const priceTiers = await this.processPricingTiers(mergedPrices);
+    
+    // Process images (use base product images)
+    const mainImageId = await this.processMainImage(baseProduct);
+    const galleryImageIds = await this.processGalleryImages(baseProduct);
+    
+    // Build consolidated product data
+    const productData: any = {
+      sku: baseSku,
+      model: baseProduct.Model || baseProduct.model,
+      article_number: baseProduct.ArtNr || baseProduct.articlenumber,
+      sku_supplier: baseProduct.SupplierSku,
+      name: nameJson,
+      description: descriptionJson,
+      short_description: shortDescriptionJson,
+      color_name: colorNameJson,
+      color_code: baseProduct.ColorCode || baseProduct.color_code,
+      model_name: modelNameJson,
+      search_color: baseProduct.SearchColor || baseProduct.search_color,
+      dimension: baseProduct.Dimension || baseProduct.dimension,
+      weight: baseProduct.Weight || baseProduct.weight,
+      brand: baseProduct.Brand || baseProduct.brand,
+      material: this.extractMaterial(baseProduct),
+      country_of_origin: baseProduct.CountryOfOrigin || baseProduct.country_of_origin,
+      delivery_time: baseProduct.DeliveryTime || baseProduct.delivery_time,
+      customs_tariff_number: baseProduct.CustomsTariffNumber || baseProduct.customs_tariff_number,
+      hex_color: baseProduct.HexColor || baseProduct.hex_color,
+      supplier_color_code: baseProduct.SupplierColorCode || baseProduct.supplier_color_code,
+      pms_color: baseProduct.PMSColor || baseProduct.pms_color,
+      supplier: supplier.id,
+      promidata_hash: hash,
+      last_synced: new Date(),
+      is_active: true,
+      
+      // Size consolidation fields
+      available_sizes: availableSizes,
+      size_skus: sizeSkus,
+      variant_type: 'multi_size',
+      
+      // Components
+      price_tiers: priceTiers,
+      main_image: mainImageId,
+      gallery_images: galleryImageIds
+    };
+    
+    return productData;
+  },
+
+  /**
+   * Create or update a single child product (legacy method - still used for non-consolidated sync)
    */
   async createOrUpdateChildProduct(childProduct: any, supplier: any, hash: string, childIndex: number) {
     try {

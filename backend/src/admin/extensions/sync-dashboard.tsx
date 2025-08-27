@@ -7,7 +7,7 @@ import {
   Badge,
   Loader,
 } from '@strapi/design-system';
-import { CheckCircle, Clock, Play, ArrowClockwise } from '@strapi/icons';
+import { CheckCircle, Clock, Play, ArrowClockwise, Download } from '@strapi/icons';
 
 interface Supplier {
   id: string;
@@ -25,6 +25,7 @@ const SyncDashboard: React.FC = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
+  const [exporting, setExporting] = useState<Record<string, boolean>>({});
 
   const loadSuppliers = async () => {
     try {
@@ -63,6 +64,37 @@ const SyncDashboard: React.FC = () => {
       alert(`Sync failed for ${supplierName}: ${error}`);
     } finally {
       setSyncing(prev => ({ ...prev, [supplierId]: false }));
+    }
+  };
+
+  const exportSupplier = async (supplierId: string, supplierName: string, supplierCode: string) => {
+    try {
+      setExporting(prev => ({ ...prev, [supplierId]: true }));
+      
+      const response = await fetch(`/api/promidata-sync/export/${supplierId}`);
+      
+      if (response.ok) {
+        // Create a blob from the response and trigger download
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${supplierCode}_products_export.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        
+        alert(`Export completed for ${supplierName}. File downloaded successfully.`);
+      } else {
+        const errorData = await response.json();
+        alert(errorData?.message || `Export failed for ${supplierName}`);
+      }
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert(`Export failed for ${supplierName}: ${error}`);
+    } finally {
+      setExporting(prev => ({ ...prev, [supplierId]: false }));
     }
   };
 
@@ -193,17 +225,29 @@ const SyncDashboard: React.FC = () => {
                     </Flex>
                   </Box>
 
-                  {/* Sync Button */}
+                  {/* Action Buttons */}
                   <Box>
-                    <Button
-                      variant="secondary"
-                      startIcon={<Play />}
-                      onClick={() => syncSupplier(supplier.documentId, supplier.name)}
-                      disabled={!supplier.is_active || syncing[supplier.documentId]}
-                      loading={syncing[supplier.documentId]}
-                    >
-                      {syncing[supplier.documentId] ? 'Syncing...' : 'Sync Now'}
-                    </Button>
+                    <Flex gap={2}>
+                      <Button
+                        variant="secondary"
+                        startIcon={<Play />}
+                        onClick={() => syncSupplier(supplier.documentId, supplier.name)}
+                        disabled={!supplier.is_active || syncing[supplier.documentId]}
+                        loading={syncing[supplier.documentId]}
+                      >
+                        {syncing[supplier.documentId] ? 'Syncing...' : 'Sync Now'}
+                      </Button>
+                      
+                      <Button
+                        variant="tertiary"
+                        startIcon={<Download />}
+                        onClick={() => exportSupplier(supplier.documentId, supplier.name, supplier.code)}
+                        disabled={!supplier.is_active || exporting[supplier.documentId] || !supplier.product_count}
+                        loading={exporting[supplier.documentId]}
+                      >
+                        {exporting[supplier.documentId] ? 'Exporting...' : 'Export for AutoRAG'}
+                      </Button>
+                    </Flex>
                   </Box>
                 </Flex>
               </Box>

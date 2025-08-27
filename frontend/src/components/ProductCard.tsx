@@ -1,4 +1,4 @@
-import { FC } from 'react';
+import { FC, useState, useRef, useEffect } from 'react';
 import { Product } from '../types';
 import { getLocalizedText, formatPrice } from '../utils/i18n';
 import './ProductCard.css';
@@ -9,6 +9,11 @@ interface ProductCardProps {
 }
 
 export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
+  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
+  const [imageFitStrategy, setImageFitStrategy] = useState<'cover' | 'contain'>('cover');
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const imageRef = useRef<HTMLImageElement>(null);
+
   if (!product) {
     // This will prevent the component from crashing if the product data is malformed.
     return null;
@@ -32,6 +37,33 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
 
   const productImage = getProductImage();
   const imageUrl = productImage ? productImage.url : null;
+
+  // Smart image fitting logic
+  const handleImageLoad = () => {
+    const img = imageRef.current;
+    if (img) {
+      const aspectRatio = img.naturalWidth / img.naturalHeight;
+      setImageAspectRatio(aspectRatio);
+      
+      // Determine fitting strategy based on aspect ratio
+      // Use 'contain' for extreme ratios, 'cover' for normal ratios
+      // More aggressive thresholds to handle Malfini's tall images
+      const strategy = (aspectRatio > 2.0 || aspectRatio < 0.6) ? 'contain' : 'cover';
+      
+      // Debug log to see what's happening
+      console.log(`Image aspect ratio: ${aspectRatio.toFixed(2)}, strategy: ${strategy}, dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
+      
+      setImageFitStrategy(strategy);
+      setImageLoaded(true);
+    }
+  };
+
+  // Reset when image URL changes
+  useEffect(() => {
+    setImageAspectRatio(null);
+    setImageFitStrategy('cover');
+    setImageLoaded(false);
+  }, [imageUrl]);
   
   const name = getLocalizedText(productData.name);
   const description = getLocalizedText(productData.description);
@@ -54,12 +86,18 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
 
   return (
     <div className="product-card" onClick={onClick}>
-      <div className="product-image">
+      <div className={`product-image ${imageFitStrategy === 'contain' ? 'image-contain' : 'image-cover'}`}>
         {imageUrl ? (
           <img 
+            ref={imageRef}
             src={imageUrl} 
             alt={productImage?.alternativeText || name}
             loading="lazy"
+            onLoad={handleImageLoad}
+            style={{
+              objectFit: imageFitStrategy,
+              opacity: imageLoaded ? 1 : 0,
+            }}
           />
         ) : (
           <div className="no-image">

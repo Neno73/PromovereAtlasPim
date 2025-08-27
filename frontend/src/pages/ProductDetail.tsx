@@ -1,4 +1,4 @@
-import { useState, useEffect, FC } from 'react';
+import { useState, useEffect, FC, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Product, ApiResponse } from '../types';
 import { apiService } from '../services/api';
@@ -29,6 +29,8 @@ export const ProductDetail: FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [mainImageFitStrategy, setMainImageFitStrategy] = useState<'cover' | 'contain'>('cover');
+  const mainImageRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
     if (!documentId) {
@@ -53,6 +55,11 @@ export const ProductDetail: FC = () => {
 
     loadProduct();
   }, [documentId]);
+
+  // Reset fitting strategy when selected image changes
+  useEffect(() => {
+    setMainImageFitStrategy('cover');
+  }, [selectedImageIndex]);
 
   if (loading) {
     return (
@@ -126,6 +133,22 @@ export const ProductDetail: FC = () => {
   const allImages = getAllImages();
   const selectedImage = allImages[selectedImageIndex];
 
+  // Smart image fitting for main image
+  const handleMainImageLoad = () => {
+    const img = mainImageRef.current;
+    if (img) {
+      const aspectRatio = img.naturalWidth / img.naturalHeight;
+      
+      // Use 'contain' for extreme ratios, 'cover' for normal ratios
+      // More aggressive thresholds to handle various supplier image formats
+      if (aspectRatio > 2.0 || aspectRatio < 0.6) {
+        setMainImageFitStrategy('contain');
+      } else {
+        setMainImageFitStrategy('cover');
+      }
+    }
+  };
+
   const name = getLocalizedText(productData.name);
   const description = getLocalizedText(productData.description);
   const colorName = getLocalizedText(productData.color_name);
@@ -156,10 +179,15 @@ export const ProductDetail: FC = () => {
         <div className="product-images">
           {allImages.length > 0 ? (
             <>
-              <div className="main-image">
+              <div className={`main-image ${mainImageFitStrategy === 'contain' ? 'image-contain' : 'image-cover'}`}>
                 <img
+                  ref={mainImageRef}
                   src={selectedImage.attributes.url}
                   alt={selectedImage.attributes.alternativeText || name}
+                  onLoad={handleMainImageLoad}
+                  style={{
+                    objectFit: mainImageFitStrategy,
+                  }}
                 />
                 <div className="image-type-badge">
                   {selectedImage.type === 'main' ? 'Main' : 

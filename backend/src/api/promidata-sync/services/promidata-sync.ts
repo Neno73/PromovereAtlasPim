@@ -976,6 +976,57 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
   },
 
   /**
+   * Extract color data from product using correct nested paths
+   */
+  extractColorData(childProduct: any) {
+    let hexColor = null;
+    let supplierColorCode = null;
+    let pmsColor = null;
+
+    // Debug logging
+    strapi.log.info(`🔍 Extracting color data for SKU: ${childProduct.SupplierSku || 'unknown'}`);
+
+    // Extract hex color from NonLanguageDependedProductDetails
+    if (childProduct.NonLanguageDependedProductDetails?.HexColor) {
+      hexColor = childProduct.NonLanguageDependedProductDetails.HexColor;
+      strapi.log.info(`✅ Found hex color: ${hexColor}`);
+    } else {
+      strapi.log.warn(`❌ No hex color found in NonLanguageDependedProductDetails`);
+    }
+    
+    // Extract supplier color code and PMS from UnstructuredInformation
+    if (childProduct.ProductDetails) {
+      const languages = ['en', 'nl', 'de', 'fr'];
+      for (const lang of languages) {
+        const langDetails = childProduct.ProductDetails[lang];
+        if (langDetails?.UnstructuredInformation) {
+          if (langDetails.UnstructuredInformation.SupplierSearchColor && !supplierColorCode) {
+            supplierColorCode = langDetails.UnstructuredInformation.SupplierSearchColor;
+          }
+          if (langDetails.UnstructuredInformation.PMSValue && !pmsColor) {
+            pmsColor = langDetails.UnstructuredInformation.PMSValue;
+          }
+        }
+      }
+    }
+    
+    // Fallback to root level (legacy support)
+    if (!supplierColorCode && childProduct.SupplierColorCode) {
+      supplierColorCode = childProduct.SupplierColorCode;
+    }
+    if (!hexColor && childProduct.HexColor) {
+      hexColor = childProduct.HexColor;
+    }
+    if (!pmsColor && childProduct.PMSColor) {
+      pmsColor = childProduct.PMSColor;
+    }
+
+    // Debug final result
+    strapi.log.info(`🎯 Final extracted color data: hexColor=${hexColor}, supplierColorCode=${supplierColorCode}, pmsColor=${pmsColor}`);
+    return { hex_color: hexColor, supplier_color_code: supplierColorCode, pms_color: pmsColor };
+  },
+
+  /**
    * Build consolidated product data structure
    */
   async buildConsolidatedProductData(baseProduct: any, supplier: any, hash: string, baseSku: string, availableSizes: string[], sizeSkus: any, mergedPrices: any[]) {
@@ -1026,9 +1077,8 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       country_of_origin: baseProduct.CountryOfOrigin || baseProduct.country_of_origin,
       delivery_time: baseProduct.DeliveryTime || baseProduct.delivery_time,
       customs_tariff_number: baseProduct.CustomsTariffNumber || baseProduct.customs_tariff_number,
-      hex_color: baseProduct.HexColor || baseProduct.hex_color,
-      supplier_color_code: baseProduct.SupplierColorCode || baseProduct.supplier_color_code,
-      pms_color: baseProduct.PMSColor || baseProduct.pms_color,
+      // Extract color data using improved logic
+      ...this.extractColorData(baseProduct),
       supplier: supplier.id,
       promidata_hash: hash,
       last_synced: new Date(),
@@ -1037,7 +1087,7 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       // Size consolidation fields
       available_sizes: availableSizes,
       size_skus: sizeSkus,
-      variant_type: 'multi_size',
+      variant_type: (availableSizes && availableSizes.length > 1 ? 'multi_size' : 'single') as 'multi_size' | 'single',
       
       // Components
       price_tiers: priceTiers,
@@ -1323,12 +1373,12 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         productFilters = childProduct.NonLanguageDependedProductDetails.ProductFiltersByGroup;
       }
 
-      // Extract color codes
-      if (childProduct.SupplierColorCode) {
-        supplierColorCode = childProduct.SupplierColorCode;
-      }
-      if (childProduct.HexColor) {
-        hexColor = childProduct.HexColor;
+      // Extract color data using improved logic
+      const colorData = this.extractColorData(childProduct);
+      hexColor = colorData.hex_color;
+      supplierColorCode = colorData.supplier_color_code;
+      if (colorData.pms_color) {
+        pmsColor = colorData.pms_color; // Override if extracted from new method
       }
 
       // Extract imprint positions
@@ -1417,6 +1467,7 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         ean: eanValue,
         main_image: mainImageId,
         gallery_images: galleryImageIds,
+        variant_type: 'single' as const, // Individual products are always single variants
         promidata_hash: hash,
         last_synced: new Date().toISOString(),
         is_active: true

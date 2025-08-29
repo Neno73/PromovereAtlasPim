@@ -178,7 +178,7 @@ export default factories.createCoreController('api::supplier-autorag-config.supp
       // Get all A113 products
       const products = await strapi.entityService.findMany('api::product.product', {
         filters: { 
-          supplier: supplier.id,
+          supplier: { id: { $eq: supplier.id } },
           is_active: true
         },
         populate: ['categories', 'main_image', 'gallery_images', 'supplier'],

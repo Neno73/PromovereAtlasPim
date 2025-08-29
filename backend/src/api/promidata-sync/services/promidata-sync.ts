@@ -1409,31 +1409,13 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         });
       }
 
-      // Upload images to Strapi media library
+      // SKIP IMAGE UPLOAD FOR LEGACY PRODUCTS
+      // Images are now handled by consolidated products to prevent duplication
+      // This legacy method is only for products without ChildProducts array
       let mainImageId = null;
       const galleryImageIds = [];
       
-      try {
-        // Upload main image with unique filename for this child
-        if (mainImageUrl) {
-          mainImageId = await this.uploadImageFromUrl(mainImageUrl, `${childProductCode}-main`);
-        }
-        
-        // Upload gallery images (limit to first 3 for performance)
-        const galleryUrlsToProcess = galleryImageUrls.slice(0, 3);
-        for (let i = 0; i < galleryUrlsToProcess.length; i++) {
-          try {
-            const galleryImageId = await this.uploadImageFromUrl(galleryUrlsToProcess[i], `${childProductCode}-gallery-${i + 1}`);
-            if (galleryImageId) {
-              galleryImageIds.push(galleryImageId);
-            }
-          } catch (error) {
-            strapi.log.warn(`Failed to upload gallery image ${i + 1} for ${childProductCode}:`, error.message);
-          }
-        }
-      } catch (error) {
-        strapi.log.warn(`Image upload failed for ${childProductCode}:`, error.message);
-      }
+      strapi.log.info(`⚠️ Legacy product ${childProductCode} - skipping image upload (handled by consolidated products)`);
 
       const data = {
         sku: childProductCode,
@@ -1623,6 +1605,24 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
     try {
       strapi.log.debug(`Uploading image from URL: ${imageUrl}`);
       
+      // Extract file extension from URL first for filename check
+      let extension = 'jpg';
+      if (imageUrl.includes('.png')) extension = 'png';
+      else if (imageUrl.includes('.gif')) extension = 'gif';
+      else if (imageUrl.includes('.webp')) extension = 'webp';
+      
+      const cleanFileName = `${fileName}.${extension}`;
+      
+      // CHECK FOR EXISTING IMAGE FIRST (deduplication)
+      const existingFile = await strapi.db.query('plugin::upload.file').findOne({
+        where: { name: cleanFileName }
+      });
+      
+      if (existingFile) {
+        strapi.log.debug(`📁 Image already exists: ${cleanFileName}, reusing ID: ${existingFile.id}`);
+        return existingFile.id;
+      }
+      
       // Download image from URL
       const response = await fetch(imageUrl);
       if (!response.ok) {
@@ -1633,16 +1633,10 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       const imageBuffer = await response.buffer();
       const contentType = response.headers.get('content-type') || 'image/jpeg';
       
-      // Extract file extension from content type or URL
-      let extension = 'jpg';
+      // Update extension from content type if needed
       if (contentType.includes('png')) extension = 'png';
       else if (contentType.includes('gif')) extension = 'gif';
       else if (contentType.includes('webp')) extension = 'webp';
-      else if (imageUrl.includes('.png')) extension = 'png';
-      else if (imageUrl.includes('.gif')) extension = 'gif';
-      else if (imageUrl.includes('.webp')) extension = 'webp';
-      
-      const cleanFileName = `${fileName}.${extension}`;
       
       const r2 = new (require('@aws-sdk/client-s3').S3Client)({
         region: 'auto',

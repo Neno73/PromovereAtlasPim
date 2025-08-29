@@ -103,6 +103,43 @@ export default factories.createCoreController('api::supplier.supplier', ({ strap
   },
 
   /**
+   * Reset sync status for a stuck supplier
+   */
+  async resetSyncStatus(ctx) {
+    try {
+      const { id } = ctx.params; // This is actually the documentId in Strapi 5
+      
+      // Get supplier by documentId (Strapi 5)
+      const supplier = await strapi.documents('api::supplier.supplier').findOne({
+        documentId: id
+      });
+      
+      if (!supplier) {
+        return ctx.notFound('Supplier not found');
+      }
+
+      // Reset status using numeric id
+      await strapi.entityService.update('api::supplier.supplier', supplier.id, {
+        data: {
+          last_sync_status: 'completed',
+          last_sync_message: `Reset from stuck status at ${new Date().toISOString()}`,
+          last_sync_date: new Date()
+        }
+      });
+
+      ctx.body = {
+        success: true,
+        message: `Sync status reset for supplier ${supplier.code}`,
+        supplier: supplier.code,
+        resetAt: new Date().toISOString()
+      };
+    } catch (error) {
+      strapi.log.error('Reset sync status failed:', error);
+      ctx.throw(500, error.message);
+    }
+  },
+
+  /**
    * Quick sync for A23 supplier (for testing) - FORCE UPDATE
    */
   async syncA23(ctx) {

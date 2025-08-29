@@ -62,6 +62,12 @@
       "relation": "oneToOne",
       "target": "api::sync-configuration.sync-configuration",
       "mappedBy": "supplier"
+    },
+    "autorag_config": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::supplier-autorag-config.supplier-autorag-config",
+      "mappedBy": "supplier"
     }
   }
 }

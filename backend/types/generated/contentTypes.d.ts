@@ -612,6 +612,67 @@ export interface ApiPromidataSyncPromidataSync extends Struct.SingleTypeSchema {
   };
 }
 
+export interface ApiSupplierAutoragConfigSupplierAutoragConfig
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'supplier_autorag_configs';
+  info: {
+    description: 'Configuration for CloudFlare AutoRAG instances per supplier';
+    displayName: 'Supplier AutoRAG Configuration';
+    pluralName: 'supplier-autorag-configs';
+    singularName: 'supplier-autorag-config';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    api_endpoint: Schema.Attribute.String & Schema.Attribute.Required;
+    autorag_id: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 100;
+        minLength: 1;
+      }>;
+    cloudflare_account_id: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 32;
+        minLength: 32;
+      }>;
+    company_context: Schema.Attribute.Text;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    last_sync_date: Schema.Attribute.DateTime;
+    last_sync_message: Schema.Attribute.Text;
+    last_sync_status: Schema.Attribute.Enumeration<
+      ['never', 'running', 'completed', 'failed']
+    > &
+      Schema.Attribute.DefaultTo<'never'>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::supplier-autorag-config.supplier-autorag-config'
+    > &
+      Schema.Attribute.Private;
+    products_in_autorag: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<0>;
+    publishedAt: Schema.Attribute.DateTime;
+    status: Schema.Attribute.Enumeration<
+      ['active', 'inactive', 'error', 'initializing']
+    > &
+      Schema.Attribute.DefaultTo<'inactive'>;
+    supplier: Schema.Attribute.Relation<'oneToOne', 'api::supplier.supplier'>;
+    sync_frequency: Schema.Attribute.Enumeration<
+      ['real-time', 'daily', 'manual']
+    > &
+      Schema.Attribute.DefaultTo<'real-time'>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface ApiSupplierSupplier extends Struct.CollectionTypeSchema {
   collectionName: 'suppliers';
   info: {
@@ -625,6 +686,10 @@ export interface ApiSupplierSupplier extends Struct.CollectionTypeSchema {
   };
   attributes: {
     auto_import: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    autorag_config: Schema.Attribute.Relation<
+      'oneToOne',
+      'api::supplier-autorag-config.supplier-autorag-config'
+    >;
     code: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.Unique &
@@ -1223,6 +1288,7 @@ declare module '@strapi/strapi' {
       'api::category.category': ApiCategoryCategory;
       'api::product.product': ApiProductProduct;
       'api::promidata-sync.promidata-sync': ApiPromidataSyncPromidataSync;
+      'api::supplier-autorag-config.supplier-autorag-config': ApiSupplierAutoragConfigSupplierAutoragConfig;
       'api::supplier.supplier': ApiSupplierSupplier;
       'api::sync-configuration.sync-configuration': ApiSyncConfigurationSyncConfiguration;
       'plugin::content-releases.release': PluginContentReleasesRelease;

@@ -60,5 +60,14 @@ export default {
         auth: false, // Allow access without API token authentication
       },
     },
+    {
+      method: 'POST',
+      path: '/promidata-sync/autorag/sync/:supplierId',
+      handler: 'promidata-sync.syncSupplierToAutoRAG',
+      config: {
+        policies: [],
+        middlewares: [],
+      },
+    },
   ],
 };

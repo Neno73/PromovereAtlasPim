@@ -2,18 +2,8 @@ export default {
   routes: [
     {
       method: 'POST',
-      path: '/suppliers/:id/sync',
-      handler: 'supplier.syncSupplier',
-      config: {
-        policies: [],
-        middlewares: [],
-        auth: false, // Allow access without API token authentication
-      },
-    },
-    {
-      method: 'GET',
-      path: '/suppliers/:id/sync-status',
-      handler: 'supplier.getSyncStatus',
+      path: '/fix-autorag-config',
+      handler: 'supplier-autorag-config.fixConfiguration',
       config: {
         policies: [],
         middlewares: [],
@@ -22,12 +12,22 @@ export default {
     },
     {
       method: 'POST',
-      path: '/suppliers/:id/reset-sync',
-      handler: 'supplier.resetSyncStatus',
+      path: '/test-autorag-sync',
+      handler: 'supplier-autorag-config.testAutoRAGSync',
       config: {
         policies: [],
         middlewares: [],
         auth: false, // Allow access without API token authentication
+      },
+    },
+    {
+      method: 'POST',
+      path: '/bulk-sync-a113-autorag',
+      handler: 'supplier-autorag-config.bulkSyncA113ToAutoRAG',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
       },
     },
   ],

@@ -9,7 +9,6 @@ interface ProductCardProps {
 }
 
 export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
-  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
   const [imageFitStrategy, setImageFitStrategy] = useState<'cover' | 'contain'>('cover');
   const [imageLoaded, setImageLoaded] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -43,7 +42,6 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
     const img = imageRef.current;
     if (img) {
       const aspectRatio = img.naturalWidth / img.naturalHeight;
-      setImageAspectRatio(aspectRatio);
       
       // Determine fitting strategy based on aspect ratio
       // Default to 'contain' to prevent cropping, only use 'cover' for very standard ratios
@@ -60,7 +58,6 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
 
   // Reset when image URL changes
   useEffect(() => {
-    setImageAspectRatio(null);
     setImageFitStrategy('cover');
     setImageLoaded(false);
   }, [imageUrl]);

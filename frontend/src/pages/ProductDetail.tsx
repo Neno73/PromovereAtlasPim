@@ -2,7 +2,7 @@ import { useState, useEffect, FC, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Product, ApiResponse } from '../types';
 import { apiService } from '../services/api';
-import { getLocalizedText, formatPrice, formatDimensions, formatWeight } from '../utils/i18n';
+import { getLocalizedText, formatPrice } from '../utils/i18n';
 import './ProductDetail.css';
 
 // Simple navigation function for now
@@ -149,13 +149,9 @@ export const ProductDetail: FC = () => {
 
   const name = getLocalizedText(productData.name);
   const description = getLocalizedText(productData.description);
-  const colorName = getLocalizedText(productData.color_name);
-  const modelName = getLocalizedText(productData.model_name);
-  const material = getLocalizedText(productData.material);
 
   const categories = productData.categories || [];
   const supplier = productData.supplier;
-  const dimensions = productData.dimensions;
   const priceTiers = productData.price_tiers || [];
 
   return (

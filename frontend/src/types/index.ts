@@ -37,6 +37,7 @@ export interface Product {
   description?: MultilingualText;
   color_name?: MultilingualText;
   color_code?: string;
+  supplier_color_code?: string;
   model_name?: MultilingualText;
   search_color?: string;
   size?: string;

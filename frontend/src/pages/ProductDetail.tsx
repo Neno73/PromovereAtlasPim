@@ -230,7 +230,7 @@ export const ProductDetail: FC = () => {
           <div className="product-meta">
             <div className="meta-item">
               <span className="label">SKU:</span>
-              <span className="value">{productData.sku}</span>
+              <span className="value">{productData.sku_supplier || productData.sku}</span>
             </div>
             {productData.model && (
               <div className="meta-item">
@@ -303,120 +303,7 @@ export const ProductDetail: FC = () => {
             </div>
           )}
 
-          {/* Product Details */}
-          <div className="product-details">
-            <h3>Details</h3>
-            <div className="details-grid">
-              {colorName && (
-                <div className="detail-item">
-                  <span className="label">Color:</span>
-                  <div className="color-info">
-                    <span className="value">{colorName}</span>
-                    {productData.color_code && (
-                      <span 
-                        className="color-swatch" 
-                        style={{ backgroundColor: productData.color_code }}
-                        title={productData.color_code}
-                      ></span>
-                    )}
-                  </div>
-                </div>
-              )}
-              
-              {productData.size && (
-                <div className="detail-item">
-                  <span className="label">Size:</span>
-                  <span className="value">{productData.size}</span>
-                </div>
-              )}
-              
-              {material && (
-                <div className="detail-item">
-                  <span className="label">Material:</span>
-                  <span className="value">{material}</span>
-                </div>
-              )}
-              
-              {productData.weight && (
-                <div className="detail-item">
-                  <span className="label">Weight:</span>
-                  <span className="value">{formatWeight(productData.weight)}</span>
-                </div>
-              )}
-              
-              {dimensions && (
-                <div className="detail-item">
-                  <span className="label">Dimensions:</span>
-                  <span className="value">{formatDimensions(dimensions)}</span>
-                </div>
-              )}
-              
-              {productData.country_of_origin && (
-                <div className="detail-item">
-                  <span className="label">Origin:</span>
-                  <span className="value">{productData.country_of_origin}</span>
-                </div>
-              )}
-              
-              {productData.delivery_time && (
-                <div className="detail-item">
-                  <span className="label">Delivery Time:</span>
-                  <span className="value">{productData.delivery_time}</span>
-                </div>
-              )}
-              
-              {productData.customs_tariff_number && (
-                <div className="detail-item">
-                  <span className="label">Customs Tariff:</span>
-                  <span className="value">{productData.customs_tariff_number}</span>
-                </div>
-              )}
-              
-              <div className="detail-item">
-                <span className="label">Tax Rate:</span>
-                <span className="value">{productData.tax === 'H' ? 'High' : 'Low'}</span>
-              </div>
-              
-              {productData.maxcolors && (
-                <div className="detail-item">
-                  <span className="label">Max Colors:</span>
-                  <span className="value">{productData.maxcolors}</span>
-                </div>
-              )}
-              
-              <div className="detail-item">
-                <span className="label">Must Have Imprint:</span>
-                <span className="value">{productData.must_have_imprint ? 'Yes' : 'No'}</span>
-              </div>
-            </div>
-          </div>
 
-          {/* Technical Info */}
-          <div className="technical-info">
-            <h3>Technical Information</h3>
-            <div className="tech-grid">
-              <div className="tech-item">
-                <span className="label">Created:</span>
-                <span className="value">{new Date(productData.createdAt).toLocaleDateString()}</span>
-              </div>
-              <div className="tech-item">
-                <span className="label">Last Updated:</span>
-                <span className="value">{new Date(productData.updatedAt).toLocaleDateString()}</span>
-              </div>
-              {productData.last_synced && (
-                <div className="tech-item">
-                  <span className="label">Last Synced:</span>
-                  <span className="value">{new Date(productData.last_synced).toLocaleDateString()}</span>
-                </div>
-              )}
-              {productData.promidata_hash && (
-                <div className="tech-item">
-                  <span className="label">Promidata Hash:</span>
-                  <span className="value mono">{productData.promidata_hash.substring(0, 16)}...</span>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </div>
     </div>

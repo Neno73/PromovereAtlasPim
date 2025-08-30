@@ -115,7 +115,7 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
         <h3 className="product-title">{name}</h3>
         
         <div className="product-meta">
-          <p className="product-sku">SKU: {productData.sku}</p>
+          <p className="product-sku">SKU: {productData.sku_supplier || productData.sku}</p>
           {productData.model && (
             <p className="product-model">Model: {productData.model}</p>
           )}
@@ -123,7 +123,7 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
         
         {description && (
           <p className="product-description">
-            {description.length > 100 ? `${description.substring(0, 100)}...` : description}
+            {description.length > 140 ? `${description.substring(0, 140)}...` : description}
           </p>
         )}
         
@@ -158,11 +158,11 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
           <div className="product-color">
             <span className="color-label">Color:</span>
             <span className="color-name">{getLocalizedText(productData.color_name)}</span>
-            {productData.color_code && (
+            {(productData.supplier_color_code || productData.color_code) && (
               <span 
                 className="color-swatch" 
-                style={{ backgroundColor: productData.color_code }}
-                title={productData.color_code}
+                style={{ backgroundColor: productData.supplier_color_code || productData.color_code }}
+                title={productData.supplier_color_code || productData.color_code}
               ></span>
             )}
           </div>

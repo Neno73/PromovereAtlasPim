@@ -1,14 +1,10 @@
 import { useState, useEffect, FC, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Product, ApiResponse } from '../types';
 import { apiService } from '../services/api';
 import { getLocalizedText, formatPrice } from '../utils/i18n';
 import './ProductDetail.css';
 
-// Simple navigation function for now
-const navigate = (path: string) => {
-  window.location.href = path;
-};
 
 interface ImageWithType {
   id: number;
@@ -25,6 +21,7 @@ interface ImageWithType {
 
 export const ProductDetail: FC = () => {
   const { id: documentId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

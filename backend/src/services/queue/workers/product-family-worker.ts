@@ -55,6 +55,20 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
     async (job: Job<ProductFamilyJobData>) => {
       const { aNumber, variants, supplierId, supplierCode, productHash } = job.data;
 
+      // Input validation
+      if (!aNumber || typeof aNumber !== 'string') {
+        throw new Error('Invalid job data: aNumber must be a non-empty string');
+      }
+      if (!Array.isArray(variants) || variants.length === 0) {
+        throw new Error('Invalid job data: variants must be a non-empty array');
+      }
+      if (!supplierId || typeof supplierId !== 'number') {
+        throw new Error('Invalid job data: supplierId must be a number');
+      }
+      if (!supplierCode || typeof supplierCode !== 'string') {
+        throw new Error('Invalid job data: supplierCode must be a non-empty string');
+      }
+
       strapi.log.info(`🔨 [Worker] Processing product family: ${aNumber}`);
 
       try {

@@ -38,6 +38,23 @@ export function createImageUploadWorker(): Worker<ImageUploadJobData> {
     async (job: Job<ImageUploadJobData>) => {
       const { imageUrl, fileName, entityType, entityId, fieldName, index } = job.data;
 
+      // Input validation
+      if (!imageUrl || typeof imageUrl !== 'string') {
+        throw new Error('Invalid job data: imageUrl must be a non-empty string');
+      }
+      if (!fileName || typeof fileName !== 'string') {
+        throw new Error('Invalid job data: fileName must be a non-empty string');
+      }
+      if (!entityType || !['product', 'product-variant'].includes(entityType)) {
+        throw new Error('Invalid job data: entityType must be "product" or "product-variant"');
+      }
+      if (!entityId || typeof entityId !== 'number') {
+        throw new Error('Invalid job data: entityId must be a number');
+      }
+      if (!fieldName || !['primary_image', 'gallery_images'].includes(fieldName)) {
+        throw new Error('Invalid job data: fieldName must be "primary_image" or "gallery_images"');
+      }
+
       strapi.log.info(`📸 [Worker] Uploading image: ${fileName}`);
 
       try {

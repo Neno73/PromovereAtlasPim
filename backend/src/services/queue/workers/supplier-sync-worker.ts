@@ -52,6 +52,18 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
     'supplier-sync',
     async (job: Job<SupplierSyncJobData>) => {
       const { supplierId, supplierCode, supplierNumericId, manual } = job.data;
+
+      // Input validation
+      if (!supplierId || typeof supplierId !== 'string') {
+        throw new Error('Invalid job data: supplierId must be a non-empty string');
+      }
+      if (!supplierCode || typeof supplierCode !== 'string') {
+        throw new Error('Invalid job data: supplierCode must be a non-empty string');
+      }
+      if (!supplierNumericId || typeof supplierNumericId !== 'number') {
+        throw new Error('Invalid job data: supplierNumericId must be a number');
+      }
+
       const startTime = Date.now();
 
       strapi.log.info(`\n${'='.repeat(60)}`);

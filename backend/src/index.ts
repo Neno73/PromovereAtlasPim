@@ -78,14 +78,23 @@ export default {
     }
 
     // Initialize BullMQ queue service and workers
-    console.log('\n🚀 Initializing BullMQ queue service and workers...');
-    try {
-      await queueService.initialize();
-      await workerManager.start();
-      console.log('✅ Queue service and workers initialized successfully');
-    } catch (error) {
-      console.error('❌ Failed to initialize queue service or workers:', error);
-    }
+    // Use setImmediate to ensure Strapi is fully initialized before starting workers
+    console.log('\n🚀 Scheduling BullMQ queue service and worker initialization...');
+    setImmediate(async () => {
+      try {
+        // Verify Strapi is ready before starting workers
+        if (!strapi.db) {
+          throw new Error('Strapi database not initialized');
+        }
+
+        await queueService.initialize();
+        await workerManager.start();
+        strapi.log.info('✅ Queue service and workers initialized successfully');
+      } catch (error) {
+        strapi.log.error('❌ Failed to initialize queue service or workers:', error);
+        // Don't throw - allow app to continue without workers if Redis unavailable
+      }
+    });
   },
 
   /**

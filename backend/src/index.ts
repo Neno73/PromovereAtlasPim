@@ -1,3 +1,6 @@
+import queueService from './services/queue/queue-service';
+import workerManager from './services/queue/worker-manager';
+
 export default {
   /**
    * An asynchronous register function that runs before
@@ -72,6 +75,36 @@ export default {
       console.log('✅ Bootstrap finished setting public API permissions.');
     } catch (error) {
       console.error('❌ An error occurred during the bootstrap process:', error);
+    }
+
+    // Initialize BullMQ queue service and workers
+    console.log('\n🚀 Initializing BullMQ queue service and workers...');
+    try {
+      await queueService.initialize();
+      await workerManager.start();
+      console.log('✅ Queue service and workers initialized successfully');
+    } catch (error) {
+      console.error('❌ Failed to initialize queue service or workers:', error);
+    }
+  },
+
+  /**
+   * An asynchronous destroy function that runs before
+   * your application is destroyed.
+   *
+   * This gives you an opportunity to gracefully shut down services.
+   */
+  async destroy({ strapi }) {
+    console.log('🛑 Shutting down application...');
+
+    try {
+      // Stop workers
+      await workerManager.stop();
+      // Close queues
+      await queueService.close();
+      console.log('✅ Queue service and workers shut down successfully');
+    } catch (error) {
+      console.error('❌ Error during shutdown:', error);
     }
   },
 };

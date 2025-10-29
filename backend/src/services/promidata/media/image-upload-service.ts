@@ -1,0 +1,285 @@
+/**
+ * Image Upload Service
+ * Handles downloading images and uploading to R2 + creating Strapi media records
+ */
+
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import crypto from 'crypto';
+import promidataClient from '../api/promidata-client';
+import deduplicationService from './deduplication';
+
+/**
+ * Upload Result
+ */
+export interface UploadResult {
+  success: boolean;
+  mediaId?: number;
+  url?: string;
+  fileName: string;
+  error?: string;
+  wasDedup: boolean; // Was this a deduplicated image?
+}
+
+/**
+ * Image Upload Service Class
+ */
+class ImageUploadService {
+  private r2Client: S3Client | null = null;
+
+  /**
+   * Initialize R2 client (lazy loading)
+   */
+  private getR2Client(): S3Client {
+    if (!this.r2Client) {
+      this.r2Client = new S3Client({
+        region: 'auto',
+        endpoint: process.env.R2_ENDPOINT,
+        credentials: {
+          accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+        },
+      });
+    }
+
+    return this.r2Client;
+  }
+
+  /**
+   * Upload image from URL
+   * Main entry point for image uploads
+   */
+  public async uploadFromUrl(
+    imageUrl: string,
+    fileName: string
+  ): Promise<UploadResult> {
+    try {
+      console.log(`[ImageUpload] Processing: ${fileName}`);
+
+      // Extract extension from URL
+      const extension = this.extractExtension(imageUrl);
+      const cleanFileName = `${fileName}.${extension}`;
+
+      // Check for existing image (deduplication)
+      const dedupCheck = await deduplicationService.checkByFilename(cleanFileName);
+
+      if (dedupCheck.exists) {
+        return {
+          success: true,
+          mediaId: dedupCheck.mediaId,
+          url: dedupCheck.url,
+          fileName: cleanFileName,
+          wasDedup: true,
+        };
+      }
+
+      // Download image
+      const imageBuffer = await promidataClient.fetchBuffer(imageUrl);
+      const contentType = this.detectContentType(imageUrl, imageBuffer);
+
+      // Upload to R2
+      await this.uploadToR2(cleanFileName, imageBuffer, contentType);
+
+      // Create Strapi media record
+      const mediaId = await this.createMediaRecord(cleanFileName, imageBuffer, contentType, extension);
+
+      const publicUrl = `${process.env.R2_PUBLIC_URL}/${cleanFileName}`;
+
+      console.log(`[ImageUpload] ✓ Uploaded: ${cleanFileName} (ID: ${mediaId})`);
+
+      return {
+        success: true,
+        mediaId,
+        url: publicUrl,
+        fileName: cleanFileName,
+        wasDedup: false,
+      };
+    } catch (error) {
+      console.error(`[ImageUpload] ✗ Failed to upload ${fileName}:`, error.message);
+      return {
+        success: false,
+        fileName,
+        error: error.message,
+        wasDedup: false,
+      };
+    }
+  }
+
+  /**
+   * Extract file extension from URL
+   */
+  private extractExtension(url: string): string {
+    if (url.includes('.png')) return 'png';
+    if (url.includes('.gif')) return 'gif';
+    if (url.includes('.webp')) return 'webp';
+    if (url.includes('.svg')) return 'svg';
+    return 'jpg'; // Default to jpg
+  }
+
+  /**
+   * Detect content type from URL or buffer
+   */
+  private detectContentType(url: string, buffer: Buffer): string {
+    // Check magic numbers (file signatures)
+    if (buffer[0] === 0x89 && buffer[1] === 0x50) return 'image/png';
+    if (buffer[0] === 0x47 && buffer[1] === 0x49) return 'image/gif';
+    if (buffer[0] === 0xFF && buffer[1] === 0xD8) return 'image/jpeg';
+
+    // Fallback to URL-based detection
+    if (url.includes('.png')) return 'image/png';
+    if (url.includes('.gif')) return 'image/gif';
+    if (url.includes('.webp')) return 'image/webp';
+    if (url.includes('.svg')) return 'image/svg+xml';
+
+    return 'image/jpeg'; // Default
+  }
+
+  /**
+   * Upload image buffer to Cloudflare R2
+   */
+  private async uploadToR2(
+    fileName: string,
+    buffer: Buffer,
+    contentType: string
+  ): Promise<void> {
+    try {
+      const r2 = this.getR2Client();
+
+      const uploadParams = {
+        Bucket: process.env.R2_BUCKET_NAME!,
+        Key: fileName,
+        Body: buffer,
+        ContentType: contentType,
+      };
+
+      await r2.send(new PutObjectCommand(uploadParams));
+
+      console.log(`[ImageUpload] ✓ Uploaded to R2: ${fileName}`);
+    } catch (error) {
+      console.error(`[ImageUpload] ✗ R2 upload failed for ${fileName}:`, error);
+      throw new Error(`R2 upload failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create Strapi media record
+   */
+  private async createMediaRecord(
+    fileName: string,
+    buffer: Buffer,
+    contentType: string,
+    extension: string
+  ): Promise<number> {
+    try {
+      const fileData = {
+        name: fileName,
+        hash: crypto.createHash('md5').update(fileName).digest('hex'),
+        ext: `.${extension}`,
+        mime: contentType,
+        size: buffer.length / 1024, // KB
+        url: `${process.env.R2_PUBLIC_URL}/${fileName}`,
+        provider: 'aws-s3',
+        provider_metadata: {
+          public_id: fileName,
+          resource_type: 'image',
+        },
+        folderPath: '/',
+      };
+
+      const uploadedFile = await strapi.entityService.create('plugin::upload.file', {
+        data: fileData,
+      });
+
+      return Number(uploadedFile.id);
+    } catch (error) {
+      console.error(`[ImageUpload] ✗ Failed to create media record for ${fileName}:`, error);
+      throw new Error(`Media record creation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Batch upload images
+   * Uploads multiple images with limited concurrency
+   */
+  public async batchUpload(
+    images: Array<{ url: string; fileName: string }>,
+    concurrency: number = 5
+  ): Promise<UploadResult[]> {
+    const results: UploadResult[] = [];
+
+    // Process in batches
+    for (let i = 0; i < images.length; i += concurrency) {
+      const batch = images.slice(i, i + concurrency);
+
+      const batchResults = await Promise.all(
+        batch.map(img => this.uploadFromUrl(img.url, img.fileName))
+      );
+
+      results.push(...batchResults);
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    const dedupCount = results.filter(r => r.wasDedup).length;
+
+    console.log(`[ImageUpload] Batch complete: ${successCount}/${images.length} successful (${dedupCount} deduplicated)`);
+
+    return results;
+  }
+
+  /**
+   * Generate unique filename for image
+   * Based on entity type, ID, and field name
+   */
+  public generateFileName(
+    entityType: 'product' | 'product-variant',
+    entityId: number | string,
+    fieldName: string,
+    index: number = 0
+  ): string {
+    const timestamp = Date.now();
+    const suffix = index > 0 ? `-${index}` : '';
+    return `${entityType}-${entityId}-${fieldName}${suffix}-${timestamp}`;
+  }
+
+  /**
+   * Delete image from R2 and Strapi
+   */
+  public async delete(mediaId: number): Promise<boolean> {
+    try {
+      // Get media file info
+      const mediaFile = await deduplicationService.getById(mediaId);
+
+      if (!mediaFile) {
+        console.warn(`[ImageUpload] Media ${mediaId} not found`);
+        return false;
+      }
+
+      // Delete from Strapi (this should also trigger R2 deletion via plugin)
+      await deduplicationService.delete(mediaId);
+
+      console.log(`[ImageUpload] ✓ Deleted media ${mediaId}`);
+      return true;
+    } catch (error) {
+      console.error(`[ImageUpload] ✗ Failed to delete media ${mediaId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Get upload statistics
+   */
+  public async getStats(): Promise<{
+    totalImages: number;
+    totalSize: number;
+    byType: Record<string, number>;
+  }> {
+    const stats = await deduplicationService.getStats();
+    return {
+      totalImages: stats.total,
+      totalSize: stats.totalSize,
+      byType: stats.byMimeType,
+    };
+  }
+}
+
+// Export singleton instance
+export default new ImageUploadService();

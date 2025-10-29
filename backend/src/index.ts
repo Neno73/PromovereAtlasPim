@@ -31,6 +31,8 @@ export default {
       const permissionsToSet = [
         'api::product.product.find',
         'api::product.product.findOne',
+        'api::product-variant.product-variant.find',
+        'api::product-variant.product-variant.findOne',
         'api::category.category.find',
         'api::category.category.findOne',
         'api::supplier.supplier.find',

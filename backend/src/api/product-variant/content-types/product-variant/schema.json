@@ -1,0 +1,157 @@
+{
+  "kind": "collectionType",
+  "collectionName": "product_variants",
+  "info": {
+    "singularName": "product-variant",
+    "pluralName": "product-variants",
+    "displayName": "Product Variant",
+    "description": "Size and color variations of products"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "sku": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "richtext"
+    },
+    "short_description": {
+      "type": "text"
+    },
+    "meta_name": {
+      "type": "string"
+    },
+    "meta_description": {
+      "type": "text"
+    },
+    "meta_keywords": {
+      "type": "text"
+    },
+    "primary_image": {
+      "type": "media",
+      "multiple": false,
+      "required": false,
+      "allowedTypes": ["images"]
+    },
+    "gallery_images": {
+      "type": "media",
+      "multiple": true,
+      "required": false,
+      "allowedTypes": ["images"]
+    },
+    "information_files": {
+      "type": "media",
+      "multiple": true,
+      "required": false,
+      "allowedTypes": ["images", "files", "videos", "audios"]
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "color": {
+      "type": "string"
+    },
+    "size": {
+      "type": "string"
+    },
+    "sizes": {
+      "type": "json"
+    },
+    "supplier_search_color": {
+      "type": "string"
+    },
+    "supplier_color_code": {
+      "type": "string"
+    },
+    "hex_color": {
+      "type": "string"
+    },
+    "supplier_main_category": {
+      "type": "string"
+    },
+    "material": {
+      "type": "string"
+    },
+    "country_of_origin": {
+      "type": "string"
+    },
+    "production_time": {
+      "type": "string"
+    },
+    "imprint_required": {
+      "type": "boolean",
+      "default": false
+    },
+    "tron_logo_enabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "tron_logo_reference": {
+      "type": "string"
+    },
+    "weight": {
+      "type": "decimal",
+      "precision": 10,
+      "scale": 3
+    },
+    "dimensions_length": {
+      "type": "decimal",
+      "precision": 10,
+      "scale": 3
+    },
+    "dimensions_height": {
+      "type": "decimal",
+      "precision": 10,
+      "scale": 3
+    },
+    "dimensions_diameter": {
+      "type": "decimal",
+      "precision": 10,
+      "scale": 3
+    },
+    "dimensions_width": {
+      "type": "decimal",
+      "precision": 10,
+      "scale": 3
+    },
+    "dimensions_depth": {
+      "type": "decimal",
+      "precision": 10,
+      "scale": 3
+    },
+    "fragile": {
+      "type": "boolean",
+      "default": false
+    },
+    "usb_item": {
+      "type": "boolean",
+      "default": false
+    },
+    "embroidery_sizes": {
+      "type": "json"
+    },
+    "is_service_base": {
+      "type": "boolean",
+      "default": false
+    },
+    "is_primary_for_color": {
+      "type": "boolean",
+      "default": false
+    },
+    "product": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::product.product",
+      "inversedBy": "variants"
+    }
+  }
+}

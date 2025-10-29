@@ -1,13 +1,19 @@
 /**
  * Promidata Sync Service - Orchestration Layer
  *
- * This service acts as a thin orchestrator that delegates to specialized services.
- * All business logic is now in the modular services under src/services/promidata/
+ * This service acts as a thin orchestrator that delegates to:
+ * - Queue-based processing (default, scalable, recommended)
+ * - Direct processing (legacy, for testing/debugging)
+ *
+ * All business logic is in modular services under src/services/promidata/
  */
 
 import { factories } from '@strapi/strapi';
 
-// Import modular services
+// Import queue service
+import queueService from '../../../services/queue/queue-service';
+
+// Import modular services (for direct/legacy mode)
 import promidataClient from '../../../services/promidata/api/promidata-client';
 import importParser from '../../../services/promidata/parsers/import-parser';
 import productParser from '../../../services/promidata/parsers/product-parser';
@@ -32,15 +38,18 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
   /**
    * Start sync for all suppliers or a specific supplier
    * Main entry point for manual synchronization
+   *
+   * @param supplierId - Optional supplier documentId to sync specific supplier
+   * @param useQueue - Use queue-based processing (default: true)
    */
-  async startSync(supplierId?: string) {
+  async startSync(supplierId?: string, useQueue: boolean = true) {
     try {
       // Validate supplierId if provided
       if (supplierId) {
         this.validateSupplierId(supplierId);
       }
 
-      strapi.log.info(`🚀 Starting sync${supplierId ? ` for supplier ${supplierId}` : ' for all suppliers'}`);
+      strapi.log.info(`🚀 Starting ${useQueue ? 'queued' : 'direct'} sync${supplierId ? ` for supplier ${supplierId}` : ' for all suppliers'}`);
 
       let suppliers = [];
 
@@ -70,12 +79,108 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
 
       strapi.log.info(`📦 Found ${suppliers.length} active supplier(s) to sync`);
 
-      // Sync each supplier sequentially
+      // Choose processing mode
+      if (useQueue) {
+        return await this.startSyncQueued(suppliers);
+      } else {
+        return await this.startSyncDirect(suppliers);
+      }
+
+    } catch (error) {
+      strapi.log.error('Sync failed:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Validate and convert supplier ID to numeric type
+   */
+  validateSupplierNumericId(supplier: any): number {
+    const supplierNumericId = typeof supplier.id === 'number' ? supplier.id : parseInt(supplier.id, 10);
+
+    if (isNaN(supplierNumericId)) {
+      throw new Error(`Invalid supplier numeric ID for ${supplier.code}: ${supplier.id}`);
+    }
+
+    return supplierNumericId;
+  },
+
+  /**
+   * Start sync using queue-based processing (recommended)
+   * Enqueues supplier sync jobs to be processed by workers
+   */
+  async startSyncQueued(suppliers: any[]) {
+    try {
+      // Enqueue all suppliers in parallel for better performance
+      const enqueuePromises = suppliers.map(async (supplier) => {
+        try {
+          // Validate and convert supplier numeric ID
+          const supplierNumericId = this.validateSupplierNumericId(supplier);
+
+          // Enqueue supplier sync job
+          const job = await queueService.enqueueSupplierSync(
+            supplier.documentId,
+            supplier.code,
+            supplierNumericId,
+            true // manual sync
+          );
+
+          strapi.log.info(`✅ Enqueued sync job for ${supplier.code}: ${job.id}`);
+
+          return {
+            supplier: supplier.code,
+            jobId: job.id,
+            queueName: 'supplier-sync',
+            status: 'enqueued',
+            success: true
+          };
+
+        } catch (error) {
+          strapi.log.error(`Failed to enqueue sync for ${supplier.code}:`, error);
+          return {
+            supplier: supplier.code,
+            status: 'failed',
+            success: false,
+            error: error.message
+          };
+        }
+      });
+
+      const jobs = await Promise.all(enqueuePromises);
+      const successCount = jobs.filter(j => j.success).length;
+      const failureCount = jobs.filter(j => !j.success).length;
+
+      return {
+        success: true,
+        mode: 'queued',
+        suppliersTotal: suppliers.length,
+        suppliersEnqueued: successCount,
+        suppliersFailed: failureCount,
+        jobs,
+        message: `${successCount}/${suppliers.length} sync jobs enqueued. Use getJobStatus() to track progress.`
+      };
+
+    } catch (error) {
+      strapi.log.error('Failed to enqueue sync jobs:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Start sync using direct processing (legacy mode)
+   * Processes suppliers synchronously without queue
+   */
+  async startSyncDirect(suppliers: any[]) {
+    try {
       const results = [];
+
       for (const supplier of suppliers) {
         try {
-          const result = await this.syncSupplier(supplier);
-          results.push(result);
+          const result = await this.syncSupplierDirect(supplier);
+          results.push({
+            ...result,
+            success: true
+          });
         } catch (error) {
           strapi.log.error(`Failed to sync supplier ${supplier.code}:`, error);
           results.push({
@@ -86,23 +191,30 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         }
       }
 
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.filter(r => !r.success).length;
+
       return {
         success: true,
-        suppliersProcessed: suppliers.length,
-        results
+        mode: 'direct',
+        suppliersTotal: suppliers.length,
+        suppliersProcessed: successCount,
+        suppliersFailed: failureCount,
+        results,
+        message: `${successCount}/${suppliers.length} suppliers processed successfully.`
       };
 
     } catch (error) {
-      strapi.log.error('Sync failed:', error);
+      strapi.log.error('Direct sync failed:', error);
       throw error;
     }
   },
 
   /**
-   * Sync a single supplier
-   * Core orchestration logic
+   * Sync a single supplier (direct mode - no queue)
+   * Legacy method for backward compatibility and testing
    */
-  async syncSupplier(supplier: any) {
+  async syncSupplierDirect(supplier: any) {
     const startTime = Date.now();
     strapi.log.info(`\n${'='.repeat(60)}`);
     strapi.log.info(`🔄 Syncing supplier: ${supplier.code} - ${supplier.name}`);
@@ -144,7 +256,7 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       });
 
       // Note: productSyncService expects numeric ID for database queries
-      const supplierId = typeof supplier.id === 'number' ? supplier.id : Number(supplier.id);
+      const supplierId = this.validateSupplierNumericId(supplier);
       const filterResult = await productSyncService.filterProductsNeedingSync(
         productFamilies,
         supplierId
@@ -208,7 +320,7 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
 
       // Step 2: Transform and create/update Product (parent)
       // Ensure numeric supplier ID for database operations
-      const supplierId = typeof supplier.id === 'number' ? supplier.id : Number(supplier.id);
+      const supplierId = this.validateSupplierNumericId(supplier);
       const productData = productTransformer.transform(aNumber, variants, supplierId, productHash);
       const productResult = await productSyncService.createOrUpdate(productData);
 
@@ -373,6 +485,82 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
 
     } catch (error) {
       strapi.log.error('Connection test failed:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get job status and progress
+   * Retrieves detailed information about a specific job
+   */
+  async getJobStatus(queueName: 'supplier-sync' | 'product-family' | 'image-upload', jobId: string) {
+    try {
+      const job = await queueService.getJob(queueName, jobId);
+
+      if (!job) {
+        return {
+          found: false,
+          message: `Job ${jobId} not found in queue ${queueName}`
+        };
+      }
+
+      const state = await job.getState();
+      const progress = job.progress;
+      const returnValue = job.returnvalue;
+      const failedReason = job.failedReason;
+
+      return {
+        found: true,
+        jobId: job.id,
+        queueName,
+        state,
+        progress,
+        result: returnValue,
+        error: failedReason,
+        attemptsMade: job.attemptsMade,
+        processedOn: job.processedOn,
+        finishedOn: job.finishedOn,
+        timestamp: job.timestamp
+      };
+
+    } catch (error) {
+      strapi.log.error(`Failed to get job status for ${jobId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get queue statistics
+   * Returns counts of jobs in different states
+   */
+  async getQueueStats(queueName?: 'supplier-sync' | 'product-family' | 'image-upload') {
+    try {
+      if (queueName) {
+        return await queueService.getQueueStats(queueName);
+      } else {
+        return await queueService.getAllStats();
+      }
+    } catch (error) {
+      strapi.log.error('Failed to get queue stats:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get all jobs for a specific supplier
+   * Useful for tracking all jobs related to a supplier sync
+   */
+  async getSupplierJobs(supplierCode: string, limit: number = 10) {
+    try {
+      // This would require querying jobs by supplier code
+      // For now, return queue stats
+      return {
+        supplierCode,
+        message: 'Job history tracking coming in Phase 4',
+        queueStats: await this.getQueueStats()
+      };
+    } catch (error) {
+      strapi.log.error(`Failed to get jobs for supplier ${supplierCode}:`, error);
       throw error;
     }
   }

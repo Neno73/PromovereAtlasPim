@@ -10,7 +10,7 @@ import crypto from 'crypto';
 import fetch from 'node-fetch';
 
 export default factories.createCoreService('api::promidata-sync.promidata-sync', ({ strapi }) => ({
-  
+
   /**
    * Promidata API configuration
    */
@@ -26,15 +26,80 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
   },
 
   /**
-   * Fetch suppliers list from Promidata
+   * Quick Win #1: Delay utility for exponential backoff
+   */
+  delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  },
+
+  /**
+   * Quick Win #1: Fetch with retry and exponential backoff
+   * Handles transient network failures, rate limiting, and server errors
+   */
+  async fetchWithRetry(url: string, options: any = {}, maxRetries: number = 3): Promise<any> {
+    let lastError: Error;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, options);
+
+        // Handle rate limiting (429) - wait and retry
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('retry-after')
+            ? parseInt(response.headers.get('retry-after')) * 1000
+            : Math.pow(2, attempt) * 1000;
+
+          strapi.log.warn(`Rate limited on ${url}. Waiting ${retryAfter}ms before retry ${attempt + 1}/${maxRetries}`);
+          await this.delay(retryAfter);
+          continue;
+        }
+
+        // Handle server errors (5xx) - retry with exponential backoff
+        if (response.status >= 500) {
+          const delayMs = Math.pow(2, attempt) * 1000;
+          strapi.log.warn(`Server error ${response.status} on ${url}. Retrying in ${delayMs}ms (${attempt + 1}/${maxRetries})`);
+          await this.delay(delayMs);
+          continue;
+        }
+
+        // Client errors (4xx except 429) - don't retry
+        if (response.status >= 400 && response.status < 500) {
+          throw new Error(`Client error ${response.status}: ${response.statusText}`);
+        }
+
+        // Success - return response
+        if (response.ok) {
+          if (attempt > 0) {
+            strapi.log.info(`✓ Success on retry ${attempt + 1} for ${url}`);
+          }
+          return response;
+        }
+
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      } catch (error) {
+        lastError = error;
+
+        // Network errors or other exceptions - retry with backoff
+        if (attempt < maxRetries - 1) {
+          const delayMs = Math.pow(2, attempt) * 1000;
+          strapi.log.warn(`Network error on ${url}: ${error.message}. Retrying in ${delayMs}ms (${attempt + 1}/${maxRetries})`);
+          await this.delay(delayMs);
+        }
+      }
+    }
+
+    // All retries exhausted
+    const errorMessage = `Failed after ${maxRetries} retries: ${lastError.message}`;
+    strapi.log.error(`✗ ${errorMessage} for ${url}`);
+    throw new Error(errorMessage);
+  },
+
+  /**
+   * Fetch suppliers list from Promidata (with retry)
    */
   async fetchSuppliersFromPromidata() {
     try {
-      const response = await fetch(`${this.promidataConfig.baseUrl}${this.promidataConfig.endpoints.suppliers}`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch suppliers: ${response.statusText}`);
-      }
-      
+      const response = await this.fetchWithRetry(`${this.promidataConfig.baseUrl}${this.promidataConfig.endpoints.suppliers}`);
       const text = await response.text();
       const suppliers = text.split('\n')
         .filter(line => line.trim())
@@ -43,7 +108,7 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
           return { code: code?.trim(), name: name?.trim() };
         })
         .filter(supplier => supplier.code && supplier.name);
-      
+
       strapi.log.info(`Fetched ${suppliers.length} suppliers from Promidata`);
       return suppliers;
     } catch (error) {
@@ -53,15 +118,11 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
   },
 
   /**
-   * Fetch categories from CAT.csv
+   * Fetch categories from CAT.csv (with retry)
    */
   async fetchCategoriesFromPromidata() {
     try {
-      const response = await fetch(`${this.promidataConfig.baseUrl}${this.promidataConfig.endpoints.categories}`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch categories: ${response.statusText}`);
-      }
-      
+      const response = await this.fetchWithRetry(`${this.promidataConfig.baseUrl}${this.promidataConfig.endpoints.categories}`);
       const text = await response.text();
       const lines = text.split('\n').filter(line => line.trim());
       const categories = [];
@@ -86,18 +147,14 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
   },
 
   /**
-   * Parse product URLs with hashes from Promidata Import.txt for a specific supplier
+   * Parse product URLs with hashes from Promidata Import.txt for a specific supplier (with retry)
    * Expected format in Import.txt: URLs like "https://promi-dl.de/Profiles/Live/849c892e-b443-4f49-be3a-61a351cbdd23/A23/A23-100804.json|751159B8B70A7230BA6701227C1C5C63F9F2D108"
    */
   async parseProductUrlsWithHashes(supplierCode: string): Promise<Array<{url: string, hash: string}>> {
     try {
       // Get the complete Import.txt file that contains all product URLs with hashes
       const importUrl = 'https://promidatabase.s3.eu-central-1.amazonaws.com/Profiles/Live/849c892e-b443-4f49-be3a-61a351cbdd23/Import/Import.txt';
-      const response = await fetch(importUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch Import.txt: ${response.statusText}`);
-      }
-      
+      const response = await this.fetchWithRetry(importUrl);
       const text = await response.text();
       const productUrlsWithHashes = [];
       
@@ -132,15 +189,11 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
   },
 
   /**
-   * Fetch individual product data from clean URL (without hash)
+   * Fetch individual product data from clean URL (without hash) - with retry
    */
   async fetchProductData(productUrl: string): Promise<any> {
     try {
-      const response = await fetch(productUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch product from ${productUrl}: ${response.statusText}`);
-      }
-      
+      const response = await this.fetchWithRetry(productUrl);
       return await response.json();
     } catch (error) {
       strapi.log.error(`Failed to fetch product data from ${productUrl}:`, error);
@@ -149,18 +202,17 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
   },
 
   /**
-   * Fetch products for a supplier
+   * Fetch products for a supplier (with retry)
    */
   async fetchProductsFromPromidata(supplierCode: string) {
     try {
-      const response = await fetch(`${this.promidataConfig.baseUrl}${this.promidataConfig.endpoints.products(supplierCode)}`);
-      if (!response.ok) {
-        if (response.status === 404) {
-          return []; // No products for this supplier
-        }
-        throw new Error(`Failed to fetch products for ${supplierCode}: ${response.statusText}`);
+      const response = await this.fetchWithRetry(`${this.promidataConfig.baseUrl}${this.promidataConfig.endpoints.products(supplierCode)}`);
+
+      // Handle 404 as "no products"
+      if (response.status === 404) {
+        return [];
       }
-      
+
       const jsonData = await response.json() as any;
       
       // Handle different JSON structures
@@ -332,35 +384,64 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         return { message: 'No products available for this supplier' };
       }
 
-      // Get existing products for this supplier from database
-      const existingProducts = await strapi.entityService.findMany('api::product.product', {
-        filters: { supplier: supplier.id },
-        fields: ['id', 'sku', 'promidata_hash', 'last_synced']
+      strapi.log.info(`Found ${productUrlsWithHashes.length} products for supplier ${supplier.code}`);
+
+      // ===== Quick Win #2: BATCH HASH CHECKING =====
+      // Extract all hashes for efficient batch lookup
+      const hashesToCheck = productUrlsWithHashes.map(p => p.hash.trim());
+
+      // Single batch query to check all hashes at once (instead of N queries)
+      strapi.log.info(`🚀 Performing batch hash check for ${hashesToCheck.length} products...`);
+      const existingProducts = await strapi.db.query('api::product.product').findMany({
+        where: {
+          supplier: supplier.id,
+          promidata_hash: { $in: hashesToCheck }
+        },
+        select: ['id', 'sku', 'promidata_hash', 'last_synced']
       });
 
-      // Create a map for quick lookup of existing products
-      const existingProductsMap = new Map();
-      existingProducts.forEach(product => {
-        existingProductsMap.set(product.sku, product);
+      // Create hash -> product map for O(1) lookup
+      const existingHashMap = new Map(
+        existingProducts.map(p => [p.promidata_hash?.trim(), p])
+      );
+
+      strapi.log.info(`Found ${existingProducts.length} products already in database with matching hashes`);
+
+      // Filter to only products that need syncing (hash not found or changed)
+      const productsToProcess = productUrlsWithHashes.filter(({ hash }) => {
+        return !existingHashMap.has(hash.trim());
       });
+
+      const skippedCount = productUrlsWithHashes.length - productsToProcess.length;
+      const efficiency = productUrlsWithHashes.length > 0
+        ? ((skippedCount / productUrlsWithHashes.length) * 100).toFixed(1)
+        : '0.0';
+
+      strapi.log.info(`✓ Skipping ${skippedCount} unchanged products (${efficiency}% efficiency)`);
+      strapi.log.info(`⚡ Processing ${productsToProcess.length} new/changed products`);
+
+      if (productsToProcess.length === 0) {
+        return {
+          message: 'All products are up to date',
+          total: productUrlsWithHashes.length,
+          skipped: skippedCount,
+          processed: 0,
+          imported: 0,
+          updated: 0,
+          errors: 0
+        };
+      }
+
+      // Create SKU map for products that need processing (for backward compatibility)
+      const existingProductsMap = new Map(
+        existingProducts.map(p => [p.sku, p])
+      );
 
       let imported = 0;
       let updated = 0;
       let skipped = 0;
       const errors = [];
 
-      // Process all product URLs for production import
-      strapi.log.info(`Found ${productUrlsWithHashes.length} products for supplier ${supplier.code}`);
-      
-      const productsToProcess = productUrlsWithHashes; // Process all products
-      strapi.log.info(`Processing ${productsToProcess.length} products for ${supplier.code}`);
-      if (productsToProcess.length === 0) {
-        strapi.log.error('No products to process!');
-        return { message: 'No products found to process' };
-      }
-      
-      strapi.log.info(`Products to process: ${productsToProcess.map(p => p.url.split('/').pop()).join(', ')}`);
-      
       strapi.log.info('About to start product processing loop...');
       for (const { url, hash } of productsToProcess) {
         try {

@@ -34,4 +34,7 @@ dist/
 build/
 .tmp/
 .cache/
-*.log.archive/
+*.log
+
+# Archived documentation
+.archive/

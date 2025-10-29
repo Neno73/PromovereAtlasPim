@@ -34,4 +34,4 @@ dist/
 build/
 .tmp/
 .cache/
-*.log
+*.log.archive/

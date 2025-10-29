@@ -5,7 +5,7 @@
     "singularName": "product",
     "pluralName": "products",
     "displayName": "Product",
-    "description": "Products from Promidata suppliers"
+    "description": "Main product/family with variants"
   },
   "options": {
     "draftAndPublish": false
@@ -15,25 +15,39 @@
     "sku": {
       "type": "string",
       "required": true,
-      "unique": true,
-      "minLength": 1,
-      "maxLength": 100
+      "unique": true
     },
-    "model": {
+    "a_number": {
       "type": "string",
-      "maxLength": 100
+      "required": true
     },
-    "article_number": {
-      "type": "string",
-      "maxLength": 100
+    "supplier_sku": {
+      "type": "string"
     },
-    "sku_supplier": {
-      "type": "string",
-      "maxLength": 100
+    "supplier_name": {
+      "type": "string"
     },
-    "ean": {
-      "type": "string",
-      "maxLength": 20
+    "brand": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "default_products": {
+      "type": "string"
+    },
+    "total_variants_count": {
+      "type": "integer",
+      "default": 0
+    },
+    "promidata_hash": {
+      "type": "string"
+    },
+    "battery_information": {
+      "type": "string"
+    },
+    "required_certificates": {
+      "type": "string"
     },
     "name": {
       "type": "json",
@@ -42,74 +56,14 @@
     "description": {
       "type": "json"
     },
-    "color_name": {
-      "type": "json"
-    },
-    "color_code": {
-      "type": "string",
-      "maxLength": 20
-    },
     "model_name": {
       "type": "json"
     },
-    "search_color": {
-      "type": "string",
-      "maxLength": 50
+    "short_description": {
+      "type": "json"
     },
-    "size": {
-      "type": "string",
-      "maxLength": 50
-    },
-    "dimension": {
-      "type": "string",
-      "maxLength": 200
-    },
-    "meta_keyword": {
-      "type": "text"
-    },
-    "weight": {
-      "type": "decimal",
-      "precision": 10,
-      "scale": 3
-    },
-    "supplier": {
-      "type": "relation",
-      "relation": "manyToOne",
-      "target": "api::supplier.supplier",
-      "inversedBy": "products"
-    },
-    "categories": {
-      "type": "relation",
-      "relation": "manyToMany",
-      "target": "api::category.category",
-      "inversedBy": "products"
-    },
-    "dimensions": {
-      "type": "component",
-      "component": "product.dimensions"
-    },
-    "price_tiers": {
-      "type": "component",
-      "repeatable": true,
-      "component": "product.price-tier"
-    },
-    "main_image": {
-      "type": "media",
-      "multiple": false,
-      "required": false,
-      "allowedTypes": ["images"]
-    },
-    "gallery_images": {
-      "type": "media",
-      "multiple": true,
-      "required": false,
-      "allowedTypes": ["images"]
-    },
-    "model_image": {
-      "type": "media",
-      "multiple": false,
-      "required": false,
-      "allowedTypes": ["images"]
+    "material": {
+      "type": "json"
     },
     "customization": {
       "type": "json"
@@ -123,22 +77,10 @@
     "refining_location": {
       "type": "json"
     },
-    "maxcolors": {
-      "type": "integer"
+    "web_shop_info": {
+      "type": "json"
     },
-    "print_option_group": {
-      "type": "string",
-      "maxLength": 100
-    },
-    "must_have_imprint": {
-      "type": "boolean",
-      "default": false
-    },
-    "brand": {
-      "type": "string",
-      "maxLength": 100
-    },
-    "material": {
+    "product_filters": {
       "type": "json"
     },
     "country_of_origin": {
@@ -158,21 +100,66 @@
       "enum": ["H", "L"],
       "default": "H"
     },
-    "filter_codes": {
-      "type": "string",
-      "maxLength": 500
+    "must_have_imprint": {
+      "type": "boolean",
+      "default": false
     },
-    "main_category": {
+    "maxcolors": {
+      "type": "integer"
+    },
+    "print_option_group": {
       "type": "string",
       "maxLength": 100
     },
-    "additional_categories": {
-      "type": "string",
-      "maxLength": 500
+    "main_image": {
+      "type": "media",
+      "multiple": false,
+      "required": false,
+      "allowedTypes": ["images"]
     },
-    "promidata_hash": {
-      "type": "string",
-      "maxLength": 64
+    "gallery_images": {
+      "type": "media",
+      "multiple": true,
+      "required": false,
+      "allowedTypes": ["images"]
+    },
+    "model_image": {
+      "type": "media",
+      "multiple": false,
+      "required": false,
+      "allowedTypes": ["images"]
+    },
+    "dimensions": {
+      "type": "component",
+      "component": "product.dimensions"
+    },
+    "price_tiers": {
+      "type": "component",
+      "repeatable": true,
+      "component": "product.price-tier"
+    },
+    "imprint_position": {
+      "type": "component",
+      "repeatable": true,
+      "component": "product.imprint-position"
+    },
+    "supplier": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::supplier.supplier",
+      "inversedBy": "products"
+    },
+    "categories": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::category.category",
+      "inversedBy": "products"
+    },
+    "variants": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::product-variant.product-variant",
+      "mappedBy": "product"
     },
     "last_synced": {
       "type": "datetime"
@@ -180,56 +167,6 @@
     "is_active": {
       "type": "boolean",
       "default": true
-    },
-    "required_certificates": {
-      "type": "text"
-    },
-    "battery_information": {
-      "type": "json"
-    },
-    "web_shop_info": {
-      "type": "json"
-    },
-    "product_filters": {
-      "type": "json"
-    },
-    "delivery_time_days": {
-      "type": "integer",
-      "min": 0
-    },
-    "imprint_positions": {
-      "type": "component",
-      "repeatable": true,
-      "component": "product.imprint-position"
-    },
-    "short_description": {
-      "type": "json"
-    },
-    "hex_color": {
-      "type": "string",
-      "maxLength": 7
-    },
-    "supplier_color_code": {
-      "type": "string",
-      "maxLength": 50
-    },
-    "pms_color": {
-      "type": "string",
-      "maxLength": 20
-    },
-    "available_sizes": {
-      "type": "json",
-      "description": "Array of available sizes for this color variant"
-    },
-    "size_skus": {
-      "type": "json",
-      "description": "Mapping of sizes to their specific SKUs for ordering"
-    },
-    "variant_type": {
-      "type": "enumeration",
-      "enum": ["single", "multi_size"],
-      "default": "single",
-      "description": "Type of product variant - single or consolidated multi-size"
     }
   }
 }

@@ -35,3 +35,6 @@ build/
 .tmp/
 .cache/
 *.log
+
+# Archived documentation
+.archive/

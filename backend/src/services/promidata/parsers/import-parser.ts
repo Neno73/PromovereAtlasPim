@@ -55,10 +55,10 @@ class ImportParser {
         }
       }
 
-      console.log(`[ImportParser] Parsed ${entries.length} product entries from Import.txt`);
+      strapi.log.info(`[ImportParser] Parsed ${entries.length} product entries from Import.txt`);
       return entries;
     } catch (error) {
-      console.error('[ImportParser] Failed to parse Import.txt:', error);
+      strapi.log.error('[ImportParser] Failed to parse Import.txt:', error);
       throw error;
     }
   }
@@ -70,7 +70,7 @@ class ImportParser {
     const allEntries = await this.parseImportFile();
     const supplierEntries = allEntries.filter(entry => entry.supplierCode === supplierCode);
 
-    console.log(`[ImportParser] Found ${supplierEntries.length} entries for supplier ${supplierCode}`);
+    strapi.log.info(`[ImportParser] Found ${supplierEntries.length} entries for supplier ${supplierCode}`);
     return supplierEntries;
   }
 

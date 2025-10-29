@@ -28,7 +28,7 @@ class DeduplicationService {
       });
 
       if (existingFile) {
-        console.log(`[Deduplication] ✓ Image exists: ${fileName} (ID: ${existingFile.id})`);
+        strapi.log.info(`[Deduplication] ✓ Image exists: ${fileName} (ID: ${existingFile.id})`);
         return {
           exists: true,
           mediaId: existingFile.id,
@@ -42,7 +42,7 @@ class DeduplicationService {
         fileName,
       };
     } catch (error) {
-      console.error(`[Deduplication] Error checking file ${fileName}:`, error);
+      strapi.log.error(`[Deduplication] Error checking file ${fileName}:`, error);
       return {
         exists: false,
         fileName,
@@ -61,7 +61,7 @@ class DeduplicationService {
       });
 
       if (existingFile) {
-        console.log(`[Deduplication] ✓ Image exists by URL: ${url}`);
+        strapi.log.info(`[Deduplication] ✓ Image exists by URL: ${url}`);
         return {
           exists: true,
           mediaId: existingFile.id,
@@ -75,7 +75,7 @@ class DeduplicationService {
         fileName: '',
       };
     } catch (error) {
-      console.error(`[Deduplication] Error checking URL ${url}:`, error);
+      strapi.log.error(`[Deduplication] Error checking URL ${url}:`, error);
       return {
         exists: false,
         fileName: '',
@@ -94,7 +94,7 @@ class DeduplicationService {
       });
 
       if (existingFile) {
-        console.log(`[Deduplication] ✓ Image exists by hash: ${hash}`);
+        strapi.log.info(`[Deduplication] ✓ Image exists by hash: ${hash}`);
         return {
           exists: true,
           mediaId: existingFile.id,
@@ -108,7 +108,7 @@ class DeduplicationService {
         fileName: '',
       };
     } catch (error) {
-      console.error(`[Deduplication] Error checking hash ${hash}:`, error);
+      strapi.log.error(`[Deduplication] Error checking hash ${hash}:`, error);
       return {
         exists: false,
         fileName: '',
@@ -124,7 +124,7 @@ class DeduplicationService {
     fileNames: string[]
   ): Promise<Map<string, DeduplicationResult>> {
     try {
-      console.log(`[Deduplication] Batch checking ${fileNames.length} files...`);
+      strapi.log.info(`[Deduplication] Batch checking ${fileNames.length} files...`);
 
       const existingFiles = await strapi.db.query('plugin::upload.file').findMany({
         where: {
@@ -157,11 +157,11 @@ class DeduplicationService {
 
       const existingCount = existingFiles.length;
       const newCount = fileNames.length - existingCount;
-      console.log(`[Deduplication] Found ${existingCount} existing, ${newCount} new files`);
+      strapi.log.info(`[Deduplication] Found ${existingCount} existing, ${newCount} new files`);
 
       return resultMap;
     } catch (error) {
-      console.error('[Deduplication] Batch check failed:', error);
+      strapi.log.error('[Deduplication] Batch check failed:', error);
       throw error;
     }
   }
@@ -173,7 +173,7 @@ class DeduplicationService {
     try {
       return await strapi.entityService.findOne('plugin::upload.file', mediaId);
     } catch (error) {
-      console.error(`[Deduplication] Error fetching media ${mediaId}:`, error);
+      strapi.log.error(`[Deduplication] Error fetching media ${mediaId}:`, error);
       return null;
     }
   }
@@ -184,10 +184,10 @@ class DeduplicationService {
   public async delete(mediaId: number): Promise<boolean> {
     try {
       await strapi.plugins.upload.services.upload.remove({ id: mediaId });
-      console.log(`[Deduplication] Deleted media ${mediaId}`);
+      strapi.log.info(`[Deduplication] Deleted media ${mediaId}`);
       return true;
     } catch (error) {
-      console.error(`[Deduplication] Error deleting media ${mediaId}:`, error);
+      strapi.log.error(`[Deduplication] Error deleting media ${mediaId}:`, error);
       return false;
     }
   }
@@ -200,10 +200,10 @@ class DeduplicationService {
     try {
       // This is a complex query that would need to check all relations
       // For now, return empty array - can be implemented later if needed
-      console.log('[Deduplication] Orphan detection not yet implemented');
+      strapi.log.info('[Deduplication] Orphan detection not yet implemented');
       return [];
     } catch (error) {
-      console.error('[Deduplication] Error finding orphaned files:', error);
+      strapi.log.error('[Deduplication] Error finding orphaned files:', error);
       return [];
     }
   }
@@ -235,7 +235,7 @@ class DeduplicationService {
         totalSize,
       };
     } catch (error) {
-      console.error('[Deduplication] Error getting stats:', error);
+      strapi.log.error('[Deduplication] Error getting stats:', error);
       return {
         total: 0,
         byMimeType: {},

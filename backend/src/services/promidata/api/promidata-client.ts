@@ -76,7 +76,7 @@ class PromidataClient {
             ? parseInt(response.headers.get('retry-after')) * 1000
             : this.calculateBackoffDelay(attempt, retryConfig.baseDelay, retryConfig.maxDelay);
 
-          console.warn(`[Promidata] Rate limited on ${url}. Waiting ${retryAfter}ms before retry ${attempt + 1}/${retryConfig.maxRetries}`);
+          strapi.log.warn(`[Promidata] Rate limited on ${url}. Waiting ${retryAfter}ms before retry ${attempt + 1}/${retryConfig.maxRetries}`);
           await this.delay(retryAfter);
           continue;
         }
@@ -84,7 +84,7 @@ class PromidataClient {
         // Handle server errors (5xx) - retry with exponential backoff
         if (response.status >= 500) {
           const delayMs = this.calculateBackoffDelay(attempt, retryConfig.baseDelay, retryConfig.maxDelay);
-          console.warn(`[Promidata] Server error ${response.status} on ${url}. Retrying in ${delayMs}ms (${attempt + 1}/${retryConfig.maxRetries})`);
+          strapi.log.warn(`[Promidata] Server error ${response.status} on ${url}. Retrying in ${delayMs}ms (${attempt + 1}/${retryConfig.maxRetries})`);
           await this.delay(delayMs);
           continue;
         }
@@ -96,7 +96,7 @@ class PromidataClient {
           } else {
             // Retry 4xx if explicitly configured
             const delayMs = this.calculateBackoffDelay(attempt, retryConfig.baseDelay, retryConfig.maxDelay);
-            console.warn(`[Promidata] Client error ${response.status} on ${url}. Retrying in ${delayMs}ms (${attempt + 1}/${retryConfig.maxRetries})`);
+            strapi.log.warn(`[Promidata] Client error ${response.status} on ${url}. Retrying in ${delayMs}ms (${attempt + 1}/${retryConfig.maxRetries})`);
             await this.delay(delayMs);
             continue;
           }
@@ -117,7 +117,7 @@ class PromidataClient {
         // Network errors or other exceptions - retry with backoff
         if (attempt < retryConfig.maxRetries - 1) {
           const delayMs = this.calculateBackoffDelay(attempt, retryConfig.baseDelay, retryConfig.maxDelay);
-          console.warn(`[Promidata] Network error on ${url}: ${error.message}. Retrying in ${delayMs}ms (${attempt + 1}/${retryConfig.maxRetries})`);
+          strapi.log.warn(`[Promidata] Network error on ${url}: ${error.message}. Retrying in ${delayMs}ms (${attempt + 1}/${retryConfig.maxRetries})`);
           await this.delay(delayMs);
         }
       }
@@ -125,7 +125,7 @@ class PromidataClient {
 
     // All retries exhausted
     const errorMessage = `Failed after ${retryConfig.maxRetries} retries: ${lastError.message}`;
-    console.error(`[Promidata] ✗ ${errorMessage} for ${url}`);
+    strapi.log.error(`[Promidata] ✗ ${errorMessage} for ${url}`);
     throw new Error(errorMessage);
   }
 

@@ -44,7 +44,7 @@ class GroupingService {
       const aNumber = this.extractANumber(product);
 
       if (!aNumber) {
-        console.warn('[Grouping] Product missing a_number:', product.SKU || 'unknown');
+        strapi.log.warn('[Grouping] Product missing a_number:', product.SKU || 'unknown');
         continue;
       }
 
@@ -55,7 +55,7 @@ class GroupingService {
       grouped.get(aNumber)!.push(product);
     }
 
-    console.log(`[Grouping] Grouped ${products.length} products into ${grouped.size} families`);
+    strapi.log.info(`[Grouping] Grouped ${products.length} products into ${grouped.size} families`);
     return grouped;
   }
 
@@ -268,12 +268,12 @@ class GroupingService {
    */
   public validateFamilyGroup(group: ProductFamilyGroup): boolean {
     if (!group.aNumber) {
-      console.warn('[Grouping] Family group missing a_number');
+      strapi.log.warn('[Grouping] Family group missing a_number');
       return false;
     }
 
     if (group.variants.length === 0) {
-      console.warn(`[Grouping] Family ${group.aNumber} has no variants`);
+      strapi.log.warn(`[Grouping] Family ${group.aNumber} has no variants`);
       return false;
     }
 

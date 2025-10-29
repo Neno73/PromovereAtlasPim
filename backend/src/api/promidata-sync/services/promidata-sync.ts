@@ -17,10 +17,17 @@ import productTransformer from '../../../services/promidata/transformers/product
 import variantTransformer from '../../../services/promidata/transformers/variant-transformer';
 import productSyncService from '../../../services/promidata/sync/product-sync-service';
 import variantSyncService from '../../../services/promidata/sync/variant-sync-service';
-import hashService from '../../../services/promidata/sync/hash-service';
-import imageUploadService from '../../../services/promidata/media/image-upload-service';
 
 export default factories.createCoreService('api::promidata-sync.promidata-sync', ({ strapi }) => ({
+
+  /**
+   * Validate supplier documentId format
+   */
+  validateSupplierId(supplierId: string): void {
+    if (!supplierId || typeof supplierId !== 'string' || supplierId.trim().length === 0) {
+      throw new Error('Invalid supplier ID: must be a non-empty string');
+    }
+  },
 
   /**
    * Start sync for all suppliers or a specific supplier
@@ -28,6 +35,11 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
    */
   async startSync(supplierId?: string) {
     try {
+      // Validate supplierId if provided
+      if (supplierId) {
+        this.validateSupplierId(supplierId);
+      }
+
       strapi.log.info(`🚀 Starting sync${supplierId ? ` for supplier ${supplierId}` : ' for all suppliers'}`);
 
       let suppliers = [];
@@ -131,9 +143,11 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         };
       });
 
+      // Note: productSyncService expects numeric ID for database queries
+      const supplierId = typeof supplier.id === 'number' ? supplier.id : Number(supplier.id);
       const filterResult = await productSyncService.filterProductsNeedingSync(
         productFamilies,
-        supplier.id
+        supplierId
       );
 
       strapi.log.info(`✓ Efficiency: ${filterResult.efficiency.toFixed(1)}% (${filterResult.skipped} unchanged)`);
@@ -193,7 +207,9 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       const colorGroups = groupingService.groupByColor(variants);
 
       // Step 2: Transform and create/update Product (parent)
-      const productData = productTransformer.transform(aNumber, variants, supplier.id, productHash);
+      // Ensure numeric supplier ID for database operations
+      const supplierId = typeof supplier.id === 'number' ? supplier.id : Number(supplier.id);
+      const productData = productTransformer.transform(aNumber, variants, supplierId, productHash);
       const productResult = await productSyncService.createOrUpdate(productData);
 
       const productId = Number(productResult.productId);
@@ -242,18 +258,21 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       let updatedCount = 0;
 
       for (const categoryData of categories) {
-        const existing = await strapi.db.query('api::category.category').findOne({
-          where: { code: categoryData.code }
+        // Use Strapi 5 Document API instead of legacy query API
+        const existing = await strapi.documents('api::category.category').findMany({
+          filters: { code: categoryData.code },
+          limit: 1
         });
 
-        if (existing) {
-          await strapi.entityService.update('api::category.category' as any, existing.id, {
-            data: categoryData as any
+        if (existing && existing.length > 0) {
+          await strapi.documents('api::category.category').update({
+            documentId: existing[0].documentId,
+            data: categoryData
           });
           updatedCount++;
         } else {
-          await strapi.entityService.create('api::category.category' as any, {
-            data: categoryData as any
+          await strapi.documents('api::category.category').create({
+            data: categoryData
           });
           createdCount++;
         }

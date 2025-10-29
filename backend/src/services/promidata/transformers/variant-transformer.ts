@@ -411,17 +411,17 @@ class VariantTransformer {
    */
   public validate(data: ProductVariantData): boolean {
     if (!data.sku) {
-      console.error('[VariantTransformer] Missing SKU');
+      strapi.log.error('[VariantTransformer] Missing SKU');
       return false;
     }
 
     if (!data.name) {
-      console.error('[VariantTransformer] Missing name');
+      strapi.log.error('[VariantTransformer] Missing name');
       return false;
     }
 
     if (!data.product) {
-      console.error('[VariantTransformer] Missing product ID');
+      strapi.log.error('[VariantTransformer] Missing product ID');
       return false;
     }
 

@@ -27,10 +27,35 @@ class ImageUploadService {
   private r2Client: S3Client | null = null;
 
   /**
+   * Validate required R2 environment variables
+   */
+  private validateR2EnvVars(): void {
+    const required = [
+      'R2_ACCESS_KEY_ID',
+      'R2_SECRET_ACCESS_KEY',
+      'R2_BUCKET_NAME',
+      'R2_PUBLIC_URL',
+      'R2_ENDPOINT'
+    ];
+
+    const missing = required.filter(key => !process.env[key]);
+
+    if (missing.length > 0) {
+      throw new Error(
+        `Missing required R2 environment variables: ${missing.join(', ')}. ` +
+        `Please check your .env file.`
+      );
+    }
+  }
+
+  /**
    * Initialize R2 client (lazy loading)
    */
   private getR2Client(): S3Client {
     if (!this.r2Client) {
+      // Validate environment variables before creating client
+      this.validateR2EnvVars();
+
       this.r2Client = new S3Client({
         region: 'auto',
         endpoint: process.env.R2_ENDPOINT,
@@ -53,7 +78,7 @@ class ImageUploadService {
     fileName: string
   ): Promise<UploadResult> {
     try {
-      console.log(`[ImageUpload] Processing: ${fileName}`);
+      strapi.log.info(`[ImageUpload] Processing: ${fileName}`);
 
       // Extract extension from URL
       const extension = this.extractExtension(imageUrl);
@@ -84,7 +109,7 @@ class ImageUploadService {
 
       const publicUrl = `${process.env.R2_PUBLIC_URL}/${cleanFileName}`;
 
-      console.log(`[ImageUpload] ✓ Uploaded: ${cleanFileName} (ID: ${mediaId})`);
+      strapi.log.info(`[ImageUpload] ✓ Uploaded: ${cleanFileName} (ID: ${mediaId})`);
 
       return {
         success: true,
@@ -94,7 +119,7 @@ class ImageUploadService {
         wasDedup: false,
       };
     } catch (error) {
-      console.error(`[ImageUpload] ✗ Failed to upload ${fileName}:`, error.message);
+      strapi.log.error(`[ImageUpload] ✗ Failed to upload ${fileName}:`, error.message);
       return {
         success: false,
         fileName,
@@ -153,9 +178,9 @@ class ImageUploadService {
 
       await r2.send(new PutObjectCommand(uploadParams));
 
-      console.log(`[ImageUpload] ✓ Uploaded to R2: ${fileName}`);
+      strapi.log.info(`[ImageUpload] ✓ Uploaded to R2: ${fileName}`);
     } catch (error) {
-      console.error(`[ImageUpload] ✗ R2 upload failed for ${fileName}:`, error);
+      strapi.log.error(`[ImageUpload] ✗ R2 upload failed for ${fileName}:`, error);
       throw new Error(`R2 upload failed: ${error.message}`);
     }
   }
@@ -191,7 +216,7 @@ class ImageUploadService {
 
       return Number(uploadedFile.id);
     } catch (error) {
-      console.error(`[ImageUpload] ✗ Failed to create media record for ${fileName}:`, error);
+      strapi.log.error(`[ImageUpload] ✗ Failed to create media record for ${fileName}:`, error);
       throw new Error(`Media record creation failed: ${error.message}`);
     }
   }
@@ -220,7 +245,7 @@ class ImageUploadService {
     const successCount = results.filter(r => r.success).length;
     const dedupCount = results.filter(r => r.wasDedup).length;
 
-    console.log(`[ImageUpload] Batch complete: ${successCount}/${images.length} successful (${dedupCount} deduplicated)`);
+    strapi.log.info(`[ImageUpload] Batch complete: ${successCount}/${images.length} successful (${dedupCount} deduplicated)`);
 
     return results;
   }
@@ -249,17 +274,17 @@ class ImageUploadService {
       const mediaFile = await deduplicationService.getById(mediaId);
 
       if (!mediaFile) {
-        console.warn(`[ImageUpload] Media ${mediaId} not found`);
+        strapi.log.warn(`[ImageUpload] Media ${mediaId} not found`);
         return false;
       }
 
       // Delete from Strapi (this should also trigger R2 deletion via plugin)
       await deduplicationService.delete(mediaId);
 
-      console.log(`[ImageUpload] ✓ Deleted media ${mediaId}`);
+      strapi.log.info(`[ImageUpload] ✓ Deleted media ${mediaId}`);
       return true;
     } catch (error) {
-      console.error(`[ImageUpload] ✗ Failed to delete media ${mediaId}:`, error);
+      strapi.log.error(`[ImageUpload] ✗ Failed to delete media ${mediaId}:`, error);
       return false;
     }
   }

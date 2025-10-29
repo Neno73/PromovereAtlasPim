@@ -33,7 +33,7 @@ class ProductParser {
       const data = await promidataClient.fetchJSON<any>(productUrl);
       return this.normalizeProductData(data);
     } catch (error) {
-      console.error(`[ProductParser] Failed to fetch product from ${productUrl}:`, error);
+      strapi.log.error(`[ProductParser] Failed to fetch product from ${productUrl}:`, error);
       throw error;
     }
   }
@@ -187,7 +187,7 @@ class ProductParser {
           const data = await this.fetchAndParse(url);
           results.set(url, data);
         } catch (error) {
-          console.error(`[ProductParser] Failed to fetch ${url}:`, error.message);
+          strapi.log.error(`[ProductParser] Failed to fetch ${url}:`, error.message);
           // Continue with other products
         }
       });
@@ -195,7 +195,7 @@ class ProductParser {
       await Promise.all(promises);
     }
 
-    console.log(`[ProductParser] Fetched ${results.size}/${productUrls.length} products successfully`);
+    strapi.log.info(`[ProductParser] Fetched ${results.size}/${productUrls.length} products successfully`);
     return results;
   }
 

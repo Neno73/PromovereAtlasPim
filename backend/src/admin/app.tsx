@@ -23,5 +23,19 @@ export default {
         return mod.default;
       },
     });
+
+    // Add queue management page
+    app.addMenuLink({
+      to: "/queue-management",
+      icon: "layer",
+      intlLabel: {
+        id: "queue-management.plugin.name",
+        defaultMessage: "Queue Management",
+      },
+      Component: async () => {
+        const mod = await import("./pages/QueueManagement");
+        return mod.default;
+      },
+    });
   },
 };

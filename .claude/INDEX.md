@@ -36,6 +36,10 @@ This directory contains detailed documentation for the PromoAtlas PIM system. Al
 - Read when: Planning enhancements, prioritizing work, understanding technical debt
 - Contains: Detailed improvement suggestions for sync plugin and system, with code examples and implementation roadmap
 
+**QUICK_WINS_IMPLEMENTED.md** - Recently implemented improvements (2025-10-29)
+- Read when: Testing new improvements, understanding what changed, troubleshooting new features
+- Contains: Retry mechanism, batch hash checking, health check endpoints - full implementation guide with testing instructions
+
 ## Reference Documentation
 
 **reference/** - Supplementary detailed guides

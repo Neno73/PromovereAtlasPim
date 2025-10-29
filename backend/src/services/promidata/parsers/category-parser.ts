@@ -47,10 +47,10 @@ class CategoryParser {
         }
       }
 
-      console.log(`[CategoryParser] Parsed ${categories.length} categories`);
+      strapi.log.info(`[CategoryParser] Parsed ${categories.length} categories`);
       return categories;
     } catch (error) {
-      console.error('[CategoryParser] Failed to parse categories:', error);
+      strapi.log.error('[CategoryParser] Failed to parse categories:', error);
       throw error;
     }
   }

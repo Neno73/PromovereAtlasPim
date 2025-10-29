@@ -30,7 +30,7 @@ class VariantSyncService {
 
       return variant;
     } catch (error) {
-      console.error(`[VariantSync] Error finding variant ${sku}:`, error);
+      strapi.log.error(`[VariantSync] Error finding variant ${sku}:`, error);
       return null;
     }
   }
@@ -40,7 +40,7 @@ class VariantSyncService {
    */
   public async create(variantData: ProductVariantData): Promise<VariantSyncResult> {
     try {
-      console.log(`[VariantSync] Creating variant ${variantData.sku}`);
+      strapi.log.info(`[VariantSync] Creating variant ${variantData.sku}`);
 
       const created = await strapi.entityService.create('api::product-variant.product-variant' as any, {
         data: variantData as any,
@@ -52,7 +52,7 @@ class VariantSyncService {
         updated: false,
       };
     } catch (error) {
-      console.error(`[VariantSync] Error creating variant ${variantData.sku}:`, error);
+      strapi.log.error(`[VariantSync] Error creating variant ${variantData.sku}:`, error);
       throw error;
     }
   }
@@ -65,7 +65,7 @@ class VariantSyncService {
     variantData: Partial<ProductVariantData>
   ): Promise<VariantSyncResult> {
     try {
-      console.log(`[VariantSync] Updating variant ${variantId}`);
+      strapi.log.info(`[VariantSync] Updating variant ${variantId}`);
 
       await strapi.entityService.update('api::product-variant.product-variant' as any, variantId, {
         data: variantData as any,
@@ -77,7 +77,7 @@ class VariantSyncService {
         updated: true,
       };
     } catch (error) {
-      console.error(`[VariantSync] Error updating variant ${variantId}:`, error);
+      strapi.log.error(`[VariantSync] Error updating variant ${variantId}:`, error);
       throw error;
     }
   }
@@ -106,7 +106,7 @@ class VariantSyncService {
         orderBy: { color: 'asc', size: 'asc' },
       });
     } catch (error) {
-      console.error(`[VariantSync] Error finding variants for product ${productId}:`, error);
+      strapi.log.error(`[VariantSync] Error finding variants for product ${productId}:`, error);
       return [];
     }
   }
@@ -125,7 +125,7 @@ class VariantSyncService {
         orderBy: { color: 'asc' },
       });
     } catch (error) {
-      console.error(`[VariantSync] Error finding primary variants for product ${productId}:`, error);
+      strapi.log.error(`[VariantSync] Error finding primary variants for product ${productId}:`, error);
       return [];
     }
   }
@@ -143,7 +143,7 @@ class VariantSyncService {
         orderBy: { size: 'asc' },
       });
     } catch (error) {
-      console.error(`[VariantSync] Error finding variants for color ${color}:`, error);
+      strapi.log.error(`[VariantSync] Error finding variants for color ${color}:`, error);
       return [];
     }
   }
@@ -170,9 +170,9 @@ class VariantSyncService {
       // Set this variant as primary
       await this.update(variantId, { is_primary_for_color: true });
 
-      console.log(`[VariantSync] Set variant ${variantId} as primary for color ${color}`);
+      strapi.log.info(`[VariantSync] Set variant ${variantId} as primary for color ${color}`);
     } catch (error) {
-      console.error(`[VariantSync] Error setting primary variant:`, error);
+      strapi.log.error(`[VariantSync] Error setting primary variant:`, error);
       throw error;
     }
   }
@@ -182,11 +182,11 @@ class VariantSyncService {
    */
   public async delete(variantId: number): Promise<boolean> {
     try {
-      console.log(`[VariantSync] Deleting variant ${variantId}`);
+      strapi.log.info(`[VariantSync] Deleting variant ${variantId}`);
       await strapi.entityService.delete('api::product-variant.product-variant' as any, variantId);
       return true;
     } catch (error) {
-      console.error(`[VariantSync] Error deleting variant ${variantId}:`, error);
+      strapi.log.error(`[VariantSync] Error deleting variant ${variantId}:`, error);
       return false;
     }
   }
@@ -204,10 +204,10 @@ class VariantSyncService {
         if (success) deletedCount++;
       }
 
-      console.log(`[VariantSync] Deleted ${deletedCount}/${variants.length} variants for product ${productId}`);
+      strapi.log.info(`[VariantSync] Deleted ${deletedCount}/${variants.length} variants for product ${productId}`);
       return deletedCount;
     } catch (error) {
-      console.error(`[VariantSync] Error deleting variants for product ${productId}:`, error);
+      strapi.log.error(`[VariantSync] Error deleting variants for product ${productId}:`, error);
       return 0;
     }
   }
@@ -221,7 +221,7 @@ class VariantSyncService {
         where: { product: productId },
       });
     } catch (error) {
-      console.error(`[VariantSync] Error counting variants for product ${productId}:`, error);
+      strapi.log.error(`[VariantSync] Error counting variants for product ${productId}:`, error);
       return 0;
     }
   }
@@ -235,7 +235,7 @@ class VariantSyncService {
         populate: ['product', 'primary_image', 'gallery_images'],
       });
     } catch (error) {
-      console.error(`[VariantSync] Error finding variant ${variantId}:`, error);
+      strapi.log.error(`[VariantSync] Error finding variant ${variantId}:`, error);
       return null;
     }
   }
@@ -289,7 +289,7 @@ class VariantSyncService {
 
       return false;
     } catch (error) {
-      console.error(`[VariantSync] Error updating images for variant ${variantId}:`, error);
+      strapi.log.error(`[VariantSync] Error updating images for variant ${variantId}:`, error);
       return false;
     }
   }

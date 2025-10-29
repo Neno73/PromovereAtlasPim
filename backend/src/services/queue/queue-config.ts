@@ -4,6 +4,28 @@
  */
 
 import { QueueOptions, WorkerOptions } from 'bullmq';
+import { randomUUID } from 'crypto';
+
+/**
+ * Validate required Redis environment variables
+ */
+const validateRedisEnvVars = (): void => {
+  if (!process.env.REDIS_URL) {
+    throw new Error(
+      'Missing required REDIS_URL environment variable. ' +
+      'Please check your .env file and ensure Redis is configured.'
+    );
+  }
+
+  // Validate URL format (should be redis:// or rediss://)
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl.startsWith('redis://') && !redisUrl.startsWith('rediss://')) {
+    throw new Error(
+      'Invalid REDIS_URL format. Must start with redis:// or rediss://. ' +
+      'Use rediss:// for TLS-encrypted connections.'
+    );
+  }
+};
 
 /**
  * Get environment variables with fallback defaults
@@ -17,12 +39,19 @@ const getEnvNumber = (key: string, defaultValue: number): number => {
  * Redis Connection Configuration
  * Shared across all queues and workers
  */
-export const redisConnection = {
-  url: process.env.REDIS_URL,
-  maxRetriesPerRequest: null, // Required for BullMQ
-  enableReadyCheck: false,
-  // TLS is handled automatically by rediss:// protocol
+const createRedisConnection = () => {
+  // Validate environment variables before creating connection
+  validateRedisEnvVars();
+
+  return {
+    url: process.env.REDIS_URL,
+    maxRetriesPerRequest: null, // Required for BullMQ
+    enableReadyCheck: false,
+    // TLS is handled automatically by rediss:// protocol
+  };
 };
+
+export const redisConnection = createRedisConnection();
 
 /**
  * Default Queue Options
@@ -137,10 +166,11 @@ export const imageUploadJobOptions = {
 
 /**
  * Job ID Generator
- * Creates unique, sortable job IDs
+ * Creates unique, sortable job IDs with UUID to prevent collisions
  */
 export const generateJobId = (prefix: string, ...parts: (string | number)[]): string => {
   const timestamp = Date.now();
+  const uuid = randomUUID().substring(0, 8); // Short UUID for uniqueness
   const partsStr = parts.join('-');
-  return `${prefix}-${timestamp}-${partsStr}`;
+  return `${prefix}-${timestamp}-${uuid}-${partsStr}`;
 };

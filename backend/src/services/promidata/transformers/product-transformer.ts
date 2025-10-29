@@ -371,17 +371,17 @@ class ProductTransformer {
    */
   public validate(data: ProductData): boolean {
     if (!data.sku) {
-      console.error('[ProductTransformer] Missing SKU');
+      strapi.log.error('[ProductTransformer] Missing SKU');
       return false;
     }
 
     if (!data.a_number) {
-      console.error('[ProductTransformer] Missing a_number');
+      strapi.log.error('[ProductTransformer] Missing a_number');
       return false;
     }
 
     if (!data.name || Object.keys(data.name).length === 0) {
-      console.error('[ProductTransformer] Missing name');
+      strapi.log.error('[ProductTransformer] Missing name');
       return false;
     }
 

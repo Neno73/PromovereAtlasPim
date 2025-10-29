@@ -48,7 +48,7 @@ class ProductSyncService {
 
       return product;
     } catch (error) {
-      console.error(`[ProductSync] Error finding product ${aNumber}:`, error);
+      strapi.log.error(`[ProductSync] Error finding product ${aNumber}:`, error);
       return null;
     }
   }
@@ -58,7 +58,7 @@ class ProductSyncService {
    */
   public async create(productData: ProductData): Promise<ProductSyncResult> {
     try {
-      console.log(`[ProductSync] Creating product ${productData.a_number}`);
+      strapi.log.info(`[ProductSync] Creating product ${productData.a_number}`);
 
       const created = await strapi.entityService.create('api::product.product', {
         data: productData as any,
@@ -70,7 +70,7 @@ class ProductSyncService {
         updated: false,
       };
     } catch (error) {
-      console.error(`[ProductSync] Error creating product ${productData.a_number}:`, error);
+      strapi.log.error(`[ProductSync] Error creating product ${productData.a_number}:`, error);
       throw error;
     }
   }
@@ -83,7 +83,7 @@ class ProductSyncService {
     productData: Partial<ProductData>
   ): Promise<ProductSyncResult> {
     try {
-      console.log(`[ProductSync] Updating product ${productId}`);
+      strapi.log.info(`[ProductSync] Updating product ${productId}`);
 
       await strapi.entityService.update('api::product.product', productId, {
         data: productData as any,
@@ -95,7 +95,7 @@ class ProductSyncService {
         updated: true,
       };
     } catch (error) {
-      console.error(`[ProductSync] Error updating product ${productId}:`, error);
+      strapi.log.error(`[ProductSync] Error updating product ${productId}:`, error);
       throw error;
     }
   }
@@ -121,7 +121,7 @@ class ProductSyncService {
       if (needsUpdate) {
         return await this.update(existing.id, productData);
       } else {
-        console.log(`[ProductSync] Product ${productData.a_number} unchanged, skipping`);
+        strapi.log.info(`[ProductSync] Product ${productData.a_number} unchanged, skipping`);
         return {
           productId: existing.id,
           isNew: false,
@@ -142,7 +142,7 @@ class ProductSyncService {
     supplierId: number
   ): Promise<Map<string, BatchHashCheckResult>> {
     try {
-      console.log(`[ProductSync] 🚀 Performing batch hash check for ${aNumbers.length} products...`);
+      strapi.log.info(`[ProductSync] 🚀 Performing batch hash check for ${aNumbers.length} products...`);
 
       // Single batch query
       const existingProducts = await strapi.db.query('api::product.product').findMany({
@@ -153,7 +153,7 @@ class ProductSyncService {
         select: ['id', 'a_number', 'promidata_hash'],
       });
 
-      console.log(`[ProductSync] Found ${existingProducts.length} existing products`);
+      strapi.log.info(`[ProductSync] Found ${existingProducts.length} existing products`);
 
       // Create result map
       const resultMap = new Map<string, BatchHashCheckResult>();
@@ -182,7 +182,7 @@ class ProductSyncService {
 
       return resultMap;
     } catch (error) {
-      console.error('[ProductSync] Batch hash check failed:', error);
+      strapi.log.error('[ProductSync] Batch hash check failed:', error);
       throw error;
     }
   }
@@ -228,8 +228,8 @@ class ProductSyncService {
       ? (skipped / productFamilies.length) * 100
       : 0;
 
-    console.log(`[ProductSync] ✓ Skipping ${skipped} unchanged products (${efficiency.toFixed(1)}% efficiency)`);
-    console.log(`[ProductSync] ⚡ Processing ${needsSync.length} new/changed products`);
+    strapi.log.info(`[ProductSync] ✓ Skipping ${skipped} unchanged products (${efficiency.toFixed(1)}% efficiency)`);
+    strapi.log.info(`[ProductSync] ⚡ Processing ${needsSync.length} new/changed products`);
 
     return {
       needsSync,
@@ -247,7 +247,7 @@ class ProductSyncService {
         populate: ['supplier'], // Note: 'variants' relation will be available after ProductVariant schema is created
       });
     } catch (error) {
-      console.error(`[ProductSync] Error finding product ${productId}:`, error);
+      strapi.log.error(`[ProductSync] Error finding product ${productId}:`, error);
       return null;
     }
   }
@@ -257,11 +257,11 @@ class ProductSyncService {
    */
   public async delete(productId: number): Promise<boolean> {
     try {
-      console.log(`[ProductSync] Deleting product ${productId}`);
+      strapi.log.info(`[ProductSync] Deleting product ${productId}`);
       await strapi.entityService.delete('api::product.product', productId);
       return true;
     } catch (error) {
-      console.error(`[ProductSync] Error deleting product ${productId}:`, error);
+      strapi.log.error(`[ProductSync] Error deleting product ${productId}:`, error);
       return false;
     }
   }
@@ -282,7 +282,7 @@ class ProductSyncService {
         orderBy: { createdAt: 'desc' },
       });
     } catch (error) {
-      console.error(`[ProductSync] Error finding products for supplier ${supplierId}:`, error);
+      strapi.log.error(`[ProductSync] Error finding products for supplier ${supplierId}:`, error);
       return [];
     }
   }
@@ -296,7 +296,7 @@ class ProductSyncService {
         where: { supplier: supplierId },
       });
     } catch (error) {
-      console.error(`[ProductSync] Error counting products for supplier ${supplierId}:`, error);
+      strapi.log.error(`[ProductSync] Error counting products for supplier ${supplierId}:`, error);
       return 0;
     }
   }

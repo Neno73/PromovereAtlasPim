@@ -29,11 +29,37 @@ class QueueService {
   private supplierSyncQueue: Queue<SupplierSyncJobData> | null = null;
   private productFamilyQueue: Queue<ProductFamilyJobData> | null = null;
   private imageUploadQueue: Queue<ImageUploadJobData> | null = null;
+  private initialized: boolean = false;
+
+  /**
+   * Check if queue service is initialized
+   */
+  public get isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * Ensure queue service is initialized
+   * @throws Error if not initialized
+   */
+  private ensureInitialized(): void {
+    if (!this.initialized) {
+      throw new Error(
+        'Queue service not initialized. Please ensure workers are started during bootstrap. ' +
+        'Check Redis connection and initialization logs.'
+      );
+    }
+  }
 
   /**
    * Initialize all queues
    */
   public async initialize(): Promise<void> {
+    if (this.initialized) {
+      strapi.log.warn('Queue service already initialized, skipping...');
+      return;
+    }
+
     strapi.log.info('🚀 Initializing queue service...');
 
     this.supplierSyncQueue = new Queue<SupplierSyncJobData>(
@@ -51,6 +77,7 @@ class QueueService {
       defaultQueueOptions
     );
 
+    this.initialized = true;
     strapi.log.info('✅ Queue service initialized');
   }
 
@@ -63,9 +90,7 @@ class QueueService {
     supplierNumericId: number,
     manual: boolean = true
   ): Promise<Job<SupplierSyncJobData>> {
-    if (!this.supplierSyncQueue) {
-      throw new Error('Queue service not initialized');
-    }
+    this.ensureInitialized();
 
     const jobId = generateJobId('supplier-sync', supplierCode);
     const jobData: SupplierSyncJobData = {
@@ -92,6 +117,7 @@ class QueueService {
     queueName: 'supplier-sync' | 'product-family' | 'image-upload',
     jobId: string
   ): Promise<Job | undefined> {
+    this.ensureInitialized();
     const queue = this.getQueue(queueName);
     return await queue.getJob(jobId);
   }
@@ -100,6 +126,7 @@ class QueueService {
    * Get queue statistics
    */
   public async getQueueStats(queueName: 'supplier-sync' | 'product-family' | 'image-upload') {
+    this.ensureInitialized();
     const queue = this.getQueue(queueName);
 
     const [waiting, active, completed, failed, delayed] = await Promise.all([
@@ -125,6 +152,7 @@ class QueueService {
    * Get all queue statistics
    */
   public async getAllStats() {
+    this.ensureInitialized();
     const [supplierSync, productFamily, imageUpload] = await Promise.all([
       this.getQueueStats('supplier-sync'),
       this.getQueueStats('product-family'),
@@ -142,6 +170,11 @@ class QueueService {
    * Close all queues
    */
   public async close(): Promise<void> {
+    if (!this.initialized) {
+      strapi.log.warn('Queue service not initialized, nothing to close');
+      return;
+    }
+
     strapi.log.info('🛑 Closing all queues...');
 
     const queues = [
@@ -157,6 +190,7 @@ class QueueService {
     this.supplierSyncQueue = null;
     this.productFamilyQueue = null;
     this.imageUploadQueue = null;
+    this.initialized = false;
 
     strapi.log.info('✅ All queues closed');
   }

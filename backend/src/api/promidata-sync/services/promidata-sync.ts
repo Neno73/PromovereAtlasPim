@@ -93,17 +93,29 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
   },
 
   /**
+   * Validate and convert supplier ID to numeric type
+   */
+  validateSupplierNumericId(supplier: any): number {
+    const supplierNumericId = typeof supplier.id === 'number' ? supplier.id : parseInt(supplier.id, 10);
+
+    if (isNaN(supplierNumericId)) {
+      throw new Error(`Invalid supplier numeric ID for ${supplier.code}: ${supplier.id}`);
+    }
+
+    return supplierNumericId;
+  },
+
+  /**
    * Start sync using queue-based processing (recommended)
    * Enqueues supplier sync jobs to be processed by workers
    */
   async startSyncQueued(suppliers: any[]) {
     try {
-      const jobs = [];
-
-      for (const supplier of suppliers) {
+      // Enqueue all suppliers in parallel for better performance
+      const enqueuePromises = suppliers.map(async (supplier) => {
         try {
-          // Ensure numeric ID for database operations
-          const supplierNumericId = typeof supplier.id === 'number' ? supplier.id : Number(supplier.id);
+          // Validate and convert supplier numeric ID
+          const supplierNumericId = this.validateSupplierNumericId(supplier);
 
           // Enqueue supplier sync job
           const job = await queueService.enqueueSupplierSync(
@@ -113,31 +125,39 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
             true // manual sync
           );
 
-          jobs.push({
+          strapi.log.info(`✅ Enqueued sync job for ${supplier.code}: ${job.id}`);
+
+          return {
             supplier: supplier.code,
             jobId: job.id,
             queueName: 'supplier-sync',
-            status: 'enqueued'
-          });
-
-          strapi.log.info(`✅ Enqueued sync job for ${supplier.code}: ${job.id}`);
+            status: 'enqueued',
+            success: true
+          };
 
         } catch (error) {
           strapi.log.error(`Failed to enqueue sync for ${supplier.code}:`, error);
-          jobs.push({
+          return {
             supplier: supplier.code,
+            status: 'failed',
             success: false,
             error: error.message
-          });
+          };
         }
-      }
+      });
+
+      const jobs = await Promise.all(enqueuePromises);
+      const successCount = jobs.filter(j => j.success).length;
+      const failureCount = jobs.filter(j => !j.success).length;
 
       return {
         success: true,
         mode: 'queued',
-        suppliersEnqueued: suppliers.length,
+        suppliersTotal: suppliers.length,
+        suppliersEnqueued: successCount,
+        suppliersFailed: failureCount,
         jobs,
-        message: 'Sync jobs enqueued. Use getJobStatus() to track progress.'
+        message: `${successCount}/${suppliers.length} sync jobs enqueued. Use getJobStatus() to track progress.`
       };
 
     } catch (error) {
@@ -157,7 +177,10 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       for (const supplier of suppliers) {
         try {
           const result = await this.syncSupplierDirect(supplier);
-          results.push(result);
+          results.push({
+            ...result,
+            success: true
+          });
         } catch (error) {
           strapi.log.error(`Failed to sync supplier ${supplier.code}:`, error);
           results.push({
@@ -168,11 +191,17 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         }
       }
 
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.filter(r => !r.success).length;
+
       return {
         success: true,
         mode: 'direct',
-        suppliersProcessed: suppliers.length,
-        results
+        suppliersTotal: suppliers.length,
+        suppliersProcessed: successCount,
+        suppliersFailed: failureCount,
+        results,
+        message: `${successCount}/${suppliers.length} suppliers processed successfully.`
       };
 
     } catch (error) {
@@ -227,7 +256,7 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       });
 
       // Note: productSyncService expects numeric ID for database queries
-      const supplierId = typeof supplier.id === 'number' ? supplier.id : Number(supplier.id);
+      const supplierId = this.validateSupplierNumericId(supplier);
       const filterResult = await productSyncService.filterProductsNeedingSync(
         productFamilies,
         supplierId
@@ -291,7 +320,7 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
 
       // Step 2: Transform and create/update Product (parent)
       // Ensure numeric supplier ID for database operations
-      const supplierId = typeof supplier.id === 'number' ? supplier.id : Number(supplier.id);
+      const supplierId = this.validateSupplierNumericId(supplier);
       const productData = productTransformer.transform(aNumber, variants, supplierId, productHash);
       const productResult = await productSyncService.createOrUpdate(productData);
 

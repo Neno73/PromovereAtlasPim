@@ -86,6 +86,17 @@ class QueueService {
   }
 
   /**
+   * Get job by ID
+   */
+  public async getJob(
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload',
+    jobId: string
+  ): Promise<Job | undefined> {
+    const queue = this.getQueue(queueName);
+    return await queue.getJob(jobId);
+  }
+
+  /**
    * Get queue statistics
    */
   public async getQueueStats(queueName: 'supplier-sync' | 'product-family' | 'image-upload') {
@@ -107,6 +118,23 @@ class QueueService {
       failed,
       delayed,
       total: waiting + active + completed + failed + delayed
+    };
+  }
+
+  /**
+   * Get all queue statistics
+   */
+  public async getAllStats() {
+    const [supplierSync, productFamily, imageUpload] = await Promise.all([
+      this.getQueueStats('supplier-sync'),
+      this.getQueueStats('product-family'),
+      this.getQueueStats('image-upload')
+    ]);
+
+    return {
+      supplierSync,
+      productFamily,
+      imageUpload
     };
   }
 

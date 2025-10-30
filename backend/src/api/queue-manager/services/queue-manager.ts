@@ -32,6 +32,39 @@ type JobState = 'waiting' | 'active' | 'completed' | 'failed' | 'delayed';
 type QueueName = 'supplier-sync' | 'product-family' | 'image-upload';
 
 /**
+ * Simple in-memory cache for queue stats
+ * Reduces Redis load by caching stats for 3 seconds
+ */
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number; // Time to live in milliseconds
+}
+
+const statsCache = new Map<string, CacheEntry<any>>();
+
+/**
+ * Get cached data or execute function and cache result
+ */
+function getCached<T>(
+  key: string,
+  fn: () => Promise<T>,
+  ttl: number = 3000
+): Promise<T> {
+  const cached = statsCache.get(key);
+  const now = Date.now();
+
+  if (cached && now - cached.timestamp < cached.ttl) {
+    return Promise.resolve(cached.data);
+  }
+
+  return fn().then(data => {
+    statsCache.set(key, { data, timestamp: now, ttl });
+    return data;
+  });
+}
+
+/**
  * Queue Manager Service
  * Note: Not using factories.createCoreService to avoid TypeScript issues with singleType
  */
@@ -39,14 +72,19 @@ export default () => ({
 
   /**
    * Get statistics for all queues or a specific queue
+   * Cached for 3 seconds to reduce Redis load
    */
   async getQueueStats(queueName?: QueueName) {
     try {
-      if (queueName) {
-        return await queueService.getQueueStats(queueName);
-      } else {
-        return await queueService.getAllStats();
-      }
+      const cacheKey = queueName ? `stats:${queueName}` : 'stats:all';
+
+      return await getCached(cacheKey, async () => {
+        if (queueName) {
+          return await queueService.getQueueStats(queueName);
+        } else {
+          return await queueService.getAllStats();
+        }
+      });
     } catch (error) {
       strapi.log.error('Failed to get queue stats:', error);
       throw error;

@@ -3,7 +3,7 @@
  * Main page for monitoring and managing BullMQ queues
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Flex,
@@ -32,6 +32,9 @@ const QueueManagement: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+
+  // Debounce timer ref for rate limiting
+  const fetchJobsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch queue stats
   const fetchStats = async () => {
@@ -66,6 +69,19 @@ const QueueManagement: React.FC = () => {
     }
   };
 
+  // Debounced version of fetchJobs to prevent rapid successive calls
+  const debouncedFetchJobs = useCallback(() => {
+    // Clear existing timeout
+    if (fetchJobsTimeoutRef.current) {
+      clearTimeout(fetchJobsTimeoutRef.current);
+    }
+
+    // Set new timeout (500ms debounce)
+    fetchJobsTimeoutRef.current = setTimeout(() => {
+      fetchJobs();
+    }, 500);
+  }, [selectedQueue, selectedState]);
+
   // Initial load
   useEffect(() => {
     fetchStats();
@@ -94,10 +110,17 @@ const QueueManagement: React.FC = () => {
     return () => clearInterval(interval);
   }, [autoRefresh, selectedQueue, selectedState]);
 
-  // Refresh jobs when queue or state changes
+  // Refresh jobs when queue or state changes (debounced to prevent rapid calls)
   useEffect(() => {
-    fetchJobs();
-  }, [selectedQueue, selectedState]);
+    debouncedFetchJobs();
+
+    // Cleanup timeout on unmount
+    return () => {
+      if (fetchJobsTimeoutRef.current) {
+        clearTimeout(fetchJobsTimeoutRef.current);
+      }
+    };
+  }, [selectedQueue, selectedState, debouncedFetchJobs]);
 
   // Handle pause queue
   const handlePauseQueue = async (queueName: string) => {

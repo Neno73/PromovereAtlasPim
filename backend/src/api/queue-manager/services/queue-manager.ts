@@ -126,9 +126,20 @@ export default () => ({
       }
 
       // Format jobs for response
-      const formattedJobs = await Promise.all(
-        jobs.map(async (job) => this.formatJobForList(job))
-      );
+      // Optimize: Batch get all job states instead of N individual calls
+      const states = await Promise.all(jobs.map(job => job.getState()));
+      const formattedJobs = jobs.map((job, index) => ({
+        id: job.id,
+        name: job.name,
+        state: states[index],
+        data: job.data,
+        progress: job.progress,
+        failedReason: job.failedReason,
+        attemptsMade: job.attemptsMade,
+        timestamp: job.timestamp,
+        processedOn: job.processedOn,
+        finishedOn: job.finishedOn
+      }));
 
       return {
         jobs: formattedJobs,
@@ -380,26 +391,6 @@ export default () => ({
     // Access private method via type assertion
     const queueServiceAny = queueService as any;
     return queueServiceAny.getQueue(queueName);
-  },
-
-  /**
-   * Format job for list response (helper method)
-   */
-  async formatJobForList(job: Job) {
-    const state = await job.getState();
-
-    return {
-      id: job.id,
-      name: job.name,
-      state,
-      data: job.data,
-      progress: job.progress,
-      failedReason: job.failedReason,
-      attemptsMade: job.attemptsMade,
-      timestamp: job.timestamp,
-      processedOn: job.processedOn,
-      finishedOn: job.finishedOn
-    };
   }
 
 });

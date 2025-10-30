@@ -40,6 +40,19 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, isOpen, onClose 
     return variants[state] || 'neutral';
   };
 
+  /**
+   * Truncate JSON string to prevent browser crashes with large payloads
+   * @param obj - Object to stringify
+   * @param maxLength - Maximum string length (default: 10000 chars)
+   */
+  const truncateJsonString = (obj: any, maxLength = 10000): string => {
+    const str = JSON.stringify(obj, null, 2);
+    if (str.length > maxLength) {
+      return str.substring(0, maxLength) + '\n\n... (truncated - payload too large)';
+    }
+    return str;
+  };
+
   return (
     <Modal.Root open={isOpen} onOpenChange={onClose}>
       <Modal.Content>
@@ -144,7 +157,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, isOpen, onClose 
                 style={{ overflow: 'auto', maxHeight: '200px' }}
               >
                 <pre style={{ margin: 0, fontSize: '12px' }}>
-                  {JSON.stringify(job.data, null, 2)}
+                  {truncateJsonString(job.data)}
                 </pre>
               </Box>
             </Box>
@@ -165,7 +178,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, isOpen, onClose 
                     style={{ overflow: 'auto', maxHeight: '200px' }}
                   >
                     <pre style={{ margin: 0, fontSize: '12px' }}>
-                      {JSON.stringify(job.returnvalue, null, 2)}
+                      {truncateJsonString(job.returnvalue)}
                     </pre>
                   </Box>
                 </Box>

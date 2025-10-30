@@ -1,0 +1,15 @@
+{
+  "kind": "singleType",
+  "collectionName": "queue_manager",
+  "info": {
+    "singularName": "queue-manager",
+    "pluralName": "queue-managers",
+    "displayName": "Queue Manager",
+    "description": "Queue management and monitoring service"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {}
+}

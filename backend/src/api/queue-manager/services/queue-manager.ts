@@ -176,8 +176,7 @@ export default () => ({
         finishedOn: job.finishedOn,
         opts: {
           attempts: job.opts.attempts,
-          delay: job.opts.delay,
-          timeout: job.opts.jobId
+          delay: job.opts.delay
         }
       };
     } catch (error) {

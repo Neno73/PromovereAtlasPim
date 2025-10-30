@@ -12,7 +12,9 @@ import {
   Button,
   SingleSelect,
   SingleSelectOption,
+  TextInput,
 } from '@strapi/design-system';
+import { Search } from '@strapi/icons';
 import { Page, Layouts, useNotification } from '@strapi/strapi/admin';
 import QueueCard from './QueueCard';
 import JobsTable from './JobsTable';
@@ -33,6 +35,15 @@ const QueueManagement: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalJobs, setTotalJobs] = useState(0);
+  const [pageSize] = useState(25);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Debounce timer ref for rate limiting
   const fetchJobsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -50,14 +61,24 @@ const QueueManagement: React.FC = () => {
     }
   };
 
-  // Fetch jobs for selected queue and state
+  // Fetch jobs for selected queue and state (with backend search)
   const fetchJobs = async () => {
     if (!selectedQueue) return;
 
     setLoading(true);
     try {
-      const jobList = await queueAPI.listJobs(selectedQueue, selectedState, 1, 25);
+      // Pass search query to backend (no client-side filtering needed)
+      const jobList = await queueAPI.listJobs(
+        selectedQueue,
+        selectedState,
+        currentPage,
+        pageSize,
+        searchQuery || undefined
+      );
+
       setJobs(jobList.jobs);
+      setTotalPages(jobList.totalPages);
+      setTotalJobs(jobList.total);
     } catch (error) {
       console.error('Failed to fetch jobs:', error);
       toggleNotification({
@@ -110,7 +131,12 @@ const QueueManagement: React.FC = () => {
     return () => clearInterval(interval);
   }, [autoRefresh, selectedQueue, selectedState]);
 
-  // Refresh jobs when queue or state changes (debounced to prevent rapid calls)
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedQueue, selectedState, searchQuery]);
+
+  // Refresh jobs when queue, state, page, or search changes (debounced to prevent rapid calls)
   useEffect(() => {
     debouncedFetchJobs();
 
@@ -120,7 +146,7 @@ const QueueManagement: React.FC = () => {
         clearTimeout(fetchJobsTimeoutRef.current);
       }
     };
-  }, [selectedQueue, selectedState, debouncedFetchJobs]);
+  }, [selectedQueue, selectedState, currentPage, searchQuery, debouncedFetchJobs]);
 
   // Handle pause queue
   const handlePauseQueue = async (queueName: string) => {
@@ -327,8 +353,19 @@ const QueueManagement: React.FC = () => {
         {/* Jobs Section */}
         <Box paddingBottom={4}>
           <Flex justifyContent="space-between" alignItems="center" paddingBottom={4}>
-            <Typography variant="delta">Jobs</Typography>
+            <Typography variant="delta">
+              Jobs {totalJobs > 0 && `(${totalJobs} total)`}
+            </Typography>
             <Flex gap={2}>
+              <TextInput
+                placeholder="Search jobs..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                startAction={<Search />}
+                size="S"
+                style={{ minWidth: '200px' }}
+              />
+
               <SingleSelect
                 label="Queue"
                 value={selectedQueue}
@@ -363,6 +400,33 @@ const QueueManagement: React.FC = () => {
             onDeleteJob={handleDeleteJob}
             loading={loading}
           />
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <Flex justifyContent="center" alignItems="center" gap={2} paddingTop={4}>
+              <Button
+                variant="secondary"
+                size="S"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1 || loading}
+              >
+                Previous
+              </Button>
+
+              <Typography variant="pi">
+                Page {currentPage} of {totalPages}
+              </Typography>
+
+              <Button
+                variant="secondary"
+                size="S"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages || loading}
+              >
+                Next
+              </Button>
+            </Flex>
+          )}
         </Box>
       </Layouts.Content>
 

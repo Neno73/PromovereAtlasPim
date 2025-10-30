@@ -5,6 +5,10 @@
  * Cron schedule format: https://github.com/node-cron/node-cron#cron-syntax
  */
 
+// Throttling for health check error logging
+let lastHealthErrorLog = 0;
+const HEALTH_ERROR_LOG_THROTTLE = 300000; // 5 minutes
+
 export default {
   /**
    * Nightly supplier synchronization
@@ -18,12 +22,11 @@ export default {
       strapi.log.info('[CRON] Starting nightly supplier synchronization');
 
       try {
-        const queueService = strapi.service('plugin::queue.queue-service') ||
-                           strapi.service('api::queue.queue-service') ||
-                           strapi.services['queue.queue-service'];
+        // Explicit service discovery with validation
+        const queueService = strapi.service('api::queue.queue-service');
 
-        if (!queueService) {
-          strapi.log.error('[CRON] Queue service not found');
+        if (!queueService || typeof queueService.addSupplierSyncJob !== 'function') {
+          strapi.log.error('[CRON] Queue service not properly configured or addSupplierSyncJob method missing');
           return;
         }
 
@@ -68,8 +71,8 @@ export default {
       try {
         const queueManager = strapi.service('api::queue-manager.queue-manager');
 
-        if (!queueManager) {
-          strapi.log.error('[CRON] Queue manager service not found');
+        if (!queueManager || typeof queueManager.cleanQueue !== 'function') {
+          strapi.log.error('[CRON] Queue manager service not properly configured or cleanQueue method missing');
           return;
         }
 
@@ -121,12 +124,11 @@ export default {
       strapi.log.info('[CRON] Starting weekly full supplier synchronization');
 
       try {
-        const queueService = strapi.service('plugin::queue.queue-service') ||
-                           strapi.service('api::queue.queue-service') ||
-                           strapi.services['queue.queue-service'];
+        // Explicit service discovery with validation
+        const queueService = strapi.service('api::queue.queue-service');
 
-        if (!queueService) {
-          strapi.log.error('[CRON] Queue service not found');
+        if (!queueService || typeof queueService.addSupplierSyncJob !== 'function') {
+          strapi.log.error('[CRON] Queue service not properly configured or addSupplierSyncJob method missing');
           return;
         }
 
@@ -171,7 +173,13 @@ export default {
         const queueManager = strapi.service('api::queue-manager.queue-manager');
 
         if (!queueManager) {
-          return; // Silent fail for health check
+          // Throttled error logging for missing service
+          const now = Date.now();
+          if (now - lastHealthErrorLog > HEALTH_ERROR_LOG_THROTTLE) {
+            strapi.log.error('[HEALTH] Queue manager service not found');
+            lastHealthErrorLog = now;
+          }
+          return;
         }
 
         const stats = await queueManager.getQueueStats();
@@ -205,7 +213,12 @@ export default {
           }
         }
       } catch (error) {
-        // Silent fail for health check to avoid log spam
+        // Throttled error logging to avoid log spam
+        const now = Date.now();
+        if (now - lastHealthErrorLog > HEALTH_ERROR_LOG_THROTTLE) {
+          strapi.log.debug('[HEALTH] Health check failed:', error);
+          lastHealthErrorLog = now;
+        }
       }
     },
     options: {

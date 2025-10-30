@@ -98,17 +98,22 @@ export const getWorkerStatus = async (): Promise<WorkerStatus> => {
 };
 
 /**
- * List jobs from a queue
+ * List jobs from a queue with optional search
  */
 export const listJobs = async (
   queueName: string,
   state: string = 'waiting',
   page: number = 1,
-  pageSize: number = 25
+  pageSize: number = 25,
+  search?: string
 ): Promise<JobList> => {
-  const { data } = await get(
-    `/queue-manager/${queueName}/jobs?state=${state}&page=${page}&pageSize=${pageSize}`
-  );
+  let url = `/queue-manager/${queueName}/jobs?state=${state}&page=${page}&pageSize=${pageSize}`;
+
+  if (search && search.trim()) {
+    url += `&search=${encodeURIComponent(search.trim())}`;
+  }
+
+  const { data } = await get(url);
   return data;
 };
 

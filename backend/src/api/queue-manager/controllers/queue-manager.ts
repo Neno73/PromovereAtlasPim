@@ -49,13 +49,13 @@ export default ({
   },
 
   /**
-   * GET /api/queue-manager/:queue/jobs?state=waiting&page=1&pageSize=25
-   * List jobs from a queue
+   * GET /api/queue-manager/:queue/jobs?state=waiting&page=1&pageSize=25&search=query
+   * List jobs from a queue with optional search
    */
   async listJobs(ctx) {
     try {
       const { queue } = ctx.params;
-      const { state = 'waiting', page = '1', pageSize = '25' } = ctx.query;
+      const { state = 'waiting', page = '1', pageSize = '25', search } = ctx.query;
 
       // Validate queue name
       if (!['supplier-sync', 'product-family', 'image-upload'].includes(queue)) {
@@ -79,9 +79,16 @@ export default ({
         return ctx.badRequest('Invalid page size (1-100)');
       }
 
+      // Validate search query (optional)
+      const searchQuery = search ? String(search).trim() : undefined;
+
       const result = await strapi
         .service('api::queue-manager.queue-manager')
-        .listJobs(queue, state as any, { page: pageNum, pageSize: pageSizeNum });
+        .listJobs(queue, state as any, {
+          page: pageNum,
+          pageSize: pageSizeNum,
+          search: searchQuery
+        });
 
       ctx.body = result;
     } catch (error) {

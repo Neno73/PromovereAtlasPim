@@ -61,24 +61,22 @@ const QueueManagement: React.FC = () => {
     }
   };
 
-  // Fetch jobs for selected queue and state
+  // Fetch jobs for selected queue and state (with backend search)
   const fetchJobs = async () => {
     if (!selectedQueue) return;
 
     setLoading(true);
     try {
-      const jobList = await queueAPI.listJobs(selectedQueue, selectedState, currentPage, pageSize);
+      // Pass search query to backend (no client-side filtering needed)
+      const jobList = await queueAPI.listJobs(
+        selectedQueue,
+        selectedState,
+        currentPage,
+        pageSize,
+        searchQuery || undefined
+      );
 
-      // Filter jobs by search query if provided
-      let filteredJobs = jobList.jobs;
-      if (searchQuery) {
-        filteredJobs = jobList.jobs.filter(job =>
-          job.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          JSON.stringify(job.data).toLowerCase().includes(searchQuery.toLowerCase())
-        );
-      }
-
-      setJobs(filteredJobs);
+      setJobs(jobList.jobs);
       setTotalPages(jobList.totalPages);
       setTotalJobs(jobList.total);
     } catch (error) {

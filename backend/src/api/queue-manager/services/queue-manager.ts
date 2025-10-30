@@ -19,6 +19,7 @@ import workerManager from '../../../services/queue/worker-manager';
 interface PaginationOptions {
   page: number;
   pageSize: number;
+  search?: string; // Optional search query
 }
 
 /**
@@ -32,7 +33,78 @@ type JobState = 'waiting' | 'active' | 'completed' | 'failed' | 'delayed';
 type QueueName = 'supplier-sync' | 'product-family' | 'image-upload';
 
 /**
- * Simple in-memory cache for queue stats
+ * Valid queue names for validation
+ */
+const VALID_QUEUE_NAMES: readonly QueueName[] = ['supplier-sync', 'product-family', 'image-upload'];
+
+/**
+ * Valid job states for validation
+ */
+const VALID_JOB_STATES: readonly JobState[] = ['waiting', 'active', 'completed', 'failed', 'delayed'];
+
+/**
+ * Validate queue name
+ */
+function validateQueueName(queueName: string): queueName is QueueName {
+  return VALID_QUEUE_NAMES.includes(queueName as QueueName);
+}
+
+/**
+ * Validate job state
+ */
+function validateJobState(state: string): state is JobState {
+  return VALID_JOB_STATES.includes(state as JobState);
+}
+
+/**
+ * Validate pagination options
+ */
+function validatePaginationOptions(page: number, pageSize: number): { isValid: boolean; error?: string } {
+  if (!Number.isInteger(page) || page < 1) {
+    return { isValid: false, error: 'Page must be a positive integer' };
+  }
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+    return { isValid: false, error: 'Page size must be between 1 and 100' };
+  }
+  return { isValid: true };
+}
+
+/**
+ * Safely search job data without JSON.stringify
+ * Searches specific fields to avoid security issues
+ */
+function matchesSearchQuery(job: Job, searchQuery: string): boolean {
+  if (!searchQuery) return true;
+
+  const query = searchQuery.toLowerCase();
+
+  // Search job ID
+  if (job.id && job.id.toString().toLowerCase().includes(query)) {
+    return true;
+  }
+
+  // Search job name
+  if (job.name && job.name.toLowerCase().includes(query)) {
+    return true;
+  }
+
+  // Safely search specific job data fields (avoid exposing sensitive data)
+  if (job.data) {
+    const searchableFields = ['supplierCode', 'productFamily', 'sku', 'filename', 'url'];
+
+    for (const field of searchableFields) {
+      const value = job.data[field];
+      if (value && String(value).toLowerCase().includes(query)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * In-memory cache for queue stats with race condition prevention and LRU eviction
  * Reduces Redis load by caching stats for 3 seconds
  */
 interface CacheEntry<T> {
@@ -42,9 +114,24 @@ interface CacheEntry<T> {
 }
 
 const statsCache = new Map<string, CacheEntry<any>>();
+const pendingRequests = new Map<string, Promise<any>>();
+const MAX_CACHE_SIZE = 100; // Maximum number of cached entries
+
+/**
+ * Evict oldest cache entry if cache is full (LRU)
+ */
+function evictOldestEntry() {
+  if (statsCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = statsCache.keys().next().value;
+    if (oldestKey) {
+      statsCache.delete(oldestKey);
+    }
+  }
+}
 
 /**
  * Get cached data or execute function and cache result
+ * Prevents race conditions by tracking pending requests
  */
 function getCached<T>(
   key: string,
@@ -54,14 +141,31 @@ function getCached<T>(
   const cached = statsCache.get(key);
   const now = Date.now();
 
+  // Return cached data if still valid
   if (cached && now - cached.timestamp < cached.ttl) {
     return Promise.resolve(cached.data);
   }
 
-  return fn().then(data => {
-    statsCache.set(key, { data, timestamp: now, ttl });
-    return data;
-  });
+  // Check if request is already pending
+  if (pendingRequests.has(key)) {
+    return pendingRequests.get(key)!;
+  }
+
+  // Execute function and cache result
+  const promise = fn()
+    .then(data => {
+      evictOldestEntry(); // Prevent unbounded memory growth
+      statsCache.set(key, { data, timestamp: now, ttl });
+      pendingRequests.delete(key);
+      return data;
+    })
+    .catch(err => {
+      pendingRequests.delete(key);
+      throw err;
+    });
+
+  pendingRequests.set(key, promise);
+  return promise;
 }
 
 /**
@@ -76,6 +180,11 @@ export default () => ({
    */
   async getQueueStats(queueName?: QueueName) {
     try {
+      // Validate queue name if provided
+      if (queueName && !validateQueueName(queueName)) {
+        throw new Error(`Invalid queue name: ${queueName}. Must be one of: ${VALID_QUEUE_NAMES.join(', ')}`);
+      }
+
       const cacheKey = queueName ? `stats:${queueName}` : 'stats:all';
 
       return await getCached(cacheKey, async () => {
@@ -119,7 +228,7 @@ export default () => ({
   },
 
   /**
-   * List jobs from a queue with optional state filter and pagination
+   * List jobs from a queue with optional state filter, pagination, and search
    */
   async listJobs(
     queueName: QueueName,
@@ -127,40 +236,99 @@ export default () => ({
     options: PaginationOptions = { page: 1, pageSize: 25 }
   ) {
     try {
-      const { page, pageSize } = options;
-      const start = (page - 1) * pageSize;
-      const end = start + pageSize - 1;
+      // Validate queue name
+      if (!validateQueueName(queueName)) {
+        throw new Error(`Invalid queue name: ${queueName}. Must be one of: ${VALID_QUEUE_NAMES.join(', ')}`);
+      }
+
+      // Validate job state
+      if (!validateJobState(state)) {
+        throw new Error(`Invalid job state: ${state}. Must be one of: ${VALID_JOB_STATES.join(', ')}`);
+      }
+
+      // Validate pagination options
+      const { page, pageSize, search } = options;
+      const validation = validatePaginationOptions(page, pageSize);
+      if (!validation.isValid) {
+        throw new Error(validation.error);
+      }
 
       // Get queue instance
       const queue = this.getQueueInstance(queueName);
 
-      // Get jobs by state
+      // If search is provided, fetch more jobs and filter
+      // Otherwise, use pagination directly
       let jobs: Job[] = [];
       let total = 0;
+      let filteredTotal = 0;
 
-      switch (state) {
-        case 'waiting':
-          jobs = await queue.getWaiting(start, end);
-          total = await queue.getWaitingCount();
-          break;
-        case 'active':
-          jobs = await queue.getActive(start, end);
-          total = await queue.getActiveCount();
-          break;
-        case 'completed':
-          jobs = await queue.getCompleted(start, end);
-          total = await queue.getCompletedCount();
-          break;
-        case 'failed':
-          jobs = await queue.getFailed(start, end);
-          total = await queue.getFailedCount();
-          break;
-        case 'delayed':
-          jobs = await queue.getDelayed(start, end);
-          total = await queue.getDelayedCount();
-          break;
-        default:
-          throw new Error(`Invalid job state: ${state}`);
+      if (search && search.trim()) {
+        // Fetch a larger batch for search (max 500 jobs)
+        const searchLimit = 500;
+
+        switch (state) {
+          case 'waiting':
+            jobs = await queue.getWaiting(0, searchLimit - 1);
+            total = await queue.getWaitingCount();
+            break;
+          case 'active':
+            jobs = await queue.getActive(0, searchLimit - 1);
+            total = await queue.getActiveCount();
+            break;
+          case 'completed':
+            jobs = await queue.getCompleted(0, searchLimit - 1);
+            total = await queue.getCompletedCount();
+            break;
+          case 'failed':
+            jobs = await queue.getFailed(0, searchLimit - 1);
+            total = await queue.getFailedCount();
+            break;
+          case 'delayed':
+            jobs = await queue.getDelayed(0, searchLimit - 1);
+            total = await queue.getDelayedCount();
+            break;
+          default:
+            throw new Error(`Invalid job state: ${state}`);
+        }
+
+        // Filter jobs by search query
+        jobs = jobs.filter(job => matchesSearchQuery(job, search.trim()));
+        filteredTotal = jobs.length;
+
+        // Apply pagination to filtered results
+        const start = (page - 1) * pageSize;
+        jobs = jobs.slice(start, start + pageSize);
+      } else {
+        // No search - use direct pagination
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize - 1;
+
+        switch (state) {
+          case 'waiting':
+            jobs = await queue.getWaiting(start, end);
+            total = await queue.getWaitingCount();
+            break;
+          case 'active':
+            jobs = await queue.getActive(start, end);
+            total = await queue.getActiveCount();
+            break;
+          case 'completed':
+            jobs = await queue.getCompleted(start, end);
+            total = await queue.getCompletedCount();
+            break;
+          case 'failed':
+            jobs = await queue.getFailed(start, end);
+            total = await queue.getFailedCount();
+            break;
+          case 'delayed':
+            jobs = await queue.getDelayed(start, end);
+            total = await queue.getDelayedCount();
+            break;
+          default:
+            throw new Error(`Invalid job state: ${state}`);
+        }
+
+        filteredTotal = total;
       }
 
       // Format jobs for response
@@ -181,10 +349,10 @@ export default () => ({
 
       return {
         jobs: formattedJobs,
-        total,
+        total: filteredTotal,
         page,
         pageSize,
-        totalPages: Math.ceil(total / pageSize)
+        totalPages: Math.ceil(filteredTotal / pageSize)
       };
     } catch (error) {
       strapi.log.error(`Failed to list ${state} jobs from ${queueName}:`, error);
@@ -197,6 +365,16 @@ export default () => ({
    */
   async getJobDetails(queueName: QueueName, jobId: string) {
     try {
+      // Validate queue name
+      if (!validateQueueName(queueName)) {
+        throw new Error(`Invalid queue name: ${queueName}. Must be one of: ${VALID_QUEUE_NAMES.join(', ')}`);
+      }
+
+      // Validate job ID
+      if (!jobId || typeof jobId !== 'string' || jobId.trim() === '') {
+        throw new Error('Invalid job ID: must be a non-empty string');
+      }
+
       const job = await queueService.getJob(queueName, jobId);
 
       if (!job) {
@@ -334,6 +512,11 @@ export default () => ({
    */
   async pauseQueue(queueName: QueueName) {
     try {
+      // Validate queue name
+      if (!validateQueueName(queueName)) {
+        throw new Error(`Invalid queue name: ${queueName}. Must be one of: ${VALID_QUEUE_NAMES.join(', ')}`);
+      }
+
       const queue = this.getQueueInstance(queueName);
       await queue.pause();
 
@@ -355,6 +538,11 @@ export default () => ({
    */
   async resumeQueue(queueName: QueueName) {
     try {
+      // Validate queue name
+      if (!validateQueueName(queueName)) {
+        throw new Error(`Invalid queue name: ${queueName}. Must be one of: ${VALID_QUEUE_NAMES.join(', ')}`);
+      }
+
       const queue = this.getQueueInstance(queueName);
       await queue.resume();
 
@@ -380,6 +568,21 @@ export default () => ({
     status: 'completed' | 'failed' = 'completed'
   ) {
     try {
+      // Validate queue name
+      if (!validateQueueName(queueName)) {
+        throw new Error(`Invalid queue name: ${queueName}. Must be one of: ${VALID_QUEUE_NAMES.join(', ')}`);
+      }
+
+      // Validate grace period
+      if (!Number.isInteger(grace) || grace < 0) {
+        throw new Error('Grace period must be a non-negative integer');
+      }
+
+      // Validate status
+      if (status !== 'completed' && status !== 'failed') {
+        throw new Error('Status must be either "completed" or "failed"');
+      }
+
       const queue = this.getQueueInstance(queueName);
 
       // Clean jobs older than grace period

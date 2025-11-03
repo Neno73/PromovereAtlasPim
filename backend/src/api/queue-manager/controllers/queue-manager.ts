@@ -319,6 +319,42 @@ export default ({
       strapi.log.error('Drain queue error:', error);
       ctx.internalServerError('Failed to drain queue');
     }
+  },
+
+  /**
+   * POST /api/queue-manager/clean-all
+   * Clean old jobs from all queues
+   * Body: { completedOlderThan?: number, failedOlderThan?: number }
+   * Times in milliseconds. Defaults: 24h for completed, 7 days for failed
+   */
+  async cleanAllQueues(ctx) {
+    try {
+      const {
+        completedOlderThan = 24 * 60 * 60 * 1000, // 24 hours
+        failedOlderThan = 7 * 24 * 60 * 60 * 1000  // 7 days
+      } = ctx.request.body as any;
+
+      // Validate parameters
+      const completedMs = parseInt(completedOlderThan, 10);
+      const failedMs = parseInt(failedOlderThan, 10);
+
+      if (isNaN(completedMs) || completedMs < 0) {
+        return ctx.badRequest('Invalid completedOlderThan value');
+      }
+
+      if (isNaN(failedMs) || failedMs < 0) {
+        return ctx.badRequest('Invalid failedOlderThan value');
+      }
+
+      const result = await strapi
+        .service('api::queue-manager.queue-manager')
+        .cleanAllQueues(completedMs, failedMs);
+
+      ctx.body = result;
+    } catch (error) {
+      strapi.log.error('Clean all queues error:', error);
+      ctx.internalServerError('Failed to clean all queues');
+    }
   }
 
 });

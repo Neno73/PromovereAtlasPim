@@ -187,8 +187,9 @@ const JobsTable: React.FC<JobsTableProps> = ({
                   <IconButton
                     onClick={() => onViewJob(job)}
                     label="View details"
-                    icon={<Eye />}
-                  />
+                  >
+                    <Eye />
+                  </IconButton>
                   {job.state === 'failed' && (
                     <Button
                       onClick={() => onRetryJob(job.id)}
@@ -202,8 +203,9 @@ const JobsTable: React.FC<JobsTableProps> = ({
                     <IconButton
                       onClick={() => onDeleteJob(job.id)}
                       label="Delete job"
-                      icon={<Trash />}
-                    />
+                    >
+                      <Trash />
+                    </IconButton>
                   )}
                 </Flex>
               </Td>

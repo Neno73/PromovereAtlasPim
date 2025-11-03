@@ -1,6 +1,7 @@
 import { FC, useState, useRef, useEffect } from 'react';
 import { Product } from '../types';
 import { getLocalizedText, formatPrice } from '../utils/i18n';
+import { useLanguage } from '../contexts/LanguageContext';
 import './ProductCard.css';
 
 interface ProductCardProps {
@@ -9,6 +10,7 @@ interface ProductCardProps {
 }
 
 export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
+  const { language } = useLanguage();
   const [imageFitStrategy, setImageFitStrategy] = useState<'cover' | 'contain'>('cover');
   const [imageLoaded, setImageLoaded] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -20,8 +22,19 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
 
   const productData = product;
 
-  // Get the best available image
+  // Get primary variant (for display in product list)
+  const primaryVariant = productData.variants?.find(v => v.is_primary_for_color);
+
+  // Get the best available image (prioritize variant, fallback to product)
   const getProductImage = () => {
+    // Try primary variant images first
+    if (primaryVariant?.primary_image) {
+      return primaryVariant.primary_image;
+    }
+    if (primaryVariant?.gallery_images?.[0]) {
+      return primaryVariant.gallery_images[0];
+    }
+    // Fallback to product-level images
     if (productData.main_image) {
       return productData.main_image;
     }
@@ -62,8 +75,8 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
     setImageLoaded(false);
   }, [imageUrl]);
   
-  const name = getLocalizedText(productData.name);
-  const description = getLocalizedText(productData.description);
+  const name = getLocalizedText(productData.name, language);
+  const description = getLocalizedText(productData.description, language);
   
   // Get lowest price from price tiers
   const getLowestPrice = () => {
@@ -140,10 +153,10 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
         <div className="product-details">
           {primaryCategory && (
             <span className="product-category">
-              {getLocalizedText(primaryCategory.name)}
+              {getLocalizedText(primaryCategory.name, language)}
             </span>
           )}
-          
+
           {supplier && (
             <span className="product-supplier">
               {supplier.name}
@@ -151,15 +164,15 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
           )}
         </div>
 
-        {productData.color_name && (
+        {primaryVariant?.color && (
           <div className="product-color">
             <span className="color-label">Color:</span>
-            <span className="color-name">{getLocalizedText(productData.color_name)}</span>
-            {(productData.supplier_color_code || productData.color_code) && (
-              <span 
-                className="color-swatch" 
-                style={{ backgroundColor: productData.supplier_color_code || productData.color_code }}
-                title={productData.supplier_color_code || productData.color_code}
+            <span className="color-name">{primaryVariant.color}</span>
+            {(primaryVariant.supplier_color_code || primaryVariant.hex_color) && (
+              <span
+                className="color-swatch"
+                style={{ backgroundColor: primaryVariant.supplier_color_code || primaryVariant.hex_color }}
+                title={primaryVariant.supplier_color_code || primaryVariant.hex_color}
               ></span>
             )}
           </div>

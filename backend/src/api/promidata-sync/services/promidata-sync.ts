@@ -370,6 +370,24 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       let updatedCount = 0;
 
       for (const categoryData of categories) {
+        // Transform to Strapi format with multilingual name
+        const strapiData: any = {
+          code: categoryData.code,
+          name: { en: categoryData.name }, // Convert plain string to multilingual JSON
+          sort_order: 0
+        };
+
+        // Find and link parent category if exists
+        if (categoryData.parentCode) {
+          const parentCategories = await strapi.documents('api::category.category').findMany({
+            filters: { code: categoryData.parentCode },
+            limit: 1
+          });
+          if (parentCategories && parentCategories.length > 0) {
+            strapiData.parent = parentCategories[0].documentId;
+          }
+        }
+
         // Use Strapi 5 Document API instead of legacy query API
         const existing = await strapi.documents('api::category.category').findMany({
           filters: { code: categoryData.code },
@@ -379,12 +397,12 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
         if (existing && existing.length > 0) {
           await strapi.documents('api::category.category').update({
             documentId: existing[0].documentId,
-            data: categoryData
+            data: strapiData
           });
           updatedCount++;
         } else {
           await strapi.documents('api::category.category').create({
-            data: categoryData
+            data: strapiData
           });
           createdCount++;
         }

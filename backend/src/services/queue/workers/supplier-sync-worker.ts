@@ -93,16 +93,49 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
 
         const variantUrls = importEntries.map(e => e.url);
         const variantDataMap = await productParser.fetchAndParseBatch(variantUrls, 5);
-        const allVariantData = Array.from(variantDataMap.values());
+        const parentProducts = Array.from(variantDataMap.values());
 
-        strapi.log.info(`✓ Fetched ${allVariantData.length}/${variantUrls.length} variants`);
+        strapi.log.info(`✓ Fetched ${parentProducts.length}/${variantUrls.length} parent products`);
+
+        // Extract ChildProducts from each parent JSON (critical for Promidata structure)
+        // IMPORTANT: Attach parent SKU to each child for proper grouping
+        const allVariantData = [];
+        for (const parentProduct of parentProducts) {
+          const parentSku = parentProduct.SKU || parentProduct.sku || parentProduct.Sku;
+          const childProducts = productParser.extractChildProducts(parentProduct);
+
+          // Attach parent SKU to each child for grouping (use as a_number)
+          for (const child of childProducts) {
+            child.parent_sku = parentSku;
+            child.a_number = parentSku; // Override a_number with parent SKU for grouping
+            allVariantData.push(child);
+          }
+        }
+
+        strapi.log.info(`✓ Extracted ${allVariantData.length} variant entries from ChildProducts arrays`);
 
         // Step 3: Group by a_number
         await job.updateProgress({ step: 'grouping', percentage: 50 });
         strapi.log.info(`\n🔀 Step 3: Grouping variants by product family...`);
 
+        // DEBUG: Log sample variant data before grouping
+        if (allVariantData.length > 0) {
+          const sample = allVariantData[0];
+          strapi.log.info(`[DEBUG] Sample variant data BEFORE grouping:`);
+          strapi.log.info(`  - SKU: ${sample.SKU || sample.sku}`);
+          strapi.log.info(`  - a_number: ${sample.a_number}`);
+          strapi.log.info(`  - ANumber: ${sample.ANumber}`);
+          strapi.log.info(`  - parent_sku: ${sample.parent_sku}`);
+        }
+
         const groupedByANumber = groupingService.groupByANumber(allVariantData);
         strapi.log.info(`✓ Identified ${groupedByANumber.size} product families`);
+
+        // DEBUG: Log grouping results
+        strapi.log.info(`[DEBUG] Grouping details:`);
+        for (const [aNumber, variants] of Array.from(groupedByANumber.entries()).slice(0, 3)) {
+          strapi.log.info(`  - Family "${aNumber}": ${variants.length} variants`);
+        }
 
         // Step 4: Batch hash check
         await job.updateProgress({ step: 'hash_check', percentage: 60 });

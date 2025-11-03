@@ -4,6 +4,7 @@ import { Product, ApiResponse } from '../types';
 import { apiService } from '../services/api';
 import { ProductCard } from '../components/ProductCard';
 import { FilterBar } from '../components/FilterBar';
+import { LanguageSelector } from '../components/LanguageSelector';
 import './ProductList.css';
 
 export const ProductList: FC = () => {
@@ -81,6 +82,7 @@ export const ProductList: FC = () => {
       <div className="page-header">
         <h1>Products</h1>
         <div className="page-actions">
+          <LanguageSelector />
           <div className="sort-section">
             <label htmlFor="sort">Sort by:</label>
             <select

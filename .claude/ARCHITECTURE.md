@@ -1,8 +1,10 @@
 # Architecture
 
-*Last updated: 2025-10-29 19:40*
+*Last updated: 2025-11-02 20:40*
 
 System design and component structure for PromoAtlas PIM.
+
+**Note**: Product → ProductVariant hierarchy fully implemented and operational as of 2025-11-02.
 
 ## System Overview
 

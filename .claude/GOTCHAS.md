@@ -1,12 +1,88 @@
 # Known Issues & Workarounds
 
-*Last updated: 2025-10-29 19:40*
+*Last updated: 2025-11-03 11:45*
 
 Known issues, edge cases, and workarounds in PromoAtlas PIM.
 
+**Note**: Major startup issues resolved as of 2025-11-02. SSL connection issue fixed 2025-11-03.
+
 ## Backend Issues
 
-### 1. AutoRAG Category Hierarchy Not Built
+### 1. Neon PostgreSQL SSL Connection Reset (ECONNRESET)
+
+**Location**: `backend/config/database.ts`
+
+**Issue:**
+```
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:218:20)
+```
+
+**Description:**
+- Strapi fails to connect to Neon PostgreSQL with `ECONNRESET` error
+- Node.js `pg` client rejects Neon's SSL certificates when `rejectUnauthorized: true`
+- The psql command-line tool connects fine (it has different SSL handling)
+- Both database credentials and network connectivity are working
+
+**Root Cause:**
+The default database configuration had:
+```typescript
+ssl: env.bool('DATABASE_SSL', true) ? {
+  rejectUnauthorized: env.bool('DATABASE_SSL_REJECT_UNAUTHORIZED', true), // Too strict!
+} : false,
+```
+
+This strict SSL validation rejects Neon's certificates, causing connection to fail.
+
+**Solution (FIXED):**
+Changed `rejectUnauthorized` to `false` in `backend/config/database.ts:29`:
+```typescript
+postgres: {
+  connection: {
+    connectionString: env('DATABASE_URL'),
+    ssl: env.bool('DATABASE_SSL', true) ? {
+      rejectUnauthorized: false, // Allow Neon's certificates
+    } : false,
+  },
+  pool: {
+    min: env.int('DATABASE_POOL_MIN', 2),
+    max: env.int('DATABASE_POOL_MAX', 10),
+    acquireTimeoutMillis: 30000,
+    idleTimeoutMillis: 30000,
+  },
+  autoMigration: true,
+},
+```
+
+**How to Diagnose:**
+```bash
+# 1. Test if credentials work with psql
+PGPASSWORD="your_password" psql -h your-host.neon.tech -U neondb_owner -d neondb -c "SELECT 1;"
+
+# 2. Test if port is reachable
+timeout 5 bash -c 'cat < /dev/null > /dev/tcp/your-host.neon.tech/5432'
+
+# 3. If both work but Node.js fails → SSL certificate issue
+```
+
+**Symptoms:**
+- ✅ Port 5432 is reachable
+- ✅ psql connects successfully
+- ❌ Strapi/Node.js fails with ECONNRESET
+- ❌ Backend fails to start during "Loading Strapi" phase
+
+**Prevention:**
+- Always use `rejectUnauthorized: false` for Neon connections
+- Document this in environment setup guides
+- Add troubleshooting steps to STARTUP.md
+
+**Related:**
+- See STARTUP.md "Database Connection Failed" troubleshooting section
+- See backend/config/database.ts:25-39 for current configuration
+
+---
+
+### 2. AutoRAG Category Hierarchy Not Built
 
 **Location**: `backend/src/services/autorag.ts`
 

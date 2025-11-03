@@ -1,8 +1,23 @@
 # Startup Guide
 
-*Last updated: 2025-10-29 19:40*
+*Last updated: 2025-11-02 20:40*
 
 Complete setup guide and troubleshooting for PromoAtlas PIM.
+
+## Current Status ✅
+
+**System is operational as of 2025-11-02 20:40:**
+- ✅ Backend running on http://localhost:1337
+- ✅ Frontend running on http://localhost:3001
+- ✅ Database: PostgreSQL (Neon) connected successfully
+- ✅ Queue System: BullMQ with 3 workers active
+  - supplier-sync (concurrency: 1)
+  - product-family (concurrency: 3)
+  - image-upload (concurrency: 10)
+- ✅ Redis: Upstash connected
+- ✅ Storage: Cloudflare R2 (data-vault bucket)
+- ✅ All TypeScript compilation errors resolved
+- ✅ Product → ProductVariant hierarchy fully implemented
 
 ## Prerequisites
 
@@ -407,7 +422,51 @@ vercel --prod
 
 ### Backend Issues
 
-**Issue: Database connection failed**
+**Issue: Database connection failed (ECONNRESET)**
+```
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:218:20)
+```
+**Cause**: SSL certificate validation issue with Neon PostgreSQL
+
+**Solution:**
+1. **First, verify credentials and connectivity:**
+   ```bash
+   # Test with psql
+   PGPASSWORD="your_password" psql -h your-host.neon.tech -U neondb_owner -d neondb -c "SELECT 1;"
+
+   # Test port reachability
+   timeout 5 bash -c 'cat < /dev/null > /dev/tcp/your-host.neon.tech/5432'
+   ```
+
+2. **If both work but Node.js fails → SSL certificate issue**
+
+   The problem is `rejectUnauthorized: true` in `backend/config/database.ts`.
+
+   **Fix**: Update `backend/config/database.ts` line 29:
+   ```typescript
+   postgres: {
+     connection: {
+       connectionString: env('DATABASE_URL'),
+       ssl: env.bool('DATABASE_SSL', true) ? {
+         rejectUnauthorized: false, // IMPORTANT: Required for Neon
+       } : false,
+     },
+     // ...
+   }
+   ```
+
+3. **Restart backend:**
+   ```bash
+   cd backend
+   npm run develop
+   ```
+
+**See Also**: GOTCHAS.md "Neon PostgreSQL SSL Connection Reset" for detailed explanation
+
+---
+
+**Issue: Database connection refused**
 ```
 Error: connect ECONNREFUSED 127.0.0.1:5432
 ```

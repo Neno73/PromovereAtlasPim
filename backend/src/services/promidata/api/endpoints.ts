@@ -27,7 +27,7 @@ export const endpoints = {
    * Format: code;name;parent_code
    */
   categories: (): string => {
-    return `${getBaseUrl()}/Import/CAT.csv`;
+    return `${getBaseUrl()}/CAT.csv`;
   },
 
   /**

@@ -25,6 +25,46 @@ export interface Dimensions {
   weight_unit: 'g' | 'kg' | 'oz' | 'lb';
 }
 
+export interface Media {
+  id: number;
+  name: string;
+  url: string;
+  alternativeText?: string;
+  caption?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface ProductVariant {
+  id: number;
+  documentId: string;
+  sku: string;
+  name?: string;
+  description?: string;
+  color?: string;
+  size?: string;
+  sizes?: string[];
+  hex_color?: string;
+  supplier_color_code?: string;
+  material?: string;
+  dimensions_length?: number;
+  dimensions_width?: number;
+  dimensions_height?: number;
+  dimensions_diameter?: number;
+  weight?: number;
+  primary_image?: Media;
+  gallery_images?: Media[];
+  is_primary_for_color: boolean;
+  is_active: boolean;
+  product?: {
+    id: number;
+    documentId: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string;
+}
+
 export interface Product {
   id: number;
   documentId: string;
@@ -35,12 +75,7 @@ export interface Product {
   ean?: string;
   name: MultilingualText;
   description?: MultilingualText;
-  color_name?: MultilingualText;
-  color_code?: string;
-  supplier_color_code?: string;
   model_name?: MultilingualText;
-  search_color?: string;
-  size?: string;
   dimension?: string;
   meta_keyword?: string;
   weight?: number;
@@ -63,35 +98,13 @@ export interface Product {
   is_active: boolean;
   promidata_hash?: string;
   last_synced?: string;
+  total_variants_count?: number;
   dimensions?: Dimensions;
   price_tiers?: PriceTier[];
-  main_image?: {
-    id: number;
-    name: string;
-    url: string;
-    alternativeText?: string;
-    caption?: string;
-    width?: number;
-    height?: number;
-  };
-  gallery_images?: Array<{
-    id: number;
-    name: string;
-    url: string;
-    alternativeText?: string;
-    caption?: string;
-    width?: number;
-    height?: number;
-  }>;
-  model_image?: {
-    id: number;
-    name: string;
-    url: string;
-    alternativeText?: string;
-    caption?: string;
-    width?: number;
-    height?: number;
-  };
+  main_image?: Media;
+  gallery_images?: Media[];
+  model_image?: Media;
+  variants?: ProductVariant[];
   categories?: Category[];
   supplier?: {
     id: number;

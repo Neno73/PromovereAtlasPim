@@ -626,6 +626,36 @@ export default () => ({
   },
 
   /**
+   * Clean old jobs from all queues
+   * @param completedOlderThan - Clean completed jobs older than this (ms). Default: 24 hours
+   * @param failedOlderThan - Clean failed jobs older than this (ms). Default: 7 days
+   */
+  async cleanAllQueues(
+    completedOlderThan: number = 24 * 60 * 60 * 1000,
+    failedOlderThan: number = 7 * 24 * 60 * 60 * 1000
+  ) {
+    try {
+      const result = await queueService.cleanAllQueues(completedOlderThan, failedOlderThan);
+
+      strapi.log.info(
+        `🧹 Cleaned ${result.totalDeleted} jobs total. ` +
+        `Completed older than ${completedOlderThan / 1000}s, ` +
+        `Failed older than ${failedOlderThan / 1000}s`
+      );
+
+      return {
+        success: true,
+        totalDeleted: result.totalDeleted,
+        details: result.details,
+        message: `Cleaned ${result.totalDeleted} jobs across all queues`
+      };
+    } catch (error) {
+      strapi.log.error('Failed to clean all queues:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Get queue instance (helper method)
    */
   getQueueInstance(queueName: QueueName): Queue {

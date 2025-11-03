@@ -11,7 +11,7 @@ interface AutoRAGConfig {
   r2_bucket_name?: string; // R2 bucket name for this AutoRAG instance
 }
 
-interface ProductData {
+interface AutoRAGProductData {
   sku: string;
   supplier_code: string;
   supplier_name: string;
@@ -72,7 +72,7 @@ class AutoRAGService {
    * Upload or update a single product in AutoRAG by storing in R2 bucket
    * AutoRAG will automatically index this file within 6 hours
    */
-  async uploadProduct(config: AutoRAGConfig, productData: ProductData): Promise<boolean> {
+  async uploadProduct(config: AutoRAGConfig, productData: AutoRAGProductData): Promise<boolean> {
     try {
       const fileName = `${productData.supplier_code}_${productData.sku}.json`;
       const bucketName = config.r2_bucket_name || this.extractBucketFromConfig(config);
@@ -120,7 +120,7 @@ class AutoRAGService {
   /**
    * Update a product in AutoRAG (same as upload)
    */
-  async updateProduct(config: AutoRAGConfig, productData: ProductData): Promise<boolean> {
+  async updateProduct(config: AutoRAGConfig, productData: AutoRAGProductData): Promise<boolean> {
     return this.uploadProduct(config, productData);
   }
 
@@ -204,7 +204,7 @@ class AutoRAGService {
   /**
    * Bulk upload products to AutoRAG
    */
-  async bulkUploadProducts(config: AutoRAGConfig, products: ProductData[]): Promise<{
+  async bulkUploadProducts(config: AutoRAGConfig, products: AutoRAGProductData[]): Promise<{
     success: number;
     failed: number;
     errors: string[];
@@ -242,8 +242,8 @@ class AutoRAGService {
   /**
    * Transform Strapi product to AutoRAG format
    */
-  transformProductForAutoRAG(strapiProduct: any): ProductData {
-    const product: ProductData = {
+  transformProductForAutoRAG(strapiProduct: any): AutoRAGProductData {
+    const product: AutoRAGProductData = {
       sku: strapiProduct.sku,
       supplier_code: strapiProduct.supplier?.code || '',
       supplier_name: strapiProduct.supplier?.name || '',
@@ -311,7 +311,7 @@ class AutoRAGService {
   /**
    * Build industry context for AI understanding
    */
-  private buildIndustryContext(product: ProductData): string {
+  private buildIndustryContext(product: AutoRAGProductData): string {
     const contexts = [];
     
     contexts.push('Perfect for promotional campaigns, corporate gifts, and marketing events.');
@@ -400,4 +400,4 @@ class AutoRAGService {
 const autoragService = new AutoRAGService();
 
 export default autoragService;
-export { AutoRAGConfig, ProductData, AutoRAGSearchResult };
+export { AutoRAGConfig, AutoRAGProductData, AutoRAGSearchResult };

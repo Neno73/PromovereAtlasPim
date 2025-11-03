@@ -3,6 +3,8 @@
  * Handles API endpoints for managing Promidata synchronization
  */
 
+import queueService from '../../../services/queue/queue-service';
+
 // Define a simple context type
 interface Context {
   request: {
@@ -18,22 +20,62 @@ interface Context {
 export default {
   /**
    * Start manual sync for all suppliers or a specific supplier
+   * UPDATED: Now uses BullMQ queue instead of direct sync
    */
   async startSync(ctx: Context) {
     try {
       const { supplierId } = ctx.request.body;
-      
-      // Get sync service
-      const syncService = strapi.service('api::promidata-sync.promidata-sync');
-      
-      // Start sync
-      const result = await syncService.startSync(supplierId);
-      
-      ctx.body = {
-        success: true,
-        message: 'Sync started successfully',
-        data: result
-      };
+
+      if (supplierId) {
+        // Sync specific supplier via queue
+        const supplier = await strapi.documents('api::supplier.supplier').findOne({
+          documentId: supplierId
+        });
+
+        if (!supplier) {
+          ctx.badRequest('Supplier not found');
+          return;
+        }
+
+        // Enqueue supplier sync job
+        const job = await queueService.enqueueSupplierSync(
+          supplierId,
+          supplier.code,
+          Number(supplier.id) // numeric ID
+        );
+
+        ctx.body = {
+          success: true,
+          message: `Sync job enqueued for supplier ${supplier.code}`,
+          data: {
+            jobId: job.id,
+            supplierId,
+            supplierCode: supplier.code
+          }
+        };
+      } else {
+        // Sync all active suppliers via queue
+        const suppliers = await strapi.documents('api::supplier.supplier').findMany({
+          filters: { is_active: true },
+          pagination: { pageSize: 100 }
+        });
+
+        const jobs = [];
+        for (const supplier of suppliers) {
+          const job = await queueService.enqueueSupplierSync(
+            supplier.documentId,
+            supplier.code,
+            Number(supplier.id) // numeric ID
+          );
+          jobs.push({ jobId: job.id, supplierId: supplier.documentId, code: supplier.code });
+        }
+
+        ctx.body = {
+          success: true,
+          message: `${jobs.length} sync jobs enqueued`,
+          data: { jobs }
+        };
+      }
     } catch (error) {
       ctx.badRequest('Sync failed', { details: error.message });
     }
@@ -137,13 +179,13 @@ export default {
       
       // Get all products for this supplier using Strapi 5 Document Service API
       const products = await strapi.documents('api::product.product').findMany({
-        filters: { 
-          supplier: { 
+        filters: {
+          supplier: {
             id: supplier.id // Use nested structure for relation filtering in Strapi 5
           },
-          is_active: true 
+          is_active: true
         },
-        populate: ['categories', 'price_tiers', 'main_image', 'gallery_images'],
+        populate: ['categories', 'price_tiers', 'main_image', 'gallery_images', 'variants'],
         pagination: {
           page: 1,
           pageSize: 10000 // Large number to get all products
@@ -157,32 +199,44 @@ export default {
           name: supplier.name,
           exported_at: new Date().toISOString()
         },
-        products: products.map(product => ({
-          sku: product.sku,
-          name: product.name,
-          description: product.description,
-          short_description: product.short_description,
-          available_sizes: product.available_sizes || ['One Size'],
-          size_skus: product.size_skus || {},
-          color_name: product.color_name,
-          color_code: product.color_code,
-          hex_color: product.hex_color,
-          material: product.material,
-          brand: product.brand,
-          categories: (product as any).categories?.map((cat: any) => cat.name) || [],
-          pricing: {
-            tiers: (product as any).price_tiers?.map((tier: any) => ({
-              quantity: tier.quantity,
-              price: tier.price
-            })) || []
-          },
-          searchable_text: buildSearchableText(product),
-          metadata: {
-            variant_type: product.variant_type,
-            last_synced: product.last_synced,
-            strapi_id: product.id
-          }
-        })),
+        products: products.map(product => {
+          // Extract variant information
+          const variants = (product as any).variants || [];
+          const availableSizes = variants.length > 0
+            ? Array.from(new Set(variants.map((v: any) => v.size).filter(Boolean)))
+            : ['One Size'];
+          const availableColors = variants.length > 0
+            ? Array.from(new Set(variants.map((v: any) => v.color || v.supplier_search_color).filter(Boolean)))
+            : [];
+          const hexColors = variants.length > 0
+            ? Array.from(new Set(variants.map((v: any) => v.hex_color).filter(Boolean)))
+            : [];
+
+          return {
+            sku: product.sku,
+            name: product.name,
+            description: product.description,
+            short_description: product.short_description,
+            available_sizes: availableSizes,
+            colors: availableColors,
+            hex_colors: hexColors,
+            material: product.material,
+            brand: product.brand,
+            categories: (product as any).categories?.map((cat: any) => cat.name) || [],
+            pricing: {
+              tiers: (product as any).price_tiers?.map((tier: any) => ({
+                quantity: tier.quantity,
+                price: tier.price
+              })) || []
+            },
+            searchable_text: buildSearchableText(product),
+            metadata: {
+              total_variants: variants.length,
+              last_synced: product.last_synced,
+              strapi_id: product.id
+            }
+          };
+        }),
         metadata: {
           total_products: products.length,
           export_timestamp: new Date().toISOString(),
@@ -242,13 +296,13 @@ export default {
       
       // Get all products for this supplier
       const products = await strapi.documents('api::product.product').findMany({
-        filters: { 
-          supplier: { 
+        filters: {
+          supplier: {
             id: supplier.id
           },
-          is_active: true 
+          is_active: true
         },
-        populate: ['categories', 'main_image', 'gallery_images', 'supplier'],
+        populate: ['categories', 'main_image', 'gallery_images', 'supplier', 'variants'],
         pagination: {
           page: 1,
           pageSize: 10000
@@ -380,27 +434,24 @@ function buildSearchableText(product: any): string {
     });
   }
   
-  // Add brand and color info
+  // Add brand
   if (product.brand) textParts.push(product.brand);
-  if (product.color_name) {
-    Object.values(product.color_name).forEach(color => {
-      if (color && typeof color === 'string') {
-        textParts.push(color);
-      }
+
+  // Add variant colors and sizes (if variants are populated)
+  if (product.variants && Array.isArray(product.variants)) {
+    product.variants.forEach((variant: any) => {
+      if (variant.color) textParts.push(variant.color);
+      if (variant.supplier_search_color) textParts.push(variant.supplier_search_color);
+      if (variant.size) textParts.push(variant.size);
     });
   }
-  
+
   // Add categories
   if (product.categories && Array.isArray(product.categories)) {
     product.categories.forEach(cat => {
       if (cat.name) textParts.push(cat.name);
     });
   }
-  
-  // Add available sizes
-  if (product.available_sizes && Array.isArray(product.available_sizes)) {
-    textParts.push(...product.available_sizes);
-  }
-  
+
   return textParts.filter(Boolean).join(' ');
 }

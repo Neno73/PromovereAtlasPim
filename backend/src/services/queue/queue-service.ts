@@ -149,21 +149,183 @@ class QueueService {
   }
 
   /**
+   * Get detailed image upload statistics including deduplication
+   */
+  public async getImageUploadDetailedStats() {
+    this.ensureInitialized();
+    const queue = this.getQueue('image-upload');
+
+    // Get basic counts
+    const [waiting, active, completed, failed, delayed] = await Promise.all([
+      queue.getWaitingCount(),
+      queue.getActiveCount(),
+      queue.getCompletedCount(),
+      queue.getFailedCount(),
+      queue.getDelayedCount()
+    ]);
+
+    // Sample completed jobs to calculate deduplication rate
+    // We'll check up to 1000 most recent completed jobs
+    let actualUploads = 0;
+    let deduplicated = 0;
+    let sampledJobs = 0;
+
+    try {
+      const completedJobs = await queue.getJobs(['completed'], 0, 999, false);
+      sampledJobs = completedJobs.length;
+
+      for (const job of completedJobs) {
+        if (job.returnvalue) {
+          if (job.returnvalue.wasDedup === true) {
+            deduplicated++;
+          } else if (job.returnvalue.success === true) {
+            actualUploads++;
+          }
+        }
+      }
+    } catch (error) {
+      strapi.log.error('Error sampling completed jobs for dedup stats:', error);
+    }
+
+    // Calculate estimated deduplication rate
+    const sampledTotal = actualUploads + deduplicated;
+    const dedupRate = sampledTotal > 0 ? (deduplicated / sampledTotal) * 100 : 0;
+
+    return {
+      queueName: 'image-upload',
+      waiting,
+      active,
+      completed, // Total completed (includes both uploads and dedups)
+      failed,
+      delayed,
+      total: waiting + active + completed + failed + delayed,
+      // Detailed stats based on sampled jobs
+      sampledJobs,
+      actualUploads, // Jobs that actually uploaded
+      deduplicated, // Jobs that were deduplicated (skipped)
+      dedupRate: Math.round(dedupRate * 10) / 10, // Round to 1 decimal
+      // Estimated totals (extrapolated if sample size < completed count)
+      estimatedActualUploads: sampledTotal > 0 ? Math.round((actualUploads / sampledTotal) * completed) : 0,
+      estimatedDeduplicated: sampledTotal > 0 ? Math.round((deduplicated / sampledTotal) * completed) : 0
+    };
+  }
+
+  /**
    * Get all queue statistics
    */
   public async getAllStats() {
     this.ensureInitialized();
-    const [supplierSync, productFamily, imageUpload] = await Promise.all([
+    const [supplierSync, productFamily, imageUploadBasic] = await Promise.all([
       this.getQueueStats('supplier-sync'),
       this.getQueueStats('product-family'),
       this.getQueueStats('image-upload')
     ]);
+
+    // Get detailed image upload stats with deduplication
+    const imageUpload = await this.getImageUploadDetailedStats();
 
     return {
       supplierSync,
       productFamily,
       imageUpload
     };
+  }
+
+  /**
+   * Clean old completed jobs from a queue
+   * @param queueName - Queue to clean
+   * @param olderThanMs - Clean jobs older than this (in milliseconds). Default: 24 hours
+   * @param limit - Maximum number of jobs to clean per call. Default: 1000
+   */
+  public async cleanCompletedJobs(
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload',
+    olderThanMs: number = 24 * 60 * 60 * 1000, // 24 hours default
+    limit: number = 1000
+  ): Promise<{ deletedCount: number }> {
+    this.ensureInitialized();
+    const queue = this.getQueue(queueName);
+
+    try {
+      // BullMQ's clean method removes jobs older than grace period
+      // Returns array of deleted job IDs
+      const deletedJobs = await queue.clean(olderThanMs, limit, 'completed');
+      const deletedCount = deletedJobs.length;
+
+      strapi.log.info(
+        `🧹 Cleaned ${deletedCount} completed jobs from ${queueName} queue (older than ${olderThanMs}ms)`
+      );
+
+      return { deletedCount };
+    } catch (error) {
+      strapi.log.error(`Error cleaning ${queueName} queue:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean old failed jobs from a queue
+   * @param queueName - Queue to clean
+   * @param olderThanMs - Clean jobs older than this (in milliseconds). Default: 7 days
+   * @param limit - Maximum number of jobs to clean per call. Default: 1000
+   */
+  public async cleanFailedJobs(
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload',
+    olderThanMs: number = 7 * 24 * 60 * 60 * 1000, // 7 days default
+    limit: number = 1000
+  ): Promise<{ deletedCount: number }> {
+    this.ensureInitialized();
+    const queue = this.getQueue(queueName);
+
+    try {
+      const deletedJobs = await queue.clean(olderThanMs, limit, 'failed');
+      const deletedCount = deletedJobs.length;
+
+      strapi.log.info(
+        `🧹 Cleaned ${deletedCount} failed jobs from ${queueName} queue (older than ${olderThanMs}ms)`
+      );
+
+      return { deletedCount };
+    } catch (error) {
+      strapi.log.error(`Error cleaning failed jobs from ${queueName} queue:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean all old jobs from all queues
+   * @param completedOlderThanMs - Clean completed jobs older than this. Default: 24 hours
+   * @param failedOlderThanMs - Clean failed jobs older than this. Default: 7 days
+   */
+  public async cleanAllQueues(
+    completedOlderThanMs: number = 24 * 60 * 60 * 1000,
+    failedOlderThanMs: number = 7 * 24 * 60 * 60 * 1000
+  ): Promise<{ totalDeleted: number; details: Record<string, { completed: number; failed: number }> }> {
+    this.ensureInitialized();
+
+    const queueNames: Array<'supplier-sync' | 'product-family' | 'image-upload'> = [
+      'supplier-sync',
+      'product-family',
+      'image-upload'
+    ];
+
+    const results: Record<string, { completed: number; failed: number }> = {};
+    let totalDeleted = 0;
+
+    for (const queueName of queueNames) {
+      const completedResult = await this.cleanCompletedJobs(queueName, completedOlderThanMs);
+      const failedResult = await this.cleanFailedJobs(queueName, failedOlderThanMs);
+
+      results[queueName] = {
+        completed: completedResult.deletedCount,
+        failed: failedResult.deletedCount
+      };
+
+      totalDeleted += completedResult.deletedCount + failedResult.deletedCount;
+    }
+
+    strapi.log.info(`🧹 Total cleanup: ${totalDeleted} jobs deleted across all queues`);
+
+    return { totalDeleted, details: results };
   }
 
   /**

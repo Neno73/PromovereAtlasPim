@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-*Last updated: 2025-10-29 19:40*
+*Last updated: 2025-11-02 20:40*
 
 This log tracks significant architectural decisions made during the development of PromoAtlas PIM.
 
@@ -12,6 +12,52 @@ When adding a decision, include:
 - **Decision**: What we decided to do
 - **Consequences**: Trade-offs and implications
 - **Status**: Proposed / Accepted / Deprecated / Superseded
+
+---
+
+## [2025-11-02] Product Hierarchy Migration Completion & TypeScript Resolution
+
+**Status**: Accepted (Completed)
+
+**Context**:
+After implementing the Product → Product Variant hierarchy (2025-10-29), the system had 17 TypeScript compilation errors in controller files that were still accessing variant-specific fields directly on the Product model. Additionally, database connection issues prevented the backend from starting (ECONNRESET errors).
+
+**Issues Encountered**:
+1. Controllers (`promidata-sync.ts`, `supplier.ts`) referenced fields that moved from Product to ProductVariant (colors, sizes, dimensions, etc.)
+2. Database connection timing out during Strapi initialization
+3. Queue system imports causing connection attempts during module load
+
+**Decision**:
+1. **Refactored Controllers**: Updated all controllers to:
+   - Populate `variants` relation when querying products
+   - Extract variant-specific data by iterating through `variants` array
+   - Provide fallback values for backward compatibility
+
+2. **Lazy Redis Connection**: Modified `queue-config.ts` to use lazy initialization via Proxy to prevent connection attempts during module load
+
+3. **Database Configuration**: Confirmed correct Neon PostgreSQL connection string and verified database was accessible
+
+**Implementation**:
+- `backend/src/api/promidata-sync/controllers/promidata-sync.ts`: Added variant population and data extraction logic
+- `backend/src/api/supplier/controllers/supplier.ts`: Refactored to show both product-level and variant-level fields
+- `backend/src/services/queue/queue-config.ts`: Implemented lazy Redis connection pattern
+
+**Consequences**:
+- **Positive**:
+  - All TypeScript compilation errors resolved (0 errors)
+  - Backend starts successfully with all systems operational
+  - Queue system fully functional with 3 workers
+  - Controllers properly handle Product/Variant hierarchy
+  - Clean separation between product and variant data
+- **Negative**:
+  - Requires more complex queries (must populate variants)
+  - Slightly increased query complexity in controllers
+- **Lessons Learned**:
+  - Always check database connectivity first when experiencing ECONNRESET errors
+  - Lazy initialization prevents premature service connections
+  - Migration requires updating all code that accessed migrated fields
+
+**Status as of 2025-11-02 20:40**: ✅ Fully operational
 
 ---
 

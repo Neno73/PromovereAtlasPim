@@ -16,6 +16,13 @@ export interface QueueStats {
   delayed: number;
   paused?: boolean;
   total: number;
+  // Deduplication stats (only for image-upload queue)
+  sampledJobs?: number;
+  actualUploads?: number;
+  deduplicated?: number;
+  dedupRate?: number;
+  estimatedActualUploads?: number;
+  estimatedDeduplicated?: number;
 }
 
 export interface AllQueueStats {
@@ -77,7 +84,7 @@ export interface JobDetails extends Job {
  * Get statistics for all queues
  */
 export const getAllQueueStats = async (): Promise<AllQueueStats> => {
-  const { data } = await get('/queue-manager/stats');
+  const { data } = await get('/api/queue-manager/stats');
   return data;
 };
 
@@ -85,7 +92,7 @@ export const getAllQueueStats = async (): Promise<AllQueueStats> => {
  * Get statistics for a specific queue
  */
 export const getQueueStats = async (queueName: string): Promise<QueueStats> => {
-  const { data } = await get(`/queue-manager/stats/${queueName}`);
+  const { data } = await get(`/api/queue-manager/stats/${queueName}`);
   return data;
 };
 
@@ -93,7 +100,7 @@ export const getQueueStats = async (queueName: string): Promise<QueueStats> => {
  * Get worker status
  */
 export const getWorkerStatus = async (): Promise<WorkerStatus> => {
-  const { data } = await get('/queue-manager/workers');
+  const { data } = await get('/api/queue-manager/workers');
   return data;
 };
 
@@ -107,7 +114,7 @@ export const listJobs = async (
   pageSize: number = 25,
   search?: string
 ): Promise<JobList> => {
-  let url = `/queue-manager/${queueName}/jobs?state=${state}&page=${page}&pageSize=${pageSize}`;
+  let url = `/api/queue-manager/${queueName}/jobs?state=${state}&page=${page}&pageSize=${pageSize}`;
 
   if (search && search.trim()) {
     url += `&search=${encodeURIComponent(search.trim())}`;
@@ -124,7 +131,7 @@ export const getJobDetails = async (
   queueName: string,
   jobId: string
 ): Promise<{ found: boolean; [key: string]: any }> => {
-  const { data } = await get(`/queue-manager/${queueName}/jobs/${jobId}`);
+  const { data } = await get(`/api/queue-manager/${queueName}/jobs/${jobId}`);
   return data;
 };
 
@@ -135,7 +142,7 @@ export const retryJob = async (
   queueName: string,
   jobId: string
 ): Promise<{ success: boolean; message: string }> => {
-  const { data } = await post(`/queue-manager/${queueName}/jobs/${jobId}/retry`);
+  const { data } = await post(`/api/queue-manager/${queueName}/jobs/${jobId}/retry`);
   return data;
 };
 
@@ -146,7 +153,7 @@ export const retryFailedJobs = async (
   queueName: string,
   limit: number = 100
 ): Promise<{ success: boolean; retriedCount: number; failedCount: number; message: string }> => {
-  const { data } = await post(`/queue-manager/${queueName}/retry-failed`, { limit });
+  const { data } = await post(`/api/queue-manager/${queueName}/retry-failed`, { limit });
   return data;
 };
 
@@ -157,7 +164,7 @@ export const deleteJob = async (
   queueName: string,
   jobId: string
 ): Promise<{ success: boolean; message: string }> => {
-  const { data } = await del(`/queue-manager/${queueName}/jobs/${jobId}`);
+  const { data } = await del(`/api/queue-manager/${queueName}/jobs/${jobId}`);
   return data;
 };
 
@@ -165,7 +172,7 @@ export const deleteJob = async (
  * Pause a queue
  */
 export const pauseQueue = async (queueName: string): Promise<{ success: boolean; message: string }> => {
-  const { data } = await post(`/queue-manager/${queueName}/pause`);
+  const { data } = await post(`/api/queue-manager/${queueName}/pause`);
   return data;
 };
 
@@ -173,7 +180,7 @@ export const pauseQueue = async (queueName: string): Promise<{ success: boolean;
  * Resume a queue
  */
 export const resumeQueue = async (queueName: string): Promise<{ success: boolean; message: string }> => {
-  const { data } = await post(`/queue-manager/${queueName}/resume`);
+  const { data } = await post(`/api/queue-manager/${queueName}/resume`);
   return data;
 };
 
@@ -185,7 +192,7 @@ export const cleanQueue = async (
   grace: number = 3600000,
   status: 'completed' | 'failed' = 'completed'
 ): Promise<{ success: boolean; deletedCount: number; message: string }> => {
-  const { data } = await post(`/queue-manager/${queueName}/clean`, { grace, status });
+  const { data } = await post(`/api/queue-manager/${queueName}/clean`, { grace, status });
   return data;
 };
 
@@ -193,6 +200,6 @@ export const cleanQueue = async (
  * Drain a queue (remove all jobs)
  */
 export const drainQueue = async (queueName: string): Promise<{ success: boolean; message: string }> => {
-  const { data } = await post(`/queue-manager/${queueName}/drain`);
+  const { data } = await post(`/api/queue-manager/${queueName}/drain`);
   return data;
 };

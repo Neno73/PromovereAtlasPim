@@ -1,10 +1,5 @@
 import { Product, Category, Supplier, ApiResponse } from '../types';
 
-interface BrandProduct {
-  id: number;
-  brand?: string;
-}
-
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:1337/api';
 
 class ApiService {
@@ -39,13 +34,16 @@ class ApiService {
     if (params?.sort) searchParams.append('sort', params.sort);
     
     const populate = params?.populate || [
-      'main_image', 
-      'gallery_images', 
-      'model_image', 
-      'categories', 
-      'supplier', 
-      'dimensions', 
-      'price_tiers'
+      'main_image',
+      'gallery_images',
+      'model_image',
+      'categories',
+      'supplier',
+      'dimensions',
+      'price_tiers',
+      'variants',
+      'variants.primary_image',
+      'variants.gallery_images'
     ];
     populate.forEach(field => {
       searchParams.append('populate', field);
@@ -86,7 +84,22 @@ class ApiService {
   }
 
   async getProduct(documentId: string): Promise<ApiResponse<Product>> {
-    return this.fetch<ApiResponse<Product>>(`/products/${documentId}?populate=*`);
+    const populate = [
+      'main_image',
+      'gallery_images',
+      'model_image',
+      'categories',
+      'supplier',
+      'dimensions',
+      'price_tiers',
+      'variants',
+      'variants.primary_image',
+      'variants.gallery_images'
+    ];
+    const searchParams = new URLSearchParams();
+    populate.forEach(field => searchParams.append('populate', field));
+
+    return this.fetch<ApiResponse<Product>>(`/products/${documentId}?${searchParams.toString()}`);
   }
 
   // Categories
@@ -99,19 +112,11 @@ class ApiService {
     return this.fetch<ApiResponse<Supplier[]>>('/suppliers?pagination[pageSize]=100');
   }
 
-  // Get unique brands
+  // Get unique brands from efficient backend endpoint
   async getBrands(): Promise<string[]> {
     try {
-      const response = await this.fetch<ApiResponse<BrandProduct[]>>('/products?fields[0]=brand&pagination[pageSize]=1000');
-      if (!response.data || !Array.isArray(response.data)) {
-        return [];
-      }
-      const brands = response.data
-        .map(product => product.brand)
-        .filter((brand): brand is string => brand !== undefined && brand !== null && brand.trim() !== '')
-        .filter((brand, index, array) => array.indexOf(brand) === index)
-        .sort();
-      return brands;
+      const response = await this.fetch<{ data: string[]; meta: { total: number } }>('/products/brands');
+      return response.data || [];
     } catch (error) {
       console.error('Failed to fetch brands:', error);
       return [];

@@ -39,6 +39,7 @@ export default {
       config: {
         policies: [],
         middlewares: [],
+        auth: false, // Allow access without API token authentication
       },
     },
     {

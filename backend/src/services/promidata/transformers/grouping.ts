@@ -125,18 +125,34 @@ class GroupingService {
   /**
    * Extract a_number from product data
    * Tries multiple field names
+   *
+   * IMPORTANT: For Promidata suppliers like A360, ANumber is the supplier code (A360),
+   * not a product family identifier. Each JSON file represents one product family.
+   * Use SKU as the grouping key in these cases.
    */
   private extractANumber(product: RawProductData): string | null {
-    return (
-      product.a_number ||
-      product.ANumber ||
-      product.A_Number ||
-      product.aNumber ||
-      product.model ||
-      product.Model ||
-      product.ModelNumber ||
-      null
-    );
+    // Check if we have a specific a_number field (preferred)
+    const specificANumber = product.a_number || product.A_Number || product.aNumber;
+    if (specificANumber) {
+      return specificANumber;
+    }
+
+    // Check if we have a model number
+    const modelNumber = product.model || product.Model || product.ModelNumber;
+    if (modelNumber) {
+      return modelNumber;
+    }
+
+    // If ANumber looks like a supplier code (short, like "A360"), use SKU instead
+    // This handles Promidata suppliers where each JSON file = 1 product family
+    const aNumber = product.ANumber;
+    if (aNumber && aNumber.length <= 10 && aNumber.match(/^[A-Z]\d+$/)) {
+      // ANumber is a supplier code, use SKU as family identifier
+      return product.SKU || product.sku || aNumber;
+    }
+
+    // Otherwise use ANumber
+    return aNumber || null;
   }
 
   /**

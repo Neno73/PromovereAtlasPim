@@ -88,9 +88,46 @@ const QueueCard: React.FC<QueueCardProps> = ({
                 Completed:
               </Typography>
               <Typography variant="pi" fontWeight="bold">
-                {stats.completed}
+                {stats.completed.toLocaleString()}
               </Typography>
             </Flex>
+
+            {/* Show deduplication stats for image-upload queue */}
+            {stats.queueName === 'image-upload' && 'dedupRate' in stats && (
+              <>
+                <Flex justifyContent="space-between" paddingLeft={2}>
+                  <Typography variant="pi" textColor="success700" fontSize={1}>
+                    ↳ Actual Uploads:
+                  </Typography>
+                  <Typography variant="pi" fontWeight="semiBold" textColor="success700" fontSize={1}>
+                    ~{stats.estimatedActualUploads?.toLocaleString() || 0}
+                  </Typography>
+                </Flex>
+                <Flex justifyContent="space-between" paddingLeft={2}>
+                  <Typography variant="pi" textColor="neutral500" fontSize={1}>
+                    ↳ Deduplicated (Skipped):
+                  </Typography>
+                  <Typography variant="pi" fontWeight="semiBold" textColor="neutral500" fontSize={1}>
+                    ~{stats.estimatedDeduplicated?.toLocaleString() || 0}
+                  </Typography>
+                </Flex>
+                <Flex justifyContent="space-between" paddingLeft={2}>
+                  <Typography variant="pi" textColor="primary600" fontSize={1}>
+                    ↳ Efficiency Rate:
+                  </Typography>
+                  <Typography variant="pi" fontWeight="bold" textColor="primary600" fontSize={1}>
+                    {stats.dedupRate}%
+                  </Typography>
+                </Flex>
+                {stats.sampledJobs < stats.completed && (
+                  <Flex justifyContent="flex-end" paddingLeft={2}>
+                    <Typography variant="pi" textColor="neutral400" fontSize={0}>
+                      (based on {stats.sampledJobs} sampled jobs)
+                    </Typography>
+                  </Flex>
+                )}
+              </>
+            )}
 
             <Flex justifyContent="space-between">
               <Typography variant="pi" textColor="neutral600">
@@ -101,7 +138,7 @@ const QueueCard: React.FC<QueueCardProps> = ({
                 fontWeight="bold"
                 textColor={stats.failed > 0 ? 'danger600' : 'neutral800'}
               >
-                {stats.failed}
+                {stats.failed.toLocaleString()}
               </Typography>
             </Flex>
 
@@ -111,7 +148,7 @@ const QueueCard: React.FC<QueueCardProps> = ({
                   Delayed:
                 </Typography>
                 <Typography variant="pi" fontWeight="bold" textColor="warning600">
-                  {stats.delayed}
+                  {stats.delayed.toLocaleString()}
                 </Typography>
               </Flex>
             )}

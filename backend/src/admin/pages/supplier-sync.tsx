@@ -51,7 +51,7 @@ const SupplierSyncPage = () => {
     setSyncingSuppliers((prev) => new Set(prev).add(supplier.id));
 
     try {
-      const response = await post(`/api/suppliers/${supplier.id}/sync`);
+      const response = await post(`/api/suppliers/${supplier.documentId}/sync`);
 
       if (response.data.success) {
         const {

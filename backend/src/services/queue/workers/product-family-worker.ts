@@ -116,11 +116,13 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
             variantResults.push(variantResult);
 
             // Enqueue image upload jobs for this variant
+            // Use transformer to extract image URLs from Promidata structure
+            const imageUrls = variantTransformer.extractImageUrls(variantRawData);
+
             // Primary image
-            if (variantRawData.image || variantRawData.Image) {
-              const imageUrl = variantRawData.image || variantRawData.Image;
+            if (imageUrls.primaryImage) {
               const imageJobData: ImageUploadJobData = {
-                imageUrl,
+                imageUrl: imageUrls.primaryImage,
                 fileName: `variant-${variantResult.variantId}-primary`,
                 entityType: 'product-variant',
                 entityId: Number(variantResult.variantId),
@@ -143,9 +145,8 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
             }
 
             // Gallery images
-            const galleryImages = variantRawData.images || variantRawData.Images || [];
-            for (let idx = 0; idx < galleryImages.length; idx++) {
-              const imageUrl = galleryImages[idx];
+            for (let idx = 0; idx < imageUrls.galleryImages.length; idx++) {
+              const imageUrl = imageUrls.galleryImages[idx];
               const imageJobData: ImageUploadJobData = {
                 imageUrl,
                 fileName: `variant-${variantResult.variantId}-gallery-${idx}`,

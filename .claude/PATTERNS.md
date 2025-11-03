@@ -1,8 +1,10 @@
 # Code Patterns
 
-*Last updated: 2025-10-29 19:40*
+*Last updated: 2025-11-02 20:40*
 
 Code conventions and patterns used in PromoAtlas PIM. **These are the ACTUAL patterns found in this codebase**, not generic best practices.
+
+**Note**: Controllers updated to handle Product → ProductVariant hierarchy (populate variants, extract variant data).
 
 ## File Naming Conventions
 

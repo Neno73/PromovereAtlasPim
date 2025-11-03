@@ -25,7 +25,7 @@ class VariantSyncService {
     try {
       const variant = await strapi.db.query('api::product-variant.product-variant').findOne({
         where: { sku },
-        select: ['id', 'sku', 'product', 'color', 'size', 'is_primary_for_color'],
+        select: ['id', 'sku', 'color', 'size', 'is_primary_for_color'],
       });
 
       return variant;

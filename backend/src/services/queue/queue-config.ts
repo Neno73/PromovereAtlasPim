@@ -38,7 +38,11 @@ const getEnvNumber = (key: string, defaultValue: number): number => {
 /**
  * Redis Connection Configuration
  * Shared across all queues and workers
+ *
+ * IMPORTANT: Connection is created lazily to prevent errors during module load
  */
+let _redisConnection: any = null;
+
 const createRedisConnection = () => {
   // Validate environment variables before creating connection
   validateRedisEnvVars();
@@ -51,7 +55,24 @@ const createRedisConnection = () => {
   };
 };
 
-export const redisConnection = createRedisConnection();
+/**
+ * Get Redis connection (lazy initialization)
+ * This ensures we don't try to connect during module load
+ */
+export const getRedisConnection = () => {
+  if (!_redisConnection) {
+    _redisConnection = createRedisConnection();
+  }
+  return _redisConnection;
+};
+
+// For backward compatibility, create a getter
+export const redisConnection = new Proxy({} as any, {
+  get: (target, prop) => {
+    const connection = getRedisConnection();
+    return connection[prop];
+  }
+});
 
 /**
  * Default Queue Options

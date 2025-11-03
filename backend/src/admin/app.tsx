@@ -13,7 +13,7 @@ export default {
     // Add supplier sync management page
     app.addMenuLink({
       to: "/supplier-sync",
-      icon: "refresh",
+      icon: "sync",
       intlLabel: {
         id: "supplier-sync.plugin.name",
         defaultMessage: "Supplier Sync",
@@ -27,7 +27,7 @@ export default {
     // Add queue management page
     app.addMenuLink({
       to: "/queue-management",
-      icon: "layer",
+      icon: "bulletList",
       intlLabel: {
         id: "queue-management.plugin.name",
         defaultMessage: "Queue Management",

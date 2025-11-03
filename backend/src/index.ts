@@ -18,18 +18,22 @@ export default {
    * run jobs, or perform some special logic.
    */
   async bootstrap({ strapi }) {
-    console.log('🚀 Bootstrapping application to set public permissions...');
+    strapi.log.info('🚀 Bootstrapping application to set public permissions...');
     try {
-      const publicRole = await strapi.query('plugin::users-permissions.role').findOne({
-        where: { type: 'public' },
+      // Strapi 5: Use findMany with filters instead of findOne with where
+      const publicRoles = await strapi.query('plugin::users-permissions.role').findMany({
+        filters: { type: 'public' },
+        limit: 1,
       });
 
+      const publicRole = publicRoles?.[0];
+
       if (!publicRole) {
-        console.error('❌ Bootstrap Error: Could not find the public role.');
+        strapi.log.error('❌ Bootstrap Error: Could not find the public role.');
         return;
       }
 
-      console.log(`Found public role with ID: ${publicRole.id}. Proceeding to set permissions.`);
+      strapi.log.info(`Found public role with ID: ${publicRole.id}. Proceeding to set permissions.`);
 
       const permissionsToSet = [
         'api::product.product.find',
@@ -43,43 +47,69 @@ export default {
       ];
 
       for (const action of permissionsToSet) {
-        console.log(`- Processing permission: ${action}`);
+        strapi.log.info(`- Processing permission: ${action}`);
         try {
-          const permission = await strapi.query('plugin::users-permissions.permission').findOne({
-            where: { action, role: publicRole.id },
+          // Strapi 5: Use findMany with filters instead of findOne with where
+          const permissions = await strapi.query('plugin::users-permissions.permission').findMany({
+            filters: { action, role: publicRole.id },
+            limit: 1,
           });
+
+          const permission = permissions?.[0];
 
           if (permission) {
             if (!permission.enabled) {
-              console.log(`  Permission found, enabling...`);
+              strapi.log.info(`  Permission found, enabling...`);
               await strapi.query('plugin::users-permissions.permission').update({
                 where: { id: permission.id },
                 data: { enabled: true },
               });
-              console.log(`  ✅ Permission enabled.`);
+              strapi.log.info(`  ✅ Permission enabled.`);
             } else {
-              console.log(`  Permission was already enabled.`);
+              strapi.log.info(`  Permission was already enabled.`);
             }
           } else {
-            console.log(`  Permission not found, creating...`);
+            strapi.log.info(`  Permission not found, creating...`);
             await strapi.query('plugin::users-permissions.permission').create({
               data: { action, role: publicRole.id, enabled: true },
             });
-            console.log(`  ✅ Permission created and enabled.`);
+            strapi.log.info(`  ✅ Permission created and enabled.`);
           }
         } catch (err) {
-          console.error(`  ❌ Error processing permission ${action}:`, err.message);
+          strapi.log.error(`  ❌ Error processing permission ${action}:`, err.message);
         }
       }
 
-      console.log('✅ Bootstrap finished setting public API permissions.');
+      strapi.log.info('✅ Bootstrap finished setting public API permissions.');
     } catch (error) {
-      console.error('❌ An error occurred during the bootstrap process:', error);
+      strapi.log.error('❌ An error occurred during the bootstrap process:', error);
+    }
+
+    // Discover and sync suppliers from Promidata
+    // Only runs if suppliers are missing (smart check)
+    strapi.log.info('\n🔍 Checking supplier database...');
+    try {
+      const supplierSyncService = await import('./services/promidata/sync/supplier-sync-service');
+      const missingSuppliers = await supplierSyncService.default.getMissingSuppliers();
+
+      if (missingSuppliers.length > 0) {
+        strapi.log.info(`📊 Found ${missingSuppliers.length} new suppliers in Promidata, syncing...`);
+        const result = await supplierSyncService.default.discoverAndSyncSuppliers();
+        strapi.log.info(`✅ Supplier discovery complete: ${result.created} created, ${result.updated} updated from ${result.discovered} discovered`);
+      } else {
+        const allSuppliers = await strapi.documents('api::supplier.supplier').findMany({
+          pagination: { page: 1, pageSize: 1 },
+        });
+        strapi.log.info(`✅ Supplier database is up-to-date (${allSuppliers.length > 0 ? 'suppliers exist' : 'no suppliers in Promidata'})`);
+      }
+    } catch (error) {
+      strapi.log.error('❌ Error during supplier discovery:', error.message);
+      strapi.log.warn('⚠️  You can manually sync suppliers later via the admin panel');
     }
 
     // Initialize BullMQ queue service and workers
     // Use setImmediate to ensure Strapi is fully initialized before starting workers
-    console.log('\n🚀 Scheduling BullMQ queue service and worker initialization...');
+    strapi.log.info('\n🚀 Scheduling BullMQ queue service and worker initialization...');
     setImmediate(async () => {
       try {
         // Verify Strapi is ready before starting workers
@@ -104,16 +134,16 @@ export default {
    * This gives you an opportunity to gracefully shut down services.
    */
   async destroy({ strapi }) {
-    console.log('🛑 Shutting down application...');
+    strapi.log.info('🛑 Shutting down application...');
 
     try {
       // Stop workers
       await workerManager.stop();
       // Close queues
       await queueService.close();
-      console.log('✅ Queue service and workers shut down successfully');
+      strapi.log.info('✅ Queue service and workers shut down successfully');
     } catch (error) {
-      console.error('❌ Error during shutdown:', error);
+      strapi.log.error('❌ Error during shutdown:', error);
     }
   },
 };

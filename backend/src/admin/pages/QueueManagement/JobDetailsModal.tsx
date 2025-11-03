@@ -29,15 +29,27 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, isOpen, onClose 
     return new Date(timestamp).toLocaleString();
   };
 
-  const getStateBadgeVariant = (state: string) => {
+  const getStateBadgeVariant = (state: string, failedReason?: string) => {
+    // Check if this is a parent-child dependency issue
+    const isPendingDependencies = failedReason?.includes('pending dependencies');
+
     const variants: Record<string, any> = {
       waiting: 'secondary',
       active: 'success',
       completed: 'success',
-      failed: 'danger',
+      failed: isPendingDependencies ? 'warning' : 'danger', // Warning for dependency issues
       delayed: 'warning',
     };
     return variants[state] || 'neutral';
+  };
+
+  const getStateLabel = (state: string, failedReason?: string) => {
+    const isPendingDependencies = failedReason?.includes('pending dependencies');
+
+    if (state === 'failed' && isPendingDependencies) {
+      return 'waiting for children';
+    }
+    return state;
   };
 
   /**
@@ -57,8 +69,12 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, isOpen, onClose 
     <Modal.Root open={isOpen} onOpenChange={onClose}>
       <Modal.Content>
         <Modal.Header>
-          <Modal.Title>Job Details</Modal.Title>
-          <Badge variant={getStateBadgeVariant(job.state)}>{job.state}</Badge>
+          <Flex justifyContent="space-between" alignItems="center" width="100%">
+            <Modal.Title>Job Details</Modal.Title>
+            <Badge variant={getStateBadgeVariant(job.state, job.failedReason)}>
+              {getStateLabel(job.state, job.failedReason)}
+            </Badge>
+          </Flex>
         </Modal.Header>
 
         <Modal.Body>
@@ -190,13 +206,27 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, isOpen, onClose 
               <>
                 <Divider />
                 <Box>
-                  <Typography variant="sigma" textColor="danger600">
-                    Error
+                  <Typography
+                    variant="sigma"
+                    textColor={job.failedReason.includes('pending dependencies') ? 'warning600' : 'danger600'}
+                  >
+                    {job.failedReason.includes('pending dependencies') ? 'Status' : 'Error'}
                   </Typography>
                   <Box paddingTop={2}>
-                    <Typography variant="pi" textColor="danger600">
+                    <Typography
+                      variant="pi"
+                      textColor={job.failedReason.includes('pending dependencies') ? 'warning700' : 'danger600'}
+                    >
                       {job.failedReason}
                     </Typography>
+                    {job.failedReason.includes('pending dependencies') && (
+                      <Box paddingTop={2} paddingLeft={2} background="warning100" padding={2} hasRadius marginTop={2}>
+                        <Typography variant="pi" textColor="warning700" fontSize={1}>
+                          ℹ️ This is a parent job waiting for child jobs to complete (e.g., image uploads).
+                          This is normal and not an actual failure. The job will complete once all child jobs finish.
+                        </Typography>
+                      </Box>
+                    )}
                   </Box>
                 </Box>
               </>

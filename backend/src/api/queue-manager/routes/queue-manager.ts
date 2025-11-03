@@ -1,7 +1,7 @@
 /**
  * Queue Manager Routes
  * Admin-only routes for queue management and monitoring
- * Routes are accessible from admin panel with admin authentication
+ * Authentication handled in controller middleware
  */
 
 export default {
@@ -12,7 +12,7 @@ export default {
       path: '/queue-manager/stats',
       handler: 'queue-manager.getStats',
       config: {
-        auth: false, // Handled in controller
+        auth: false,
         policies: [],
       },
     },

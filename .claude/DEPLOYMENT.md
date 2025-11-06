@@ -732,6 +732,54 @@ docker logs promoatlas-backend | grep ECONNREFUSED
 REDIS_URL=rediss://default:password@your-host.upstash.io:6379
 ```
 
+#### Issue 6: Public URL Returns 404 - Network Routing
+
+**Symptoms:**
+- Deployment succeeds
+- Container is running and healthy
+- `localhost:1337` works on server
+- Public URL returns 404 Not Found
+
+**Causes:**
+- Container on custom network instead of Coolify's network
+- Coolify's reverse proxy (Caddy/Traefik) can't reach container
+
+**Solution:**
+The fix is already applied in `docker-compose.coolify.yml`. The networks section must use:
+
+```yaml
+networks:
+  promoatlas:
+    external: true
+    name: coolify  # MUST use Coolify's network
+```
+
+**DO NOT** create a custom network:
+```yaml
+# ❌ WRONG - This isolates container from Coolify
+networks:
+  promoatlas:
+    driver: bridge
+    name: promoatlas-network
+```
+
+**Verify Fix:**
+```bash
+# Check container is on coolify network
+docker inspect promoatlas-backend --format '{{range $net, $conf := .NetworkSettings.Networks}}{{$net}}{{end}}'
+# Should output: coolify
+
+# Test public URL
+curl -I https://your-domain.com/_health
+# Should return HTTP 200
+```
+
+**Rollback:**
+If this breaks your deployment:
+1. Check if Coolify network exists: `docker network ls | grep coolify`
+2. If not, create it: `docker network create coolify`
+3. Redeploy the application
+
 ### Performance Monitoring
 
 **Coolify Built-in Metrics:**

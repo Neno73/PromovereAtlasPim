@@ -25,10 +25,8 @@ services:
     container_name: promoatlas-backend
     restart: unless-stopped
 
-    # Load environment from .env.docker for local testing
-    # In Coolify, environment variables are injected directly
-    env_file:
-      - ./backend/.env.docker
+    # Environment variables are injected directly by Coolify
+    # No env_file needed - Coolify uses the environment: section below
 
     # Expose Strapi on port 1337
     ports:

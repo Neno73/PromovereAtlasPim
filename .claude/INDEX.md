@@ -34,6 +34,14 @@ This directory contains detailed documentation for the PromoAtlas PIM system. Al
 - Read when: Understanding why things are designed a certain way, making new architectural decisions
 - Contains: Log of significant decisions with context, trade-offs, and consequences
 
+**DEPLOYMENT.md** - Coolify deployment guide with CI/CD automation
+- Read when: Setting up staging/production deployment, configuring environment variables, troubleshooting deployments
+- Contains: Coolify setup, Docker Compose configuration, worker management, monitoring, common deployment issues
+
+**DOMAIN-SETUP.md** - Custom domain configuration for Cloudflare + Coolify
+- Read when: Configuring custom domains, setting up DNS, troubleshooting SSL certificates
+- Contains: DNS configuration, domain routing, Let's Encrypt SSL setup, CORS configuration
+
 **IMPROVEMENTS.md** - Comprehensive improvement roadmap
 - Read when: Planning enhancements, prioritizing work, understanding technical debt
 - Contains: Detailed improvement suggestions for sync plugin and system, with code examples and implementation roadmap

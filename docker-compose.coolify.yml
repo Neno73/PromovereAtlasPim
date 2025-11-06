@@ -25,6 +25,12 @@ services:
     container_name: promoatlas-backend
     restart: unless-stopped
 
+    # Custom domain configuration (managed by Coolify)
+    # Staging: strapistaging.solslab.dev
+    # Production: strapi.solslab.dev
+    labels:
+      - "coolify.managed=true"
+
     # Environment variables are injected directly by Coolify
     # No env_file needed - Coolify uses the environment: section below
 

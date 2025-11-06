@@ -1,6 +1,6 @@
 # Tech Stack
 
-*Last updated: 2025-11-02 20:40*
+*Last updated: 2025-11-04 15:05*
 
 Complete technology stack for PromoAtlas PIM system with versions and rationale.
 
@@ -38,6 +38,18 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 - **node-fetch** (2.7.0) - HTTP requests for Promidata API integration
   - **Why**: Simple, Promise-based API for external data fetching
 
+### Queue System
+- **BullMQ** (^5.0.0) - Redis-based job queue for background processing
+  - **Why**: Handles long-running sync operations, concurrent job processing, job retries
+  - **Redis Client**: ioredis (^5.3.0)
+  - **Redis Provider**: Upstash (serverless Redis)
+  - **Workers**: 3 active workers for parallel processing
+    - `supplier-sync` (concurrency: 1) - Processes supplier sync jobs sequentially
+    - `product-family` (concurrency: 3) - Creates product families with parallelism
+    - `image-upload` (concurrency: 10) - High-concurrency image uploads to R2
+  - **Features**: Job retries, progress tracking, failure handling, queue monitoring
+  - **Configuration**: Lazy Redis connection to prevent startup issues
+
 ### Build Tools
 - **TypeScript** (5.7.3) - Type safety
 - **Vite** (^6.1.12) - Fast build tool and dev server
@@ -54,7 +66,7 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 ### Build Tool
 - **Vite** (5.0.8) - Build tool and dev server
   - **Why**: Fast HMR, optimized production builds, TypeScript support out-of-box
-  - **Dev Server Port**: 3001
+  - **Dev Server Port**: 3000 (auto-increments to 3001, 3002, etc. if port is occupied)
   - **Proxy**: `/api/*` → `http://localhost:1337` for backend API
 
 ### Language
@@ -146,6 +158,8 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 | Storage | Cloudflare R2 | - | Image hosting |
 | AWS SDK | @aws-sdk/client-s3 | 3.844.0 | R2 integration |
 | HTTP Client | node-fetch | 2.7.0 | API calls |
+| Queue System | BullMQ | 5.0.0 | Background jobs |
+| Redis Client | ioredis | 5.3.0 | Queue backend |
 | Routing | React Router DOM | 6.26.0 | Client routing |
 | Node Runtime | Node.js | 18-22 | Server runtime |
 

@@ -13,7 +13,7 @@ import { Worker, Job, Queue } from 'bullmq';
 import {
   productFamilyWorkerOptions,
   imageUploadJobOptions,
-  redisConnection
+  getRedisConnection
 } from '../queue-config';
 
 // Import modular services
@@ -91,7 +91,7 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
         const imageJobs = [];
 
         // Get image upload queue
-        const imageUploadQueue = new Queue('image-upload', { connection: redisConnection });
+        const imageUploadQueue = new Queue('image-upload', { connection: getRedisConnection() });
 
         let processed = 0;
         const totalVariants = variants.length;

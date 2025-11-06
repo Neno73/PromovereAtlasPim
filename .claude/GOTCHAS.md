@@ -1,10 +1,10 @@
 # Known Issues & Workarounds
 
-*Last updated: 2025-11-03 11:45*
+*Last updated: 2025-11-06*
 
 Known issues, edge cases, and workarounds in PromoAtlas PIM.
 
-**Note**: Major startup issues resolved as of 2025-11-02. SSL connection issue fixed 2025-11-03.
+**Note**: Major startup issues resolved as of 2025-11-02. SSL connection issue fixed 2025-11-03. Redis queue connection issue fixed 2025-11-06.
 
 ## Backend Issues
 
@@ -82,7 +82,107 @@ timeout 5 bash -c 'cat < /dev/null > /dev/tcp/your-host.neon.tech/5432'
 
 ---
 
-### 2. AutoRAG Category Hierarchy Not Built
+### 2. BullMQ Workers Connecting to Localhost Instead of Upstash Redis (ECONNREFUSED)
+
+**Location**: `backend/src/services/queue/queue-config.ts`
+
+**Issue:**
+```
+Error: connect ECONNREFUSED 127.0.0.1:6379
+```
+
+**Description:**
+- BullMQ workers attempted to connect to localhost Redis (`127.0.0.1:6379`) instead of Upstash
+- Environment variable `REDIS_URL` was correctly set with Upstash URL (`rediss://...@host.upstash.io:6379`)
+- Manual ioredis connection test with the URL worked fine
+- Workers failed to start, preventing queue job processing
+
+**Root Cause:**
+The `queue-config.ts` used a Proxy wrapper pattern for lazy initialization:
+```typescript
+export const redisConnection = new Proxy({} as any, {
+  get: (target, prop) => {
+    const connection = getRedisConnection();
+    return connection[prop];
+  }
+});
+```
+
+This Proxy wasn't compatible with BullMQ/ioredis expectations. BullMQ expects a plain `ConnectionOptions` object, not a Proxy. When BullMQ couldn't parse the connection properly, it defaulted to localhost.
+
+**Solution (FIXED):**
+Replaced Proxy pattern with proper URL parsing in `backend/src/services/queue/queue-config.ts`:
+```typescript
+export const getRedisConnection = () => {
+  validateRedisEnvVars();
+
+  const redisUrl = process.env.REDIS_URL!;
+
+  // Parse Redis URL (format: rediss://user:password@host:port)
+  const url = new URL(redisUrl);
+
+  return {
+    host: url.hostname,
+    port: parseInt(url.port) || 6379,
+    password: url.password || undefined,
+    username: url.username || undefined,
+    tls: url.protocol === 'rediss:' ? {} : undefined,
+    maxRetriesPerRequest: null, // Required for BullMQ
+    enableReadyCheck: false,
+  };
+};
+```
+
+**Changes Made:**
+1. Removed Proxy wrapper entirely
+2. Implemented proper URL parsing using JavaScript's `URL` class
+3. Extracted host, port, username, password from Redis URL
+4. Detected TLS requirement from `rediss://` protocol
+5. Updated all worker files to call `getRedisConnection()` function
+
+**How to Diagnose:**
+```bash
+# 1. Verify REDIS_URL is set correctly
+docker exec promoatlas-backend printenv | grep REDIS_URL
+
+# 2. Test Redis connection manually
+docker exec promoatlas-backend node -e "
+const Redis = require('ioredis');
+const url = new URL(process.env.REDIS_URL);
+const redis = new Redis({
+  host: url.hostname,
+  port: parseInt(url.port),
+  password: url.password,
+  tls: {}
+});
+redis.ping().then(() => console.log('✅ Connected')).catch(e => console.error('❌', e));
+"
+
+# 3. Check worker logs for connection errors
+docker logs promoatlas-backend | grep ECONNREFUSED
+```
+
+**Symptoms:**
+- ✅ `REDIS_URL` environment variable present
+- ✅ Manual Redis connection test succeeds
+- ❌ Workers log `ECONNREFUSED 127.0.0.1:6379`
+- ❌ Workers fail to start
+- ❌ Queue jobs never process
+
+**Prevention:**
+- Always use `rediss://` protocol for TLS connections (Upstash requires TLS)
+- Return plain objects from connection getters, not Proxies or strings
+- Match TypeScript types expected by BullMQ (`ConnectionOptions`)
+- Test worker startup logs after Redis configuration changes
+
+**Related:**
+- See DEPLOYMENT.md "Issue 5: Workers Connect to Localhost Instead of Upstash Redis"
+- See backend/.env.example for Redis configuration format
+- See backend/src/services/queue/workers/*.ts for updated imports
+
+---
+
+### 3. AutoRAG Category Hierarchy Not Built
 
 **Location**: `backend/src/services/autorag.ts`
 
@@ -106,7 +206,7 @@ timeout 5 bash -c 'cat < /dev/null > /dev/tcp/your-host.neon.tech/5432'
 - Transform flat categories to nested structure
 - Update `transformProductForAutoRAG()` method
 
-### 2. Strapi 5 Document Service Migration
+### 4. Strapi 5 Document Service Migration
 
 **Location**: Various files throughout backend
 
@@ -134,7 +234,7 @@ await strapi.documents('api::product.product').findMany(options);
 - Update all service methods
 - Test thoroughly as Strapi 5 patterns evolve
 
-### 3. Permission Bootstrap Uses Legacy API
+### 5. Permission Bootstrap Uses Legacy API
 
 **Location**: `backend/src/index.ts`
 
@@ -165,7 +265,7 @@ const publicRoles = await strapi.query('plugin::users-permissions.role').findMan
 const publicRole = publicRoles[0];
 ```
 
-### 4. Hash-Based Sync May Miss Updates
+### 6. Hash-Based Sync May Miss Updates
 
 **Location**: `backend/src/api/promidata-sync/services/promidata-sync.ts`
 
@@ -187,7 +287,7 @@ const publicRole = publicRoles[0];
 UPDATE products SET promidata_hash = NULL;
 ```
 
-### 5. Image Upload Timeout for Large Syncs
+### 7. Image Upload Timeout for Large Syncs
 
 **Issue:**
 - Promidata sync downloads images from S3

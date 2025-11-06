@@ -85,6 +85,8 @@ export default {
       strapi.log.error('❌ An error occurred during the bootstrap process:', error);
     }
 
+    // Health check endpoint is now at /api/health (see src/api/health/)
+
     // Discover and sync suppliers from Promidata
     // Only runs if suppliers are missing (smart check)
     strapi.log.info('\n🔍 Checking supplier database...');

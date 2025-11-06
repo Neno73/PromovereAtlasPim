@@ -1,6 +1,6 @@
 # Architecture
 
-*Last updated: 2025-11-02 20:40*
+*Last updated: 2025-11-04 15:05*
 
 System design and component structure for PromoAtlas PIM.
 
@@ -334,6 +334,73 @@ const promidataConfig = {
 - `transformProductForAutoRAG(product)` - Convert Strapi product to AutoRAG format
 
 **Integration**: Called from product lifecycle hooks
+
+#### Queue Service (BullMQ)
+
+**Location**: `backend/src/services/queue/`
+
+**Purpose**: Background job processing for long-running sync operations, preventing request timeouts and enabling parallel processing
+
+**Architecture**:
+```
+queue/
+├── queue-config.ts       # Redis connection and queue configuration (lazy init)
+├── queue-service.ts      # Queue management service (add jobs, monitor status)
+├── worker-manager.ts     # Worker lifecycle management
+├── job-types.ts          # TypeScript job type definitions
+└── workers/
+    ├── supplier-sync-worker.ts      # Processes supplier sync jobs
+    ├── product-family-worker.ts     # Creates product families
+    └── image-upload-worker.ts       # Uploads images to R2
+```
+
+**Queue Configuration** (`queue-config.ts`):
+- **Lazy Redis Connection**: Uses Proxy pattern to prevent connection attempts during module load
+- **Upstash Redis**: Serverless Redis provider (no persistent connection needed)
+- **Connection String**: `rediss://` (SSL enabled)
+- **Default Job Options**: Retry 3 times, keep completed jobs for 24h, failed for 7 days
+
+**Queue Service** (`queue-service.ts`):
+```typescript
+// Add job to queue
+await queueService.addSupplierSyncJob({ supplierId, options });
+await queueService.addProductFamilyJob({ aNumber, products });
+await queueService.addImageUploadJob({ productId, imageUrl });
+
+// Monitor queue status
+const stats = await queueService.getQueueStats();
+// Returns: { waiting, active, completed, failed, delayed }
+```
+
+**Workers** (3 active):
+
+1. **Supplier Sync Worker** (`supplier-sync-worker.ts`)
+   - **Concurrency**: 1 (sequential processing)
+   - **Timeout**: 30 minutes per job
+   - **Purpose**: Full supplier sync (thousands of products)
+   - **Error Handling**: Retries on failure, logs errors
+
+2. **Product Family Worker** (`product-family-worker.ts`)
+   - **Concurrency**: 3 (parallel processing)
+   - **Timeout**: 5 minutes per job
+   - **Purpose**: Group products by a_number, create Product + Variants
+   - **Error Handling**: Individual product failures don't stop batch
+
+3. **Image Upload Worker** (`image-upload-worker.ts`)
+   - **Concurrency**: 10 (high parallelism)
+   - **Timeout**: 2 minutes per job
+   - **Purpose**: Download from Promidata, upload to Cloudflare R2
+   - **Error Handling**: Retry failed uploads, skip invalid URLs
+
+**Integration Points**:
+- **Promidata Sync Service**: Enqueues supplier sync jobs
+- **Product Service**: Enqueues family and image jobs
+- **Bootstrap** (`src/index.ts`): Initializes workers on startup
+
+**Monitoring**:
+- Queue dashboard available via queue-manager API
+- Worker status: `await workerManager.getWorkerStats()`
+- Job progress tracking: `job.updateProgress(percentage)`
 
 ### API Routes & Controllers
 

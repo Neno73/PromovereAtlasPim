@@ -14,7 +14,7 @@ import { Worker, Job, Queue } from 'bullmq';
 import {
   supplierSyncWorkerOptions,
   productFamilyJobOptions,
-  redisConnection
+  getRedisConnection
 } from '../queue-config';
 
 // Import modular services
@@ -172,7 +172,7 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
         strapi.log.info(`\n⚡ Step 5: Enqueueing ${filterResult.needsSync.length} product family jobs...`);
 
         // Get queue instance
-        const productFamilyQueue = new Queue('product-family', { connection: redisConnection });
+        const productFamilyQueue = new Queue('product-family', { connection: getRedisConnection() });
 
         const enqueuedJobs = [];
         for (const family of filterResult.needsSync) {

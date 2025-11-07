@@ -31,19 +31,9 @@ services:
     labels:
       - "coolify.managed=true"
 
-    # Load ALL environment variables from persistent file (survives Coolify redeployments)
-    # File location: /data/coolify/env-files/hcww0ks0gc08s4c80oggc00s.env
-    # To update: scp .env.coolify root@46.62.239.73:/data/coolify/env-files/hcww0ks0gc08s4c80oggc00s.env
-    env_file:
-      - /data/coolify/env-files/hcww0ks0gc08s4c80oggc00s.env
-
     # Expose Strapi on port 1337
     ports:
       - "1337:1337"
-
-    # Only override NODE_ENV to force production mode in Docker
-    environment:
-      NODE_ENV: production
 
     # Health check for Strapi (waits 90s for full startup)
     # Using 127.0.0.1 to avoid IPv6 issues, any HTTP response means server is up

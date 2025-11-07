@@ -31,7 +31,8 @@ services:
     labels:
       - "coolify.managed=true"
 
-    # Load environment variables from .env.coolify file
+    # Load ALL environment variables from .env.coolify file
+    # No need to list them individually - env_file handles everything
     env_file:
       - .env.coolify
 
@@ -39,57 +40,9 @@ services:
     ports:
       - "1337:1337"
 
-    # Environment variables (loaded from .env.coolify, with fallbacks)
+    # Only override NODE_ENV to force production mode in Docker
     environment:
-      # Server Configuration - Force production mode for Docker
-      HOST: ${HOST:-0.0.0.0}
-      PORT: ${PORT:-1337}
       NODE_ENV: production
-
-      # Strapi Security Keys
-      APP_KEYS: ${APP_KEYS}
-      API_TOKEN_SALT: ${API_TOKEN_SALT}
-      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET}
-      TRANSFER_TOKEN_SALT: ${TRANSFER_TOKEN_SALT}
-      JWT_SECRET: ${JWT_SECRET}
-
-      # Database Configuration (Neon PostgreSQL)
-      DATABASE_CLIENT: ${DATABASE_CLIENT:-postgres}
-      DATABASE_URL: ${DATABASE_URL}
-      DATABASE_HOST: ${DATABASE_HOST}
-      DATABASE_PORT: ${DATABASE_PORT:-5432}
-      DATABASE_NAME: ${DATABASE_NAME}
-      DATABASE_USERNAME: ${DATABASE_USERNAME}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-      DATABASE_SSL: ${DATABASE_SSL:-true}
-      DATABASE_SCHEMA: ${DATABASE_SCHEMA:-public}
-
-      # Cloudflare R2 Storage
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
-      R2_BUCKET_NAME: ${R2_BUCKET_NAME}
-      R2_ENDPOINT: ${R2_ENDPOINT}
-      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
-
-      # Cloudflare Configuration
-      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID}
-      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
-      CLOUDFLARE_RAG_NAME: ${CLOUDFLARE_RAG_NAME}
-
-      # Promidata Integration
-      PROMIDATA_BASE_URL: ${PROMIDATA_BASE_URL:-https://promi-dl.de/Profiles/Live/849c892e-b443-4f49-be3a-61a351cbdd23}
-
-      # Redis Configuration (Upstash)
-      REDIS_URL: ${REDIS_URL}
-      UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL}
-      UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN}
-
-      # BullMQ Configuration
-      BULLMQ_CONCURRENCY_FAMILIES: ${BULLMQ_CONCURRENCY_FAMILIES:-3}
-      BULLMQ_CONCURRENCY_IMAGES: ${BULLMQ_CONCURRENCY_IMAGES:-10}
-      BULLMQ_JOB_TIMEOUT_SUPPLIER: ${BULLMQ_JOB_TIMEOUT_SUPPLIER:-1800000}
-      BULLMQ_JOB_TIMEOUT_FAMILY: ${BULLMQ_JOB_TIMEOUT_FAMILY:-300000}
-      BULLMQ_JOB_TIMEOUT_IMAGE: ${BULLMQ_JOB_TIMEOUT_IMAGE:-120000}
 
     # Health check for Strapi (waits 90s for full startup)
     # Using 127.0.0.1 to avoid IPv6 issues, any HTTP response means server is up

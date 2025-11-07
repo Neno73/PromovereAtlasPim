@@ -31,14 +31,15 @@ services:
     labels:
       - "coolify.managed=true"
 
-    # Environment variables are injected directly by Coolify
-    # No env_file needed - Coolify uses the environment: section below
+    # Load environment variables from .env.coolify file
+    env_file:
+      - .env.coolify
 
     # Expose Strapi on port 1337
     ports:
       - "1337:1337"
 
-    # Environment variables (injected by Coolify)
+    # Environment variables (loaded from .env.coolify, with fallbacks)
     environment:
       # Server Configuration - Force production mode for Docker
       HOST: ${HOST:-0.0.0.0}

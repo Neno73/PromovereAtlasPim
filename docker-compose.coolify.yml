@@ -31,10 +31,11 @@ services:
     labels:
       - "coolify.managed=true"
 
-    # Load ALL environment variables from .env.coolify file
-    # No need to list them individually - env_file handles everything
+    # Load ALL environment variables from persistent file (survives Coolify redeployments)
+    # File location: /data/coolify/env-files/hcww0ks0gc08s4c80oggc00s.env
+    # To update: scp .env.coolify root@46.62.239.73:/data/coolify/env-files/hcww0ks0gc08s4c80oggc00s.env
     env_file:
-      - .env.coolify
+      - /data/coolify/env-files/hcww0ks0gc08s4c80oggc00s.env
 
     # Expose Strapi on port 1337
     ports:
@@ -99,8 +100,9 @@ networks:
 #    - Base Directory: . (root)
 #
 # 2. Environment Variables:
-#    Set all ${VARIABLE} values in Coolify's environment settings.
-#    Coolify will inject them during deployment.
+#    Stored in persistent file: /data/coolify/env-files/hcww0ks0gc08s4c80oggc00s.env
+#    This file survives Coolify redeployments (not regenerated)
+#    To update: scp .env.coolify root@46.62.239.73:/data/coolify/env-files/hcww0ks0gc08s4c80oggc00s.env
 #
 # 3. Staging vs Production:
 #    Create two separate Coolify applications:

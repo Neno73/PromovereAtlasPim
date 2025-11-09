@@ -1,6 +1,6 @@
 # PromoAtlas Documentation Index
 
-*Last updated: 2025-11-02 20:40*
+*Last updated: 2025-11-09 23:00*
 
 This directory contains detailed documentation for the PromoAtlas PIM system. All files are auto-loaded by Claude Code via `@import` statements when relevant to the current task.
 
@@ -34,13 +34,9 @@ This directory contains detailed documentation for the PromoAtlas PIM system. Al
 - Read when: Understanding why things are designed a certain way, making new architectural decisions
 - Contains: Log of significant decisions with context, trade-offs, and consequences
 
-**DEPLOYMENT.md** - Coolify deployment guide with CI/CD automation
-- Read when: Setting up staging/production deployment, configuring environment variables, troubleshooting deployments
-- Contains: Coolify setup, Docker Compose configuration, worker management, monitoring, common deployment issues
-
-**DOMAIN-SETUP.md** - Custom domain configuration for Cloudflare + Coolify
-- Read when: Configuring custom domains, setting up DNS, troubleshooting SSL certificates
-- Contains: DNS configuration, domain routing, Let's Encrypt SSL setup, CORS configuration
+**DEPLOYMENT.md** - Complete Coolify deployment guide (Updated: 2025-11-09)
+- Read when: Deploying to Coolify, adding new services, troubleshooting routing issues
+- Contains: DNS setup (wildcard for solslab.dev), Traefik routing, Let's Encrypt SSL, adding new services, deployment troubleshooting, environment variable management
 
 **IMPROVEMENTS.md** - Comprehensive improvement roadmap
 - Read when: Planning enhancements, prioritizing work, understanding technical debt

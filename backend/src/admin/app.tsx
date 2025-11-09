@@ -24,13 +24,27 @@ export default {
       },
     });
 
-    // Add queue management page
+    // Add Queue Dashboard (Bull Board)
+    app.addMenuLink({
+      to: "/queue-dashboard",
+      icon: "dashboard",
+      intlLabel: {
+        id: "queue-dashboard.plugin.name",
+        defaultMessage: "Queue Dashboard",
+      },
+      Component: async () => {
+        const mod = await import("./extensions/bull-board/admin/src/pages/Dashboard");
+        return mod.Dashboard;
+      },
+    });
+
+    // Add job manager page
     app.addMenuLink({
       to: "/queue-management",
       icon: "bulletList",
       intlLabel: {
         id: "queue-management.plugin.name",
-        defaultMessage: "Queue Management",
+        defaultMessage: "Job Manager",
       },
       Component: async () => {
         const mod = await import("./pages/QueueManagement");

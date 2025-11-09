@@ -1,6 +1,6 @@
 # Architecture
 
-*Last updated: 2025-11-04 15:05*
+*Last updated: 2025-11-09 22:25*
 
 System design and component structure for PromoAtlas PIM.
 
@@ -398,9 +398,19 @@ const stats = await queueService.getQueueStats();
 - **Bootstrap** (`src/index.ts`): Initializes workers on startup
 
 **Monitoring**:
-- Queue dashboard available via queue-manager API
-- Worker status: `await workerManager.getWorkerStats()`
-- Job progress tracking: `job.updateProgress(percentage)`
+- **Bull Board Dashboard**: Professional queue monitoring UI at `/admin/queues`
+  - Real-time queue statistics and job counts
+  - Job details, logs, and error stack traces
+  - Retry failed jobs, clean old jobs
+  - Industry-standard tool with rich features
+  - Authentication: Cookie-based (Strapi admin JWT)
+- **Custom Job Manager**: Detailed job management at `/admin/queue-management`
+  - Search and filter jobs by ID, status, queue
+  - View job data and results
+  - Pause/resume queues
+  - Advanced job operations
+- **API Access**: `await workerManager.getWorkerStats()`
+- **Job Progress**: `job.updateProgress(percentage)`
 
 ### API Routes & Controllers
 

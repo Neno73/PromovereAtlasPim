@@ -1,6 +1,6 @@
 # Startup Guide
 
-*Last updated: 2025-11-02 20:40*
+*Last updated: 2025-11-09 22:30*
 
 Complete setup guide and troubleshooting for PromoAtlas PIM.
 
@@ -696,14 +696,50 @@ npm run develop
 - Filter by "Fetch/XHR" to see API requests
 - Check response status codes and payloads
 
+### Queue Monitoring
+
+**Bull Board Dashboard** (Recommended for monitoring):
+- **Access**: Strapi Admin → Click "Queue Dashboard" in sidebar
+- **URL**: http://localhost:1337/admin/queue-dashboard
+- **Features**:
+  - Real-time queue statistics for all 3 queues
+  - Job counts (waiting, active, completed, failed)
+  - Visual queue health overview
+  - Retry failed jobs
+  - View job logs and error stack traces
+  - Clean old completed jobs
+- **Authentication**: Automatic (uses Strapi admin session cookie)
+- **Best for**: Quick overview, real-time monitoring, visual inspection
+
+**Job Manager** (Detailed job management):
+- **Access**: Strapi Admin → Click "Job Manager" in sidebar
+- **URL**: http://localhost:1337/admin/queue-management
+- **Features**:
+  - Search and filter jobs by ID, status, queue name
+  - View detailed job data and results
+  - Pause/resume individual queues
+  - Retry or delete specific jobs
+  - Export job information
+- **Best for**: Debugging specific jobs, detailed investigation
+
+**API Access** (Programmatic):
+```bash
+# Get all queue stats
+curl http://localhost:1337/api/queue-manager/stats
+
+# Get jobs for a specific queue
+curl http://localhost:1337/api/queue-manager/jobs/supplier-sync/active
+```
+
 ## Next Steps After Setup
 
 1. **Create Admin Account**: Visit http://localhost:1337/admin
 2. **Bootstrap Suppliers**: Suppliers auto-created on first run
 3. **Run First Sync**: Start Promidata sync via admin panel
-4. **Test Frontend**: Visit http://localhost:3001 to see products
-5. **Explore Admin Panel**: Familiarize yourself with content types
-6. **Check Documentation**: Read `.claude/ARCHITECTURE.md` and `.claude/PATTERNS.md`
+4. **Monitor Queues**: Click "Queue Dashboard" in sidebar to see real-time queue status
+5. **Test Frontend**: Visit http://localhost:3001 to see products
+6. **Explore Admin Panel**: Familiarize yourself with content types
+7. **Check Documentation**: Read `.claude/ARCHITECTURE.md` and `.claude/PATTERNS.md`
 
 ---
 

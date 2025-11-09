@@ -25,11 +25,26 @@ services:
     container_name: promoatlas-backend
     restart: unless-stopped
 
-    # Custom domain configuration (managed by Coolify)
+    # Custom domain configuration
     # Staging: strapistaging.solslab.dev
     # Production: strapi.solslab.dev
     labels:
       - "coolify.managed=true"
+      # Traefik routing configuration
+      - "traefik.enable=true"
+      # HTTP router (redirects to HTTPS)
+      - "traefik.http.routers.strapi-http.rule=Host(`strapistaging.solslab.dev`)"
+      - "traefik.http.routers.strapi-http.entrypoints=http"
+      - "traefik.http.routers.strapi-http.middlewares=redirect-to-https"
+      # HTTPS router with Let's Encrypt
+      - "traefik.http.routers.strapi-https.rule=Host(`strapistaging.solslab.dev`)"
+      - "traefik.http.routers.strapi-https.entrypoints=https"
+      - "traefik.http.routers.strapi-https.tls=true"
+      - "traefik.http.routers.strapi-https.tls.certresolver=letsencrypt"
+      # Service configuration
+      - "traefik.http.services.strapi.loadbalancer.server.port=1337"
+      # Middleware for HTTPS redirect
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
 
     # Expose Strapi on port 1337
     # Note: Coolify handles port exposure automatically

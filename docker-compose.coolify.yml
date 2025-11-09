@@ -32,8 +32,9 @@ services:
       - "coolify.managed=true"
 
     # Expose Strapi on port 1337
-    ports:
-      - "1337:1337"
+    # Note: Coolify handles port exposure automatically
+    expose:
+      - "1337"
 
     # Health check for Strapi (waits 90s for full startup)
     # Using 127.0.0.1 to avoid IPv6 issues, any HTTP response means server is up

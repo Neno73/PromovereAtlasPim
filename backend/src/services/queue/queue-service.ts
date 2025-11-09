@@ -39,6 +39,22 @@ class QueueService {
   }
 
   /**
+   * Get queue instances for Bull Board monitoring
+   * @returns Array of Queue instances for Bull Board
+   */
+  public getQueuesForBullBoard(): Queue[] {
+    this.ensureInitialized();
+
+    const queues = [
+      this.supplierSyncQueue,
+      this.productFamilyQueue,
+      this.imageUploadQueue
+    ];
+
+    return queues.filter(q => q !== null) as Queue[];
+  }
+
+  /**
    * Ensure queue service is initialized
    * @throws Error if not initialized
    */

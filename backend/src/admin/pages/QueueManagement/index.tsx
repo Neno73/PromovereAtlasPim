@@ -277,7 +277,7 @@ const QueueManagement: React.FC = () => {
   if (!allStats) {
     return (
       <Page.Main>
-        <Page.Title>Queue Management</Page.Title>
+        <Page.Title>Job Manager</Page.Title>
         <Typography>Loading...</Typography>
       </Page.Main>
     );
@@ -285,13 +285,13 @@ const QueueManagement: React.FC = () => {
 
   return (
     <Page.Main>
-      <Page.Title>Queue Management</Page.Title>
+      <Page.Title>Job Manager</Page.Title>
 
       <Layouts.Content>
         {/* Header Actions */}
         <Box paddingBottom={4}>
           <Flex justifyContent="space-between" alignItems="center">
-            <Typography variant="beta">Monitor and Manage Queues</Typography>
+            <Typography variant="beta">Manage Individual Queue Jobs</Typography>
             <Flex gap={2}>
               <Button
                 variant={autoRefresh ? 'success' : 'secondary'}

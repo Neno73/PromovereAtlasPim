@@ -1,5 +1,9 @@
 import queueService from './services/queue/queue-service';
 import workerManager from './services/queue/worker-manager';
+import { createBullBoard } from '@bull-board/api';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { KoaAdapter } from '@bull-board/koa';
+import bullBoardAuth from './middlewares/bull-board-auth';
 
 export default {
   /**
@@ -8,7 +12,10 @@ export default {
    *
    * This gives you an opportunity to extend code.
    */
-  register(/*{ strapi }*/) {},
+  register(/*{ strapi }*/) {
+    // Note: strapi.app is not available here
+    // Middleware registration moved to bootstrap()
+  },
 
   /**
    * An asynchronous bootstrap function that runs before
@@ -18,6 +25,13 @@ export default {
    * run jobs, or perform some special logic.
    */
   async bootstrap({ strapi }) {
+    // Register Bull Board authentication middleware early
+    // This protects /admin/queues routes with admin JWT verification
+    // Note: Use strapi.server.app instead of strapi.app
+    if (strapi.server && strapi.server.app) {
+      strapi.server.app.use(bullBoardAuth({}, { strapi }));
+    }
+
     strapi.log.info('🚀 Bootstrapping application to set public permissions...');
     try {
       // Strapi 5: Use findMany with filters instead of findOne with where
@@ -122,6 +136,32 @@ export default {
         await queueService.initialize();
         await workerManager.start();
         strapi.log.info('✅ Queue service and workers initialized successfully');
+
+        // Initialize Bull Board for queue monitoring
+        try {
+          const serverAdapter = new KoaAdapter();
+          serverAdapter.setBasePath('/admin/queues');
+
+          const queues = queueService.getQueuesForBullBoard();
+
+          createBullBoard({
+            queues: queues.map(queue => new BullMQAdapter(queue)),
+            serverAdapter,
+          });
+
+          // Register Bull Board routes with Koa
+          if (strapi.server && strapi.server.app) {
+            strapi.server.app.use(serverAdapter.registerPlugin());
+            strapi.log.info('✅ Bull Board UI mounted at /admin/queues');
+            strapi.log.info('   Access the dashboard: http://localhost:1337/admin/queues');
+            strapi.log.info('   (Requires admin JWT token in Authorization header)');
+          } else {
+            throw new Error('Strapi server not available for Bull Board registration');
+          }
+        } catch (error) {
+          strapi.log.error('❌ Failed to initialize Bull Board:', error);
+          // Don't throw - Bull Board is optional monitoring tool
+        }
       } catch (error) {
         strapi.log.error('❌ Failed to initialize queue service or workers:', error);
         // Don't throw - allow app to continue without workers if Redis unavailable

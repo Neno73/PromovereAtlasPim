@@ -60,14 +60,27 @@ export const ProductList: FC = () => {
       // Request facets for filter dropdowns
       const facets = ['supplier_code', 'brand', 'category', 'colors', 'sizes'];
 
-      const response: ApiResponse<Product[]> = await apiService.searchProducts({
-        query: searchQuery,
-        page,
-        pageSize: pagination.pageSize,
-        sort: sortArray,
-        facets,
-        filters: meilisearchFilters,
-      });
+      // Try Meilisearch first, fallback to old API if not available
+      let response: ApiResponse<Product[]>;
+      try {
+        response = await apiService.searchProducts({
+          query: searchQuery,
+          page,
+          pageSize: pagination.pageSize,
+          sort: sortArray,
+          facets,
+          filters: meilisearchFilters,
+        });
+      } catch (searchError) {
+        console.warn('Meilisearch not available, falling back to old API:', searchError);
+        // Fallback to old API
+        response = await apiService.getProducts({
+          page,
+          pageSize: pagination.pageSize,
+          sort: sortBy,
+          filters: currentFilters,
+        });
+      }
 
       setProducts(response.data);
       if (response.meta.pagination) {

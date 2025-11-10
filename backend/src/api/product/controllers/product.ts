@@ -44,7 +44,7 @@ export default factories.createCoreController('api::product.product', ({ strapi 
     try {
       // Get Meilisearch service
       // @ts-ignore - Custom service not in Strapi types
-      const meilisearchService = strapi.service('meilisearch');
+      const meilisearchService = strapi.service('api::product.meilisearch');
 
       // Parse query parameters
       const {
@@ -126,7 +126,7 @@ export default factories.createCoreController('api::product.product', ({ strapi 
     try {
       // Get Meilisearch service
       // @ts-ignore - Custom service not in Strapi types
-      const meilisearchService = strapi.service('meilisearch');
+      const meilisearchService = strapi.service('api::product.meilisearch');
 
       // Initialize Meilisearch index (creates if doesn't exist, configures settings)
       await meilisearchService.initializeIndex();

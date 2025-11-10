@@ -18,7 +18,7 @@ import type {
   MeilisearchIndexSettings,
   MeilisearchIndexStats,
   MeilisearchBulkIndexBatch,
-} from './types';
+} from './meilisearch-types';
 
 /**
  * Meilisearch Service Configuration

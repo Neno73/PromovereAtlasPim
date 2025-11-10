@@ -44,7 +44,7 @@ export function createMeilisearchSyncWorker(): Worker<
       try {
         // Get Meilisearch service
         // @ts-ignore - Custom service not in Strapi types
-        const meilisearchService = strapi.service('meilisearch');
+        const meilisearchService = strapi.service('api::product.meilisearch');
 
         if (operation === 'delete') {
           // Delete operation - only needs documentId

@@ -122,6 +122,74 @@ class ApiService {
       return [];
     }
   }
+
+  // Meilisearch search endpoint
+  async searchProducts(params?: {
+    query?: string;
+    page?: number;
+    pageSize?: number;
+    sort?: string[];
+    facets?: string[];
+    filters?: {
+      supplier_code?: string;
+      brand?: string;
+      category?: string;
+      price_min?: number;
+      price_max?: number;
+      is_active?: boolean;
+    };
+  }): Promise<ApiResponse<Product[]>> {
+    const searchParams = new URLSearchParams();
+
+    // Search query
+    if (params?.query) {
+      searchParams.append('q', params.query);
+    }
+
+    // Pagination (convert page to offset)
+    const pageSize = params?.pageSize || 20;
+    const page = params?.page || 1;
+    const offset = (page - 1) * pageSize;
+    searchParams.append('limit', pageSize.toString());
+    searchParams.append('offset', offset.toString());
+
+    // Facets (request facet distribution)
+    if (params?.facets && params.facets.length > 0) {
+      searchParams.append('facets', params.facets.join(','));
+    }
+
+    // Sort
+    if (params?.sort && params.sort.length > 0) {
+      searchParams.append('sort', params.sort.join(','));
+    }
+
+    // Filters
+    if (params?.filters) {
+      if (params.filters.supplier_code) {
+        searchParams.append('supplier_code', params.filters.supplier_code);
+      }
+      if (params.filters.brand) {
+        searchParams.append('brand', params.filters.brand);
+      }
+      if (params.filters.category) {
+        searchParams.append('category', params.filters.category);
+      }
+      if (params.filters.price_min !== undefined) {
+        searchParams.append('price_min', params.filters.price_min.toString());
+      }
+      if (params.filters.price_max !== undefined) {
+        searchParams.append('price_max', params.filters.price_max.toString());
+      }
+      if (params.filters.is_active !== undefined) {
+        searchParams.append('is_active', params.filters.is_active.toString());
+      }
+    }
+
+    const queryString = searchParams.toString();
+    const endpoint = `/products/search${queryString ? `?${queryString}` : ''}`;
+
+    return this.fetch<ApiResponse<Product[]>>(endpoint);
+  }
 }
 
 export const apiService = new ApiService();

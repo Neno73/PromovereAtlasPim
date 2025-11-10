@@ -13,6 +13,7 @@ import { Worker } from 'bullmq';
 import { createSupplierSyncWorker } from './workers/supplier-sync-worker';
 import { createProductFamilyWorker } from './workers/product-family-worker';
 import { createImageUploadWorker } from './workers/image-upload-worker';
+import { createMeilisearchSyncWorker } from './workers/meilisearch-sync-worker';
 
 /**
  * Worker Manager Class
@@ -37,12 +38,14 @@ class WorkerManager {
       const supplierSyncWorker = createSupplierSyncWorker();
       const productFamilyWorker = createProductFamilyWorker();
       const imageUploadWorker = createImageUploadWorker();
+      const meilisearchSyncWorker = createMeilisearchSyncWorker();
 
       // Register workers
       this.workers = [
         supplierSyncWorker,
         productFamilyWorker,
-        imageUploadWorker
+        imageUploadWorker,
+        meilisearchSyncWorker
       ];
 
       this.isRunning = true;
@@ -51,6 +54,7 @@ class WorkerManager {
       strapi.log.info('   - supplier-sync (concurrency: 1)');
       strapi.log.info('   - product-family (concurrency: 3)');
       strapi.log.info('   - image-upload (concurrency: 10)');
+      strapi.log.info('   - meilisearch-sync (concurrency: 5)');
 
     } catch (error) {
       strapi.log.error('❌ Failed to start workers:', error);

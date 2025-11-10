@@ -16,4 +16,32 @@ export default ({ env }) => ({
       },
     },
   },
+  meilisearch: {
+    enabled: true,
+    config: {
+      host: env("MEILISEARCH_HOST"),
+      apiKey: env("MEILISEARCH_ADMIN_KEY"),
+      product: {
+        indexName: env("MEILISEARCH_INDEX_NAME", "products"),
+        entriesQuery: {
+          populate: [
+            "supplier",
+            "categories",
+            "variants",
+            "main_image",
+            "gallery_images",
+            "price_tiers",
+            "dimensions",
+          ],
+        },
+        transformEntry({ entry }) {
+          // Transform Strapi entry to Meilisearch document
+          return {
+            id: entry.documentId,
+            ...entry,
+          };
+        },
+      },
+    },
+  },
 });

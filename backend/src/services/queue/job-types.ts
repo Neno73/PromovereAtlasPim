@@ -81,6 +81,26 @@ export interface ImageUploadJobResult {
 }
 
 /**
+ * Meilisearch Sync Job
+ * Indexes/updates/deletes product or variant document in Meilisearch
+ */
+export interface MeilisearchSyncJobData {
+  operation: 'add' | 'update' | 'delete';
+  entityType: 'product' | 'product-variant';
+  entityId: number;        // Numeric Strapi ID
+  documentId: string;      // Strapi documentId (string)
+  priority?: number;       // Higher = more important (user-initiated changes)
+}
+
+export interface MeilisearchSyncJobResult {
+  success: boolean;
+  operation: 'add' | 'update' | 'delete';
+  documentId: string;
+  taskUid?: number;        // Meilisearch task UID
+  error?: string;
+}
+
+/**
  * Job Progress Data
  * Standardized progress reporting across all jobs
  */
@@ -102,6 +122,7 @@ export const QUEUE_NAMES = {
   SUPPLIER_SYNC: 'supplier-sync',
   PRODUCT_FAMILY: 'product-family',
   IMAGE_UPLOAD: 'image-upload',
+  MEILISEARCH_SYNC: 'meilisearch-sync',
 } as const;
 
 /**
@@ -112,4 +133,5 @@ export const JOB_PREFIXES = {
   SUPPLIER_SYNC: 'sup-sync',
   PRODUCT_FAMILY: 'prod-fam',
   IMAGE_UPLOAD: 'img-up',
+  MEILISEARCH_SYNC: 'meili-sync',
 } as const;

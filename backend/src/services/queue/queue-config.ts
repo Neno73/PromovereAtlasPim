@@ -173,6 +173,37 @@ export const imageUploadJobOptions = {
 };
 
 /**
+ * Meilisearch Sync Worker Configuration
+ * Medium concurrency for search indexing
+ */
+export const meilisearchSyncWorkerOptions: WorkerOptions = {
+  connection: getRedisConnection(),
+  concurrency: getEnvNumber('BULLMQ_CONCURRENCY_MEILISEARCH', 5), // 5 documents at once
+  limiter: {
+    max: 10, // Max 10 jobs per...
+    duration: 1000, // ...1 second
+  },
+  settings: {
+    backoffStrategy: (attemptsMade: number) => {
+      // Exponential backoff: 2^attempt * 5 seconds
+      return Math.pow(2, attemptsMade) * 5000;
+    },
+  },
+};
+
+/**
+ * Meilisearch Sync Job Options
+ */
+export const meilisearchSyncJobOptions = {
+  attempts: 3, // Retry up to 3 times
+  backoff: {
+    type: 'exponential' as const,
+    delay: 5000, // 5 seconds
+  },
+  timeout: getEnvNumber('BULLMQ_JOB_TIMEOUT_MEILISEARCH', 30000), // 30 seconds default
+};
+
+/**
  * Job ID Generator
  * Creates unique, sortable job IDs with UUID to prevent collisions
  */

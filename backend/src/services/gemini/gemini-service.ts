@@ -79,6 +79,8 @@ class GeminiService {
     async upsertProduct(product: any) {
         if (!this.client) return;
 
+        let tempFilePath: string | null = null;
+
         try {
             const storeId = await this.getOrCreateStore();
             if (!storeId) {
@@ -91,9 +93,9 @@ class GeminiService {
             const jsonContent = JSON.stringify(productDoc, null, 2);
             const fileName = `${productDoc.sku}.json`;
 
-            // 2. Write to temp file
-            const tempFilePath = path.join(os.tmpdir(), fileName);
-            fs.writeFileSync(tempFilePath, jsonContent);
+            // 2. Write to temp file with secure permissions (read/write for owner only)
+            tempFilePath = path.join(os.tmpdir(), fileName);
+            fs.writeFileSync(tempFilePath, jsonContent, { mode: 0o600 });
 
             // 3. Upload to Gemini FileSearchStore
             // Note: Using the correct parameter name from Google's documentation
@@ -131,14 +133,20 @@ class GeminiService {
                 } as any
             });
 
-            // Cleanup
-            fs.unlinkSync(tempFilePath);
-
             return operation;
 
         } catch (error: any) {
             strapi.log.error(`Failed to upsert product ${product.sku} to Gemini:`, error);
             throw error;
+        } finally {
+            // Cleanup temp file (guaranteed execution)
+            if (tempFilePath && fs.existsSync(tempFilePath)) {
+                try {
+                    fs.unlinkSync(tempFilePath);
+                } catch (cleanupError) {
+                    strapi.log.warn(`Failed to cleanup temp file ${tempFilePath}:`, cleanupError);
+                }
+            }
         }
     }
 

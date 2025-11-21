@@ -27,10 +27,11 @@ export function createResilientHttpClient(
             return retryCount * retryDelay;
         },
         retryCondition: (error) => {
-            // Retry on network errors or 5xx server errors
+            // Retry on network errors, 5xx server errors, or rate limits (429)
             return (
                 axiosRetry.isNetworkOrIdempotentRequestError(error) ||
-                (error.response?.status >= 500 && error.response?.status < 600)
+                (error.response?.status >= 500 && error.response?.status < 600) ||
+                error.response?.status === 429
             );
         },
         onRetry: (retryCount, error, requestConfig) => {

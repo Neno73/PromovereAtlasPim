@@ -38,6 +38,7 @@ export const QueueDashboard = () => {
                             <Box background="neutral0" padding={4}>
                                 <iframe
                                     src="/admin/queues"
+                                    sandbox="allow-same-origin allow-scripts allow-forms"
                                     style={{
                                         width: '100%',
                                         height: 'calc(100vh - 200px)',

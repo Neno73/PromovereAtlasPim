@@ -18,23 +18,47 @@ const STORE_DISPLAY_NAME = 'PromoAtlas Product Catalog';
 class GeminiService {
     private client: any = null;
     private storeId: string | null = null;
+    private storeCreationPromise: Promise<string | null> | null = null;
 
     constructor() {
         const apiKey = process.env.GEMINI_API_KEY;
         if (apiKey) {
             this.client = new GoogleGenAI({ apiKey });
+            strapi.log.info('✅ Gemini client initialized');
         } else {
-            strapi.log.warn('GEMINI_API_KEY not found. Gemini Service will be disabled.');
+            strapi.log.warn('⚠️  GEMINI_API_KEY not configured - Gemini features disabled');
         }
     }
 
     /**
      * Get or Create the PromoAtlas File Search Store
+     * Includes mutex to prevent race conditions on concurrent calls
      */
     async getOrCreateStore() {
         if (!this.client) return null;
         if (this.storeId) return this.storeId;
 
+        // If creation is already in progress, wait for it
+        if (this.storeCreationPromise) {
+            return this.storeCreationPromise;
+        }
+
+        // Start creation and store promise
+        this.storeCreationPromise = this._createStore();
+
+        try {
+            const result = await this.storeCreationPromise;
+            return result;
+        } finally {
+            // Clear promise after completion
+            this.storeCreationPromise = null;
+        }
+    }
+
+    /**
+     * Internal method to create or find the store
+     */
+    private async _createStore(): Promise<string | null> {
         try {
             // List stores to find ours
             const stores = await this.client.fileSearchStores.list();

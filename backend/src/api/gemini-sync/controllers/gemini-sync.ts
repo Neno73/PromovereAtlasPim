@@ -3,12 +3,16 @@
  */
 
 import geminiService from '../../../services/gemini/gemini-service';
+import { sanitizeError } from '../../../utils/error-sanitizer';
 
 export default {
 
   /**
-   * Initialize Gemini (verify API key works)
-   * POST /api/gemini-sync/init
+   * Initialize Gemini FileSearchStore
+   * @route POST /api/gemini-sync/init
+   * @group Gemini Sync - Operations for syncing products to Gemini RAG
+   * @returns {object} 200 - Success response
+   * @returns {Error} 500 - Server error
    */
   async init(ctx) {
     try {
@@ -17,16 +21,20 @@ export default {
         message: 'Gemini Service initialized (using Files API)'
       };
     } catch (error) {
+      ctx.status = 500;
       ctx.body = {
         success: false,
-        error: error.message
+        error: sanitizeError(error)
       };
     }
   },
 
   /**
-   * Trigger Full Sync
-   * POST /api/gemini-sync/trigger-all
+   * Trigger full sync of all products to Gemini
+   * @route POST /api/gemini-sync/trigger-all
+   * @group Gemini Sync - Operations for syncing products to Gemini RAG
+   * @returns {object} 200 - Success response with background job started
+   * @returns {Error} 500 - Server error
    */
   async triggerAll(ctx) {
     try {
@@ -42,9 +50,10 @@ export default {
         message: 'Full sync started in background. Check logs for progress.'
       };
     } catch (error) {
+      ctx.status = 500;
       ctx.body = {
         success: false,
-        error: error.message
+        error: sanitizeError(error)
       };
     }
   }

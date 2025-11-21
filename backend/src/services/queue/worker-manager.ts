@@ -15,6 +15,7 @@ import { createProductFamilyWorker } from './workers/product-family-worker';
 import { createImageUploadWorker } from './workers/image-upload-worker';
 import { createMeilisearchSyncWorker } from './workers/meilisearch-sync-worker';
 import { createGeminiSyncWorker } from './workers/gemini-sync-worker';
+import queueMonitor from './queue-monitor';
 
 /**
  * Worker Manager Class
@@ -53,6 +54,9 @@ class WorkerManager {
 
       this.isRunning = true;
 
+      // Start Queue Monitor
+      queueMonitor.start();
+
       strapi.log.info(`✅ Started ${this.workers.length} workers:`);
       strapi.log.info('   - supplier-sync (concurrency: 1)');
       strapi.log.info('   - product-family (concurrency: 3)');
@@ -78,6 +82,9 @@ class WorkerManager {
     strapi.log.info('🛑 Stopping BullMQ workers...');
 
     try {
+      // Stop Queue Monitor
+      await queueMonitor.stop();
+
       // Close all workers
       await Promise.all(
         this.workers.map(worker => worker.close())

@@ -29,6 +29,8 @@ export interface AllQueueStats {
   supplierSync: QueueStats;
   productFamily: QueueStats;
   imageUpload: QueueStats;
+  meilisearchSync: QueueStats;
+  geminiSync: QueueStats;
 }
 
 export interface WorkerStatus {
@@ -130,7 +132,7 @@ export const listJobs = async (
 export const getJobDetails = async (
   queueName: string,
   jobId: string
-): Promise<{ found: boolean; [key: string]: any }> => {
+): Promise<{ found: boolean;[key: string]: any }> => {
   const { data } = await get(`/api/queue-manager/${queueName}/jobs/${jobId}`);
   return data;
 };

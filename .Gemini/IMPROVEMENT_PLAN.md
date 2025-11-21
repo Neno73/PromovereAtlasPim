@@ -11,9 +11,9 @@ Based on the comprehensive PR review, this plan outlines the steps to improve co
 - [x] **Unit Tests for Transformers**:
     - Test `product-transformer.ts` (Promidata -> Local) - 7 tests
     - Test `product-to-json.ts` (Local -> Gemini) - 6 tests
-- [ ] **Unit Tests for Queue Workers**:
+- [x] **Unit Tests for Queue Workers**:
     - Mock `Job` object and test `process` methods for `gemini-sync-worker` and `supplier-sync-worker`.
-- [ ] **Integration Tests (Optional/Later)**: Test full flow with mocked external services.
+- [x] **Integration Tests (Optional/Later)**: Test full flow with mocked external services.
 
 ## 2. Documentation (Priority 2) ✅ COMPLETED
 **Goal:** Document new API endpoints.
@@ -40,7 +40,7 @@ Based on the comprehensive PR review, this plan outlines the steps to improve co
 
 ### Actions:
 - [ ] **In-Memory Streaming**: Refactor `gemini-service.ts` to stream data directly to Gemini File API if supported, or strictly manage temp file lifecycle.
-- [ ] **Queue Monitoring**:
+- [x] **Queue Monitoring**:
     - Add a scheduled job or middleware to log queue depth and processing times.
     - Alerting is complex without external tools, but we can log "High Load" warnings if queue length > threshold.
 

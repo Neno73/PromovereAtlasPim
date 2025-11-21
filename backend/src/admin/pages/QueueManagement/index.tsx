@@ -347,6 +347,24 @@ const QueueManagement: React.FC = () => {
                 onRetryFailed={() => handleRetryFailedJobs('image-upload')}
               />
             </Grid.Item>
+            <Grid.Item col={4} s={12}>
+              <QueueCard
+                stats={allStats.meilisearchSync}
+                onPause={() => handlePauseQueue('meilisearch-sync')}
+                onResume={() => handleResumeQueue('meilisearch-sync')}
+                onClean={() => handleCleanQueue('meilisearch-sync')}
+                onRetryFailed={() => handleRetryFailedJobs('meilisearch-sync')}
+              />
+            </Grid.Item>
+            <Grid.Item col={4} s={12}>
+              <QueueCard
+                stats={allStats.geminiSync}
+                onPause={() => handlePauseQueue('gemini-sync')}
+                onResume={() => handleResumeQueue('gemini-sync')}
+                onClean={() => handleCleanQueue('gemini-sync')}
+                onRetryFailed={() => handleRetryFailedJobs('gemini-sync')}
+              />
+            </Grid.Item>
           </Grid.Root>
         </Box>
 
@@ -375,6 +393,8 @@ const QueueManagement: React.FC = () => {
                 <SingleSelectOption value="supplier-sync">Supplier Sync</SingleSelectOption>
                 <SingleSelectOption value="product-family">Product Family</SingleSelectOption>
                 <SingleSelectOption value="image-upload">Image Upload</SingleSelectOption>
+                <SingleSelectOption value="meilisearch-sync">Meilisearch Sync</SingleSelectOption>
+                <SingleSelectOption value="gemini-sync">Gemini Sync</SingleSelectOption>
               </SingleSelect>
 
               <SingleSelect

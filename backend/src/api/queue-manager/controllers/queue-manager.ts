@@ -13,10 +13,10 @@ export default ({
   async getStats(ctx) {
     try {
       const { queue } = ctx.params;
-      const queueName = queue as 'supplier-sync' | 'product-family' | 'image-upload' | undefined;
+      const queueName = queue as 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync' | undefined;
 
       // Validate queue name if provided
-      if (queueName && !['supplier-sync', 'product-family', 'image-upload'].includes(queueName)) {
+      if (queueName && !['supplier-sync', 'product-family', 'image-upload', 'meilisearch-sync', 'gemini-sync'].includes(queueName)) {
         return ctx.badRequest('Invalid queue name');
       }
 
@@ -58,7 +58,7 @@ export default ({
       const { state = 'waiting', page = '1', pageSize = '25', search } = ctx.query;
 
       // Validate queue name
-      if (!['supplier-sync', 'product-family', 'image-upload'].includes(queue)) {
+      if (!['supplier-sync', 'product-family', 'image-upload', 'meilisearch-sync', 'gemini-sync'].includes(queue)) {
         return ctx.badRequest('Invalid queue name');
       }
 
@@ -106,7 +106,7 @@ export default ({
       const { queue, jobId } = ctx.params;
 
       // Validate queue name
-      if (!['supplier-sync', 'product-family', 'image-upload'].includes(queue)) {
+      if (!['supplier-sync', 'product-family', 'image-upload', 'meilisearch-sync', 'gemini-sync'].includes(queue)) {
         return ctx.badRequest('Invalid queue name');
       }
 
@@ -134,7 +134,7 @@ export default ({
       const { queue, jobId } = ctx.params;
 
       // Validate queue name
-      if (!['supplier-sync', 'product-family', 'image-upload'].includes(queue)) {
+      if (!['supplier-sync', 'product-family', 'image-upload', 'meilisearch-sync', 'gemini-sync'].includes(queue)) {
         return ctx.badRequest('Invalid queue name');
       }
 
@@ -163,7 +163,7 @@ export default ({
       const { limit = '100' } = ctx.request.body as any;
 
       // Validate queue name
-      if (!['supplier-sync', 'product-family', 'image-upload'].includes(queue)) {
+      if (!['supplier-sync', 'product-family', 'image-upload', 'meilisearch-sync', 'gemini-sync'].includes(queue)) {
         return ctx.badRequest('Invalid queue name');
       }
 
@@ -193,7 +193,7 @@ export default ({
       const { queue, jobId } = ctx.params;
 
       // Validate queue name
-      if (!['supplier-sync', 'product-family', 'image-upload'].includes(queue)) {
+      if (!['supplier-sync', 'product-family', 'image-upload', 'meilisearch-sync', 'gemini-sync'].includes(queue)) {
         return ctx.badRequest('Invalid queue name');
       }
 
@@ -221,7 +221,7 @@ export default ({
       const { queue } = ctx.params;
 
       // Validate queue name
-      if (!['supplier-sync', 'product-family', 'image-upload'].includes(queue)) {
+      if (!['supplier-sync', 'product-family', 'image-upload', 'meilisearch-sync', 'gemini-sync'].includes(queue)) {
         return ctx.badRequest('Invalid queue name');
       }
 
@@ -245,7 +245,7 @@ export default ({
       const { queue } = ctx.params;
 
       // Validate queue name
-      if (!['supplier-sync', 'product-family', 'image-upload'].includes(queue)) {
+      if (!['supplier-sync', 'product-family', 'image-upload', 'meilisearch-sync', 'gemini-sync'].includes(queue)) {
         return ctx.badRequest('Invalid queue name');
       }
 
@@ -270,7 +270,7 @@ export default ({
       const { grace = 3600000, status = 'completed' } = ctx.request.body as any;
 
       // Validate queue name
-      if (!['supplier-sync', 'product-family', 'image-upload'].includes(queue)) {
+      if (!['supplier-sync', 'product-family', 'image-upload', 'meilisearch-sync', 'gemini-sync'].includes(queue)) {
         return ctx.badRequest('Invalid queue name');
       }
 
@@ -306,7 +306,7 @@ export default ({
       const { queue } = ctx.params;
 
       // Validate queue name
-      if (!['supplier-sync', 'product-family', 'image-upload'].includes(queue)) {
+      if (!['supplier-sync', 'product-family', 'image-upload', 'meilisearch-sync', 'gemini-sync'].includes(queue)) {
         return ctx.badRequest('Invalid queue name');
       }
 

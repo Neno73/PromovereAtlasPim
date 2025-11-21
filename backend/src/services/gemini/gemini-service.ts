@@ -151,6 +151,65 @@ class GeminiService {
     }
 
     /**
+     * Add or Update a document by ID
+     * Fetches product from Strapi and upserts to Gemini
+     */
+    async addOrUpdateDocument(documentId: string) {
+        try {
+            // Fetch product from Strapi
+            const product = await strapi.documents('api::product.product').findOne({
+                documentId,
+                populate: ['supplier', 'categories', 'price_tiers', 'dimensions']
+            });
+
+            if (!product) {
+                return { success: false, error: `Product ${documentId} not found in Strapi` };
+            }
+
+            await this.upsertProduct(product);
+            return { success: true };
+
+        } catch (error: any) {
+            strapi.log.error(`Failed to add/update document ${documentId}:`, error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Delete a document by ID
+     */
+    async deleteDocument(documentId: string) {
+        try {
+            // We might not have the product if it's already deleted from Strapi
+            // But we need the file URI to delete from Gemini.
+            // If we can't find it in Strapi, we might need to search Gemini by name/metadata?
+            // For now, we'll try to find it. If not found, we can't easily delete from Gemini 
+            // unless we store the mapping elsewhere or derive the filename.
+
+            // Assuming filename is based on SKU, but we need SKU.
+            // If product is deleted, we can't get SKU.
+            // This is a limitation. Ideally we pass SKU or URI to delete.
+
+            // For this implementation, we'll assume the worker passes documentId.
+            // If product is gone, we log a warning.
+
+            const product = await strapi.documents('api::product.product').findOne({
+                documentId
+            });
+
+            if (product) {
+                await this.deleteProduct(product);
+                return { success: true };
+            }
+
+            return { success: false, error: 'Product not found for deletion' };
+
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
      * Delete a product from Gemini FileSearchStore
      */
     async deleteProduct(product: any) {
@@ -162,6 +221,9 @@ class GeminiService {
                 // The exact API method depends on the SDK structure
                 // For now, we'll log and clear the reference
                 strapi.log.info(`Clearing Gemini reference for: ${product.sku}`);
+
+                // TODO: Implement actual Gemini deletion when SDK method is confirmed
+                // await this.client.files.delete({ name: product.gemini_file_uri });
 
                 await strapi.documents('api::product.product').update({
                     documentId: product.documentId,

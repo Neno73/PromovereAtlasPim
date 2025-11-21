@@ -19,6 +19,7 @@ import type {
   GeminiSyncJobData,
   GeminiSyncJobResult,
 } from '../job-types';
+import geminiService from '../../gemini/gemini-service';
 
 /**
  * Create Gemini Sync Worker
@@ -43,9 +44,8 @@ export function createGeminiSyncWorker(): Worker<
       strapi.log.info(`🤖 [Gemini] ${operation} product ${documentId}`);
 
       try {
-        // Get Gemini File Search service
-        // @ts-ignore - Custom service not in Strapi types
-        const geminiService = strapi.service('gemini-file-search');
+        // Service is imported directly
+
 
         if (operation === 'delete') {
           // Delete operation

@@ -2,7 +2,7 @@
  * Gemini Sync Controller
  */
 
-import geminiService from '../../../services/gemini/gemini-service';
+import queueService from '../../../services/queue/queue-service';
 import { sanitizeError } from '../../../utils/error-sanitizer';
 
 export default {
@@ -73,27 +73,31 @@ async function processFullSync() {
     while (true) {
       const products = await strapi.documents('api::product.product').findMany({
         pagination: { page, pageSize: batchSize },
-        populate: ['supplier', 'categories', 'price_tiers', 'dimensions']
+        // No need to populate relations for queue job, just need documentId
+        fields: ['sku']
       });
 
       if (products.length === 0) break;
 
-      strapi.log.info(`[GeminiSync] Processing batch ${page} (${products.length} products)...`);
+      strapi.log.info(`[GeminiSync] Enqueuing batch ${page} (${products.length} products)...`);
 
-      for (const product of products) {
-        try {
-          await geminiService.upsertProduct(product);
-          processed++;
-        } catch (err) {
-          strapi.log.error(`[GeminiSync] Failed to sync ${product.sku}:`, err);
-          errors++;
-        }
+      try {
+        const jobs = products.map(product => ({
+          operation: 'update' as const,
+          documentId: product.documentId
+        }));
+
+        await queueService.enqueueGeminiSyncBatch(jobs);
+        processed += products.length;
+      } catch (err) {
+        strapi.log.error(`[GeminiSync] Failed to enqueue batch ${page}:`, err);
+        errors += products.length;
       }
 
       page++;
     }
 
-    strapi.log.info(`✅ Full Gemini Sync Completed. Processed: ${processed}, Errors: ${errors}`);
+    strapi.log.info(`✅ Full Gemini Sync Enqueued. Jobs created: ${processed}, Failed batches: ${errors}`);
 
   } catch (error) {
     strapi.log.error('[GeminiSync] Full sync failed:', error);

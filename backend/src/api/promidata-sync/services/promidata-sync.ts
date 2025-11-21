@@ -23,6 +23,7 @@ import productTransformer from '../../../services/promidata/transformers/product
 import variantTransformer from '../../../services/promidata/transformers/variant-transformer';
 import productSyncService from '../../../services/promidata/sync/product-sync-service';
 import variantSyncService from '../../../services/promidata/sync/variant-sync-service';
+import geminiService from '../../../services/gemini/gemini-service';
 
 export default factories.createCoreService('api::promidata-sync.promidata-sync', ({ strapi }) => ({
 
@@ -349,6 +350,21 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       }
 
       strapi.log.info(`  ✓ ${aNumber}: Product + ${variantResults.length} variants`);
+
+      // Sync to Gemini RAG
+      try {
+        const fullProduct = await strapi.db.query('api::product.product').findOne({
+          where: { id: productId },
+          populate: ['supplier', 'categories', 'price_tiers', 'dimensions']
+        });
+
+        if (fullProduct) {
+          await geminiService.upsertProduct(fullProduct);
+        }
+      } catch (geminiError) {
+        strapi.log.error(`Failed to sync product ${aNumber} to Gemini:`, geminiError);
+        // Don't fail the whole sync if Gemini fails
+      }
 
     } catch (error) {
       strapi.log.error(`Failed to process product family ${aNumber}:`, error);

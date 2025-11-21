@@ -61,6 +61,8 @@ export default {
         auth: false, // Allow access without API token authentication
       },
     },
+    /*
+    // COMMENTED OUT - AutoRAG not in use
     {
       method: 'POST',
       path: '/promidata-sync/autorag/sync/:supplierId',
@@ -70,5 +72,6 @@ export default {
         middlewares: [],
       },
     },
+    */
   ],
 };

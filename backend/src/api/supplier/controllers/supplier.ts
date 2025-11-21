@@ -163,8 +163,8 @@ export default factories.createCoreController('api::supplier.supplier', ({ strap
       // Find A23 supplier
       const suppliers = await strapi.entityService.findMany('api::supplier.supplier', {
         filters: { code: 'A23' }
-      });
-      
+      }) as any[];
+
       if (!suppliers || suppliers.length === 0) {
         return ctx.notFound('A23 supplier not found');
       }

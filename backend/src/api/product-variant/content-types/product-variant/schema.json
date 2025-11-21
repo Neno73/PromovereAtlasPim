@@ -20,12 +20,6 @@
     "name": {
       "type": "string"
     },
-    "description": {
-      "type": "richtext"
-    },
-    "short_description": {
-      "type": "text"
-    },
     "meta_name": {
       "type": "string"
     },
@@ -76,15 +70,6 @@
       "type": "string"
     },
     "supplier_main_category": {
-      "type": "string"
-    },
-    "material": {
-      "type": "string"
-    },
-    "country_of_origin": {
-      "type": "string"
-    },
-    "production_time": {
       "type": "string"
     },
     "imprint_required": {

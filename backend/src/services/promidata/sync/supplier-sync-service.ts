@@ -4,6 +4,7 @@
  */
 
 import importParser from '../parsers/import-parser';
+import { getSupplierName } from '../data/supplier-names';
 
 interface SupplierSyncResult {
   discovered: number;
@@ -77,23 +78,32 @@ class SupplierSyncService {
     });
 
     if (existing && existing.length > 0) {
-      // Supplier exists - update last_sync_date
+      const realName = getSupplierName(code);
+      const currentName = existing[0].name;
+
+      // Update supplier with real name if it's a placeholder
+      const isPlaceholder = currentName?.startsWith('Supplier ');
+
       await strapi.documents('api::supplier.supplier').update({
         documentId: existing[0].documentId,
         data: {
+          name: isPlaceholder ? realName : currentName, // Replace placeholder with real name
           last_sync_date: new Date(),
         },
       });
 
+      if (isPlaceholder) {
+        strapi.log.info(`  📝 Updated supplier name: ${code} → ${realName}`);
+      }
+
       return { created: false, updated: true };
     }
 
-    // Create new supplier with minimal data
-    // Admin can fill in additional details later
+    // Create new supplier with real company name from Promidata Dashboard
     await strapi.documents('api::supplier.supplier').create({
       data: {
         code,
-        name: `Supplier ${code}`, // Placeholder name
+        name: getSupplierName(code), // Real supplier name (e.g., "Bosscher International BV")
         is_active: false, // Inactive by default - admin must activate
         auto_import: false,
         products_count: 0,

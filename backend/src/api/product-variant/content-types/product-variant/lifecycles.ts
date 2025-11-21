@@ -1,59 +1,38 @@
 /**
  * Product Variant Lifecycle Hooks
  *
- * Automatically syncs parent product to Meilisearch when variants change.
- * Since variants are aggregated into the product document (colors, sizes, etc.),
- * any variant change requires re-indexing the parent product.
+ * NOTE: afterCreate and afterUpdate disabled to prevent duplicate Meilisearch jobs.
+ * Instead, Meilisearch sync is triggered manually at the end of product-family-worker
+ * after all variant data (including images) is complete.
  *
- * Uses BullMQ queue for async, non-blocking sync operations.
+ * Only afterDelete remains active since it's a one-time event.
  */
 
 import queueService from '../../../../services/queue/queue-service';
 
 export default {
   /**
-   * After variant creation - re-index parent product
+   * After variant creation - DISABLED
+   * Meilisearch sync is triggered manually by product-family-worker with delay
    */
   async afterCreate(event) {
-    const { result } = event;
+    // DISABLED: Sync triggered manually in product-family-worker after images are uploaded
+    // const { result } = event;
+    // await queueService.enqueueMeilisearchSync('update', 'product-variant', result.id, result.documentId, 7);
 
-    try {
-      // Enqueue sync for the variant itself
-      // Note: The worker will re-index the parent product, not the variant directly
-      await queueService.enqueueMeilisearchSync(
-        'update', // Use 'update' operation since parent product exists
-        'product-variant',
-        result.id,
-        result.documentId,
-        7 // Medium-high priority
-      );
-
-      strapi.log.debug(`✅ Enqueued Meilisearch sync for new variant: ${result.sku}`);
-    } catch (error) {
-      strapi.log.error(`❌ Failed to enqueue Meilisearch sync for variant ${result.sku}:`, error);
-    }
+    strapi.log.debug(`[Lifecycle] Variant created: ${event.result.sku} (Meilisearch sync deferred)`);
   },
 
   /**
-   * After variant update - re-index parent product
+   * After variant update - DISABLED
+   * Meilisearch sync is triggered manually by product-family-worker with delay
    */
   async afterUpdate(event) {
-    const { result } = event;
+    // DISABLED: Sync triggered manually in product-family-worker after images are uploaded
+    // const { result } = event;
+    // await queueService.enqueueMeilisearchSync('update', 'product-variant', result.id, result.documentId, 6);
 
-    try {
-      // Re-index parent product with updated variant data
-      await queueService.enqueueMeilisearchSync(
-        'update',
-        'product-variant',
-        result.id,
-        result.documentId,
-        6 // Medium priority for updates
-      );
-
-      strapi.log.debug(`✅ Enqueued Meilisearch sync for updated variant: ${result.sku}`);
-    } catch (error) {
-      strapi.log.error(`❌ Failed to enqueue Meilisearch sync for variant ${result.sku}:`, error);
-    }
+    strapi.log.debug(`[Lifecycle] Variant updated: ${event.result.sku} (Meilisearch sync deferred)`);
   },
 
   /**

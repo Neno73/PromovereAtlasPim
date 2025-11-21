@@ -40,8 +40,42 @@
       "type": "integer",
       "default": 0
     },
+    "available_colors": {
+      "type": "json",
+      "description": "Array of unique color names from all variants"
+    },
+    "available_sizes": {
+      "type": "json",
+      "description": "Array of unique sizes from all variants"
+    },
+    "hex_colors": {
+      "type": "json",
+      "description": "Array of unique hex color codes from variants"
+    },
+    "price_min": {
+      "type": "decimal",
+      "precision": 10,
+      "scale": 2,
+      "description": "Lowest price across all price tiers"
+    },
+    "price_max": {
+      "type": "decimal",
+      "precision": 10,
+      "scale": 2,
+      "description": "Highest price across all price tiers"
+    },
+    "rag_metadata": {
+      "type": "json",
+      "required": false,
+      "default": {},
+      "description": "AI/RAG context metadata for product recommendations (populated separately)"
+    },
     "promidata_hash": {
       "type": "string"
+    },
+    "gemini_file_uri": {
+      "type": "string",
+      "private": true
     },
     "battery_information": {
       "type": "string"
@@ -97,7 +131,10 @@
     },
     "tax": {
       "type": "enumeration",
-      "enum": ["H", "L"],
+      "enum": [
+        "H",
+        "L"
+      ],
       "default": "H"
     },
     "must_have_imprint": {
@@ -115,19 +152,25 @@
       "type": "media",
       "multiple": false,
       "required": false,
-      "allowedTypes": ["images"]
+      "allowedTypes": [
+        "images"
+      ]
     },
     "gallery_images": {
       "type": "media",
       "multiple": true,
       "required": false,
-      "allowedTypes": ["images"]
+      "allowedTypes": [
+        "images"
+      ]
     },
     "model_image": {
       "type": "media",
       "multiple": false,
       "required": false,
-      "allowedTypes": ["images"]
+      "allowedTypes": [
+        "images"
+      ]
     },
     "dimensions": {
       "type": "component",

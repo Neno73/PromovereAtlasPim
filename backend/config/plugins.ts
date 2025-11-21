@@ -22,7 +22,7 @@ export default ({ env }) => ({
       host: env("MEILISEARCH_HOST"),
       apiKey: env("MEILISEARCH_ADMIN_KEY"),
       product: {
-        indexName: env("MEILISEARCH_INDEX_NAME", "products"),
+        indexName: env("MEILISEARCH_INDEX_NAME", "promoatlas_products"),
         entriesQuery: {
           populate: [
             "supplier",
@@ -32,6 +32,23 @@ export default ({ env }) => ({
             "gallery_images",
             "price_tiers",
             "dimensions",
+          ],
+        },
+        transformEntry({ entry }) {
+          // Transform Strapi entry to Meilisearch document
+          return {
+            id: entry.documentId,
+            ...entry,
+          };
+        },
+      },
+      "product-variant": {
+        indexName: "promoatlas_product_variant",
+        entriesQuery: {
+          populate: [
+            "product",
+            "primary_image",
+            "gallery_images",
           ],
         },
         transformEntry({ entry }) {

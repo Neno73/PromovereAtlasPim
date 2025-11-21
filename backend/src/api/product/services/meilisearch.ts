@@ -82,9 +82,9 @@ export class MeilisearchService {
           primaryKey: 'id', // Use Strapi documentId as primary key
         });
 
-        // Wait for index creation
-        // @ts-ignore - MeiliSearch SDK types incomplete
-        await this.client.waitForTask(task.taskUid as number);
+        // Wait for index creation (Meilisearch 0.54.0 API)
+        // @ts-ignore - MeiliSearch SDK version mismatch
+        await this.client.waitForTask(task.taskUid);
         this.index = await this.client.getIndex(this.config.indexName);
         this.strapi.log.info(`Meilisearch index "${this.config.indexName}" created`);
       }
@@ -240,32 +240,11 @@ export class MeilisearchService {
     const shortDescription = product.short_description || {};
     const material = product.material || {};
 
-    // Extract unique colors and sizes from variants
-    const colors: string[] = [];
-    const sizes: string[] = [];
-    const hexColors: string[] = [];
-
-    if (product.variants && Array.isArray(product.variants)) {
-      product.variants.forEach((variant: any) => {
-        if (variant.color && !colors.includes(variant.color)) {
-          colors.push(variant.color);
-        }
-        if (variant.size && !sizes.includes(variant.size)) {
-          sizes.push(variant.size);
-        }
-        if (variant.hex_color && !hexColors.includes(variant.hex_color)) {
-          hexColors.push(variant.hex_color);
-        }
-        // Also extract sizes from JSON array if present
-        if (variant.sizes && Array.isArray(variant.sizes)) {
-          variant.sizes.forEach((size: string) => {
-            if (!sizes.includes(size)) {
-              sizes.push(size);
-            }
-          });
-        }
-      });
-    }
+    // Use stored aggregation fields from Product schema (schema consolidation 2025-01-16)
+    // These fields are now calculated during sync and stored in the database for better performance
+    const colors: string[] = product.available_colors || [];
+    const sizes: string[] = product.available_sizes || [];
+    const hexColors: string[] = product.hex_colors || [];
 
     // Extract category codes
     const categoryCodesList: string[] = [];
@@ -281,25 +260,20 @@ export class MeilisearchService {
       });
     }
 
-    // Extract price range from price_tiers
-    let priceMin: number | undefined;
-    let priceMax: number | undefined;
-    let currency = 'EUR';
+    // Use stored price range from Product schema (schema consolidation 2025-01-16)
+    // price_min and price_max are now calculated during sync and stored in the database
+    const priceMin: number | undefined = product.price_min;
+    const priceMax: number | undefined = product.price_max;
 
+    // Extract currency from first selling price tier (currency not stored at product level)
+    let currency = 'EUR';
     if (product.price_tiers && Array.isArray(product.price_tiers)) {
-      product.price_tiers.forEach((tier: any) => {
-        if (tier.price && tier.price_type === 'selling') {
-          if (!priceMin || tier.price < priceMin) {
-            priceMin = tier.price;
-          }
-          if (!priceMax || tier.price > priceMax) {
-            priceMax = tier.price;
-          }
-          if (tier.currency) {
-            currency = tier.currency;
-          }
-        }
-      });
+      const sellingTier = product.price_tiers.find(
+        (tier: any) => tier.price_type === 'selling' && tier.currency
+      );
+      if (sellingTier?.currency) {
+        currency = sellingTier.currency;
+      }
     }
 
     // Extract main image URL
@@ -483,7 +457,7 @@ export class MeilisearchService {
 
     this.strapi.log.info(
       `Bulk indexing complete: ${stats.indexedDocuments}/${stats.totalDocuments} indexed, ` +
-        `${stats.failedDocuments} failed, ${stats.processingTimeMs}ms`
+      `${stats.failedDocuments} failed, ${stats.processingTimeMs}ms`
     );
 
     return stats;

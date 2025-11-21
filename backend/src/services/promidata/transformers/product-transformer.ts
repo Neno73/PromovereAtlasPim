@@ -45,6 +45,9 @@ export interface ProductData {
   total_variants_count?: number;
   available_colors?: string[];
   available_sizes?: string[];
+  hex_colors?: string[];
+  price_min?: number;
+  price_max?: number;
   country_of_origin?: string;
   delivery_time?: string;
   customs_tariff_number?: string;
@@ -64,6 +67,7 @@ export interface ProductData {
   promidata_hash?: string;
   last_synced?: Date;
   is_active?: boolean;
+  rag_metadata?: Record<string, any>;
 }
 
 /**
@@ -116,10 +120,14 @@ class ProductTransformer {
       total_variants_count: variants.length,
       available_colors: this.extractAvailableColors(variants),
       available_sizes: this.extractAvailableSizes(variants),
+      hex_colors: this.extractAvailableHexColors(variants),
+      price_min: this.calculateMinPrice(baseVariant),
+      price_max: this.calculateMaxPrice(baseVariant),
       supplier: supplierId,
       promidata_hash: productHash,
       last_synced: new Date(),
       is_active: true,
+      rag_metadata: {}, // Empty for now (populated separately)
     };
   }
 
@@ -398,8 +406,35 @@ class ProductTransformer {
 
   /**
    * Extract color name (handles multilingual)
+   * NEW: Promidata stores color in NonLanguageDependedProductDetails.SearchColor
+   * or in ProductDetails[lang].ConfigurationFields[{ConfigurationName: "Color"}]
    */
   private extractColorName(data: RawProductData): string | null {
+    // Try NonLanguageDependedProductDetails.SearchColor first (Promidata structure)
+    const nonLangDetails = (data as any).NonLanguageDependedProductDetails;
+    if (nonLangDetails?.SearchColor && nonLangDetails.SearchColor !== 'Undefined') {
+      return nonLangDetails.SearchColor;
+    }
+
+    // Try ConfigurationFields (Promidata variant structure)
+    if ((data as any).ProductDetails) {
+      const productDetails = (data as any).ProductDetails;
+      // Try each language
+      for (const lang of ['nl', 'de', 'en', 'fr', 'es']) {
+        const configFields = productDetails[lang]?.ConfigurationFields;
+        if (Array.isArray(configFields)) {
+          const colorConfig = configFields.find((field: any) =>
+            field.ConfigurationName === 'Color' ||
+            field.ConfigurationNameTranslated === 'Kleur'
+          );
+          if (colorConfig?.ConfigurationValue) {
+            return colorConfig.ConfigurationValue;
+          }
+        }
+      }
+    }
+
+    // FALLBACK: Try legacy direct fields
     const colorName = data.color_name || data.ColorName || data.colorName;
 
     if (!colorName) {
@@ -437,8 +472,29 @@ class ProductTransformer {
 
   /**
    * Extract size
+   * NEW: Promidata stores size in ProductDetails[lang].ConfigurationFields[{ConfigurationName: "Size"}]
    */
   private extractSize(data: RawProductData): string | null {
+    // Try ConfigurationFields (Promidata variant structure)
+    if ((data as any).ProductDetails) {
+      const productDetails = (data as any).ProductDetails;
+      // Try each language
+      for (const lang of ['nl', 'de', 'en', 'fr', 'es']) {
+        const configFields = productDetails[lang]?.ConfigurationFields;
+        if (Array.isArray(configFields)) {
+          const sizeConfig = configFields.find((field: any) =>
+            field.ConfigurationName === 'Size' ||
+            field.ConfigurationNameTranslated === 'Afmeting' ||
+            field.ConfigurationNameTranslated === 'Größe'
+          );
+          if (sizeConfig?.ConfigurationValue) {
+            return sizeConfig.ConfigurationValue;
+          }
+        }
+      }
+    }
+
+    // FALLBACK: Try legacy direct fields
     return (
       data.size ||
       data.Size ||
@@ -823,6 +879,166 @@ class ProductTransformer {
       }
     }
     return undefined;
+  }
+
+  /**
+   * Extract available hex colors from all variants
+   */
+  private extractAvailableHexColors(variants: RawProductData[]): string[] {
+    const hexColors = new Set<string>();
+
+    for (const variant of variants) {
+      // Try NonLanguageDependedProductDetails.HexColor first (Promidata structure)
+      const nonLangDetails = (variant as any).NonLanguageDependedProductDetails;
+      let hex = nonLangDetails?.HexColor;
+
+      // FALLBACK: Try legacy direct fields
+      if (!hex) {
+        hex = variant.hex_color || variant.HexColor || variant.hexColor;
+      }
+
+      if (hex && typeof hex === 'string' && hex.trim() && hex !== 'null') {
+        hexColors.add(hex.trim());
+      }
+    }
+
+    return Array.from(hexColors);
+  }
+
+  /**
+   * Calculate minimum price from price tiers
+   * NEW: Promidata stores prices in ProductPriceCountryBased.BENELUX.RecommendedSellingPrice[]
+   */
+  private calculateMinPrice(data: RawProductData): number | undefined {
+    const prices: number[] = [];
+
+    // Try Promidata ProductPriceCountryBased structure
+    const priceData = (data as any).ProductPriceCountryBased;
+    if (priceData) {
+      // Try each region (BENELUX, DACH, etc.)
+      for (const region of Object.keys(priceData)) {
+        const regionData = priceData[region];
+
+        // Extract RecommendedSellingPrice
+        if (regionData.RecommendedSellingPrice && Array.isArray(regionData.RecommendedSellingPrice)) {
+          for (const priceItem of regionData.RecommendedSellingPrice) {
+            if (priceItem.Price !== undefined && priceItem.Price !== null) {
+              const parsed = parseFloat(priceItem.Price);
+              if (!isNaN(parsed) && parsed > 0) {
+                prices.push(parsed);
+              }
+            }
+          }
+        }
+
+        // Also extract GeneralBuyingPrice as fallback
+        if (regionData.GeneralBuyingPrice && Array.isArray(regionData.GeneralBuyingPrice)) {
+          for (const priceItem of regionData.GeneralBuyingPrice) {
+            if (priceItem.Price !== undefined && priceItem.Price !== null) {
+              const parsed = parseFloat(priceItem.Price);
+              if (!isNaN(parsed) && parsed > 0) {
+                prices.push(parsed);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // FALLBACK: Check legacy price tier fields
+    if (prices.length === 0) {
+      for (let i = 1; i <= 8; i++) {
+        const price = data[`price_${i}`] || data[`Price${i}`] || data[`PRICE_${i}`];
+        if (price !== undefined && price !== null) {
+          const parsed = parseFloat(price);
+          if (!isNaN(parsed) && parsed > 0) {
+            prices.push(parsed);
+          }
+        }
+      }
+
+      // Also check PriceDetails array
+      if (data.PriceDetails && Array.isArray(data.PriceDetails)) {
+        for (const priceDetail of data.PriceDetails) {
+          if (priceDetail.Price !== undefined && priceDetail.Price !== null) {
+            const parsed = parseFloat(priceDetail.Price);
+            if (!isNaN(parsed) && parsed > 0) {
+              prices.push(parsed);
+            }
+          }
+        }
+      }
+    }
+
+    return prices.length > 0 ? Math.min(...prices) : undefined;
+  }
+
+  /**
+   * Calculate maximum price from price tiers
+   * NEW: Promidata stores prices in ProductPriceCountryBased.BENELUX.RecommendedSellingPrice[]
+   */
+  private calculateMaxPrice(data: RawProductData): number | undefined {
+    const prices: number[] = [];
+
+    // Try Promidata ProductPriceCountryBased structure
+    const priceData = (data as any).ProductPriceCountryBased;
+    if (priceData) {
+      // Try each region (BENELUX, DACH, etc.)
+      for (const region of Object.keys(priceData)) {
+        const regionData = priceData[region];
+
+        // Extract RecommendedSellingPrice
+        if (regionData.RecommendedSellingPrice && Array.isArray(regionData.RecommendedSellingPrice)) {
+          for (const priceItem of regionData.RecommendedSellingPrice) {
+            if (priceItem.Price !== undefined && priceItem.Price !== null) {
+              const parsed = parseFloat(priceItem.Price);
+              if (!isNaN(parsed) && parsed > 0) {
+                prices.push(parsed);
+              }
+            }
+          }
+        }
+
+        // Also extract GeneralBuyingPrice as fallback
+        if (regionData.GeneralBuyingPrice && Array.isArray(regionData.GeneralBuyingPrice)) {
+          for (const priceItem of regionData.GeneralBuyingPrice) {
+            if (priceItem.Price !== undefined && priceItem.Price !== null) {
+              const parsed = parseFloat(priceItem.Price);
+              if (!isNaN(parsed) && parsed > 0) {
+                prices.push(parsed);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // FALLBACK: Check legacy price tier fields
+    if (prices.length === 0) {
+      for (let i = 1; i <= 8; i++) {
+        const price = data[`price_${i}`] || data[`Price${i}`] || data[`PRICE_${i}`];
+        if (price !== undefined && price !== null) {
+          const parsed = parseFloat(price);
+          if (!isNaN(parsed) && parsed > 0) {
+            prices.push(parsed);
+          }
+        }
+      }
+
+      // Also check PriceDetails array
+      if (data.PriceDetails && Array.isArray(data.PriceDetails)) {
+        for (const priceDetail of data.PriceDetails) {
+          if (priceDetail.Price !== undefined && priceDetail.Price !== null) {
+            const parsed = parseFloat(priceDetail.Price);
+            if (!isNaN(parsed) && parsed > 0) {
+              prices.push(parsed);
+            }
+          }
+        }
+      }
+    }
+
+    return prices.length > 0 ? Math.max(...prices) : undefined;
   }
 
   /**

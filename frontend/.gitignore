@@ -115,3 +115,4 @@ site
 
 # Vitest coverage directory
 /coverage
+.vercel

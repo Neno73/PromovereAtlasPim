@@ -22,6 +22,9 @@ import productTransformer from '../../promidata/transformers/product-transformer
 import variantTransformer from '../../promidata/transformers/variant-transformer';
 import productSyncService from '../../promidata/sync/product-sync-service';
 import variantSyncService from '../../promidata/sync/variant-sync-service';
+import deduplicationService from '../../promidata/media/deduplication';
+import queueService from '../queue-service';
+import type { ImageUploadJobData } from '../job-types';
 
 /**
  * Product Family Job Data
@@ -32,18 +35,6 @@ export interface ProductFamilyJobData {
   supplierId: number;
   supplierCode: string;
   productHash: string;
-}
-
-/**
- * Image Upload Job Data
- */
-interface ImageUploadJobData {
-  imageUrl: string;
-  fileName: string;
-  entityType: 'product' | 'product-variant';
-  entityId: number;
-  fieldName: 'primary_image' | 'gallery_images';
-  index?: number;
 }
 
 /**
@@ -95,6 +86,7 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
 
         let processed = 0;
         const totalVariants = variants.length;
+        let isFirstVariant = true; // Track absolute first variant for Product image
 
         for (const [color, colorGroup] of colorGroups.entries()) {
           const colorVariants = colorGroup.variants;
@@ -121,54 +113,92 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
 
             // Primary image
             if (imageUrls.primaryImage) {
-              const imageJobData: ImageUploadJobData = {
-                imageUrl: imageUrls.primaryImage,
-                fileName: `variant-${variantResult.variantId}-primary`,
-                entityType: 'product-variant',
-                entityId: Number(variantResult.variantId),
-                fieldName: 'primary_image'
-              };
+              const fileName = `variant-${variantResult.variantId}-primary.jpg`;
 
-              const imageJob = await imageUploadQueue.add(
-                `image-variant-${variantResult.variantId}-primary`,
-                imageJobData,
-                {
-                  ...imageUploadJobOptions,
-                  parent: {
-                    id: job.id!,
-                    queue: job.queueQualifiedName
-                  }
+              // Check if image already exists (deduplication)
+              const dedupCheck = await deduplicationService.checkByFilename(fileName);
+
+              if (dedupCheck.exists && dedupCheck.mediaId) {
+                // Image already exists, just link it to the variant
+                await variantSyncService.updateImages(Number(variantResult.variantId), dedupCheck.mediaId);
+
+                // If this is the first variant, also set Product's main_image
+                if (isFirstVariant && dedupCheck.mediaId) {
+                  await strapi.entityService.update('api::product.product', productId, {
+                    data: { main_image: dedupCheck.mediaId }
+                  });
+                  strapi.log.info(`  ↻ Set Product ${productId} main_image from deduplicated variant image`);
                 }
-              );
 
-              imageJobs.push(imageJob.id);
+                strapi.log.info(`  ↻ Deduplicated primary image for variant ${variantResult.variantId}`);
+              } else {
+                // Image doesn't exist, create upload job
+                const imageJobData: ImageUploadJobData = {
+                  imageUrl: imageUrls.primaryImage,
+                  fileName: `variant-${variantResult.variantId}-primary`,
+                  entityType: 'product-variant',
+                  entityId: Number(variantResult.variantId),
+                  fieldName: 'primary_image',
+                  updateParentProduct: isFirstVariant, // Mark first variant to update Product
+                  parentProductId: isFirstVariant ? productId : undefined
+                };
+
+                const imageJob = await imageUploadQueue.add(
+                  `image-variant-${variantResult.variantId}-primary`,
+                  imageJobData,
+                  imageUploadJobOptions
+                  // Note: Removed parent relationship to prevent BullMQ dependency errors
+                  // Product-family jobs complete immediately, image jobs run independently
+                );
+
+                imageJobs.push(imageJob.id);
+              }
             }
 
             // Gallery images
+            const galleryMediaIds: number[] = [];
             for (let idx = 0; idx < imageUrls.galleryImages.length; idx++) {
               const imageUrl = imageUrls.galleryImages[idx];
-              const imageJobData: ImageUploadJobData = {
-                imageUrl,
-                fileName: `variant-${variantResult.variantId}-gallery-${idx}`,
-                entityType: 'product-variant',
-                entityId: Number(variantResult.variantId),
-                fieldName: 'gallery_images',
-                index: idx
-              };
+              const fileName = `variant-${variantResult.variantId}-gallery-${idx}.jpg`;
 
-              const imageJob = await imageUploadQueue.add(
-                `image-variant-${variantResult.variantId}-gallery-${idx}`,
-                imageJobData,
-                {
-                  ...imageUploadJobOptions,
-                  parent: {
-                    id: job.id!,
-                    queue: job.queueQualifiedName
-                  }
-                }
-              );
+              // Check if image already exists (deduplication)
+              const dedupCheck = await deduplicationService.checkByFilename(fileName);
 
-              imageJobs.push(imageJob.id);
+              if (dedupCheck.exists && dedupCheck.mediaId) {
+                // Image already exists, collect media ID for batch update
+                galleryMediaIds.push(dedupCheck.mediaId);
+                strapi.log.info(`  ↻ Deduplicated gallery image ${idx} for variant ${variantResult.variantId}`);
+              } else {
+                // Image doesn't exist, create upload job
+                const imageJobData: ImageUploadJobData = {
+                  imageUrl,
+                  fileName: `variant-${variantResult.variantId}-gallery-${idx}`,
+                  entityType: 'product-variant',
+                  entityId: Number(variantResult.variantId),
+                  fieldName: 'gallery_images',
+                  index: idx
+                };
+
+                const imageJob = await imageUploadQueue.add(
+                  `image-variant-${variantResult.variantId}-gallery-${idx}`,
+                  imageJobData,
+                  imageUploadJobOptions
+                  // Note: Removed parent relationship to prevent BullMQ dependency errors
+                  // Product-family jobs complete immediately, image jobs run independently
+                );
+
+                imageJobs.push(imageJob.id);
+              }
+            }
+
+            // Link deduplicated gallery images to variant
+            if (galleryMediaIds.length > 0) {
+              await variantSyncService.updateImages(Number(variantResult.variantId), undefined, galleryMediaIds);
+            }
+
+            // After processing first variant, subsequent ones won't update Product
+            if (isFirstVariant) {
+              isFirstVariant = false;
             }
 
             processed++;
@@ -180,6 +210,26 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
         await job.updateProgress({ step: 'complete', percentage: 100 });
 
         strapi.log.info(`  ✓ ${aNumber}: Product + ${variantResults.length} variants, ${imageJobs.length} images enqueued`);
+
+        // Enqueue Meilisearch sync for each variant with 5-minute delay
+        // This allows time for image uploads to complete before indexing
+        for (const variantResult of variantResults) {
+          if (variantResult.documentId) {
+            await queueService.enqueueMeilisearchSync(
+              'update',
+              'product-variant',
+              Number(variantResult.variantId),
+              variantResult.documentId,
+              5, // Low priority since it's delayed anyway
+              300000 // 5 minutes delay (300,000 ms)
+            );
+          } else {
+            strapi.log.warn(`  ⚠️  Variant ${variantResult.variantId} missing documentId, skipping Meilisearch sync`);
+          }
+        }
+
+        const syncedCount = variantResults.filter(v => v.documentId).length;
+        strapi.log.info(`  └─ ${syncedCount} Meilisearch sync jobs enqueued (5-min delay)`);
 
         return {
           aNumber,

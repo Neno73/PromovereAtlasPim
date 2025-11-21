@@ -98,6 +98,12 @@ backend/
     "brand": { "type": "string" },
     "category": { "type": "string" },
     "total_variants_count": { "type": "integer", "default": 0 },
+    "available_colors": { "type": "json" },      // Unique color names from all variants
+    "available_sizes": { "type": "json" },       // Unique sizes from all variants
+    "hex_colors": { "type": "json" },            // Unique hex color codes
+    "price_min": { "type": "decimal" },          // Lowest price across all tiers
+    "price_max": { "type": "decimal" },          // Highest price across all tiers
+    "rag_metadata": { "type": "json", "default": {} },  // AI/RAG context metadata
     "name": { "type": "json" },          // { en: "", de: "", fr: "", es: "" }
     "description": { "type": "json" },   // Multilingual JSON
     "model_name": { "type": "json" },
@@ -147,7 +153,9 @@ backend/
 }
 ```
 
-**Purpose**: Represents main product family (e.g., "Classic T-Shirt"). Stores shared information like pricing, main images, and descriptions.
+**Purpose**: Represents main product family (e.g., "Classic T-Shirt"). Stores shared information like pricing, main images, descriptions, and aggregated variant data.
+
+**Schema Consolidation (2025-11-16)**: Added aggregation fields (available_colors, available_sizes, hex_colors, price_min, price_max, rag_metadata) calculated during sync for better performance and RAG preparation. Product is the single source of truth for product-level data (description, material, country_of_origin).
 
 #### Product Variant (Size/Color Variations)
 
@@ -160,13 +168,11 @@ backend/
   "attributes": {
     "sku": { "type": "string", "required": true, "unique": true },
     "name": { "type": "string" },
-    "description": { "type": "richtext" },
     "color": { "type": "string" },
     "size": { "type": "string" },
     "sizes": { "type": "json" },                // Available sizes array
     "hex_color": { "type": "string" },
     "supplier_color_code": { "type": "string" },
-    "material": { "type": "string" },
     "dimensions_length": { "type": "decimal" },  // Flattened for performance
     "dimensions_width": { "type": "decimal" },
     "dimensions_height": { "type": "decimal" },
@@ -187,6 +193,8 @@ backend/
 ```
 
 **Purpose**: Specific size/color combination (e.g., "Classic T-Shirt - Black - Large"). Stores variant-specific data like dimensions, color codes, and variant images.
+
+**Schema Consolidation (2025-11-16)**: Removed duplicate fields (description, short_description, material, country_of_origin, production_time). Use Product fields instead for product-level data.
 
 **Key Pattern**: `is_primary_for_color` flag marks one variant per color for product listings.
 

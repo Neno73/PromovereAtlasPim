@@ -190,13 +190,10 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
           const familyJob = await productFamilyQueue.add(
             `family-${supplierCode}-${family.aNumber}`,
             jobData,
-            {
-              ...productFamilyJobOptions,
-              parent: {
-                id: job.id!,
-                queue: job.queueQualifiedName
-              }
-            }
+            productFamilyJobOptions
+            // Note: Removed parent relationship to prevent BullMQ dependency errors
+            // The supplier-sync job enqueues families and completes immediately
+            // Product-family jobs run independently
           );
 
           enqueuedJobs.push(familyJob.id);
@@ -228,12 +225,44 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
   );
 
   // Event handlers
-  worker.on('completed', (job) => {
+  worker.on('completed', async (job) => {
     strapi.log.info(`✅ [Worker] Supplier sync job ${job.id} completed`);
+
+    // Update supplier last_sync_date
+    try {
+      const { supplierNumericId, supplierCode } = job.data;
+      await strapi.entityService.update('api::supplier.supplier', supplierNumericId, {
+        data: {
+          last_sync_date: new Date(),
+          last_sync_status: 'completed',
+          last_sync_message: `Enqueued ${job.returnvalue?.familiesEnqueued || 0} families, skipped ${job.returnvalue?.skipped || 0} unchanged`
+        }
+      });
+      strapi.log.info(`✓ Updated last_sync_date for ${supplierCode}`);
+    } catch (error) {
+      strapi.log.error(`Failed to update supplier last_sync_date:`, error);
+    }
   });
 
-  worker.on('failed', (job, error) => {
+  worker.on('failed', async (job, error) => {
     strapi.log.error(`❌ [Worker] Supplier sync job ${job?.id} failed:`, error);
+
+    // Update supplier last_sync_status to failed
+    try {
+      if (job?.data) {
+        const { supplierNumericId, supplierCode } = job.data;
+        await strapi.entityService.update('api::supplier.supplier', supplierNumericId, {
+          data: {
+            last_sync_date: new Date(),
+            last_sync_status: 'failed',
+            last_sync_message: error?.message || 'Sync failed'
+          }
+        });
+        strapi.log.info(`✓ Updated last_sync_status to failed for ${supplierCode}`);
+      }
+    } catch (updateError) {
+      strapi.log.error(`Failed to update supplier last_sync_status:`, updateError);
+    }
   });
 
   worker.on('error', (error) => {

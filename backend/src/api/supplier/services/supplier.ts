@@ -68,7 +68,7 @@ export default factories.createCoreService('api::supplier.supplier', ({ strapi }
     // Check if suppliers already exist
     const existingSuppliers = await strapi.entityService.findMany('api::supplier.supplier', {
       fields: ['code'],
-    });
+    }) as any[];
 
     const existingCodes = existingSuppliers.map(s => s.code);
 

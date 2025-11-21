@@ -48,8 +48,8 @@ class HashService {
         depth: variantData.dimensions_depth,
       },
       weight: variantData.weight,
-      material: variantData.material,
-      countryOfOrigin: variantData.country_of_origin,
+      // Note: material and country_of_origin removed (schema consolidation 2025-11-16)
+      // These are now product-level fields, not variant-specific
     };
 
     return this.hashObject(dataToHash);

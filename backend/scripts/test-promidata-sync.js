@@ -6,11 +6,11 @@
 const { default: fetch } = require('node-fetch');
 
 const STRAPI_BASE_URL = 'http://localhost:1337';
-const STRAPI_API_TOKEN = '0647198f632dcccda7edc4514e41a8c556f03d98bc9c40249051b90be3400140a42d1c4bcdaef060595aa30768cf1542b68412ae0627458f119378d7f2a1f6dcb694597c2c47e559c23ed045a6d1c7d9c1b5b73acf4942fa07198b6b573aeba01c396d868a2e3f5dda8fb275ab5b741f820dbe23bacfca0c341ddb4b02332a97';
+const STRAPI_API_TOKEN = process.env.STRAPI_API_TOKEN;
 
 async function testPromidataConnection() {
   console.log('🔍 Testing Promidata API connection...');
-  
+
   try {
     // Test connection to Promidata
     const response = await fetch(`${STRAPI_BASE_URL}/api/promidata-sync/test-connection`, {
@@ -19,11 +19,11 @@ async function testPromidataConnection() {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    
+
     const result = await response.json();
     console.log('✅ Connection test result:', result);
     return result;
@@ -35,7 +35,7 @@ async function testPromidataConnection() {
 
 async function importCategories() {
   console.log('📁 Importing categories from Promidata...');
-  
+
   try {
     const response = await fetch(`${STRAPI_BASE_URL}/api/promidata-sync/import-categories`, {
       method: 'POST',
@@ -44,11 +44,11 @@ async function importCategories() {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    
+
     const result = await response.json();
     console.log('✅ Categories imported:', result);
     return result;
@@ -60,7 +60,7 @@ async function importCategories() {
 
 async function getSyncStatus() {
   console.log('📊 Getting sync status...');
-  
+
   try {
     const response = await fetch(`${STRAPI_BASE_URL}/api/promidata-sync/status`, {
       headers: {
@@ -68,11 +68,11 @@ async function getSyncStatus() {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    
+
     const result = await response.json();
     console.log('✅ Sync status:', result);
     return result;
@@ -84,7 +84,7 @@ async function getSyncStatus() {
 
 async function testSingleSupplierSync() {
   console.log('🔄 Testing sync for a single supplier...');
-  
+
   try {
     // Get first active supplier
     const suppliersResponse = await fetch(`${STRAPI_BASE_URL}/api/suppliers?filters[is_active][$eq]=true&pagination[limit]=1`, {
@@ -93,20 +93,20 @@ async function testSingleSupplierSync() {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (!suppliersResponse.ok) {
       throw new Error(`Failed to get suppliers: ${suppliersResponse.statusText}`);
     }
-    
+
     const suppliersData = await suppliersResponse.json();
     if (suppliersData.data.length === 0) {
       console.log('⚠️ No active suppliers found');
       return null;
     }
-    
+
     const supplier = suppliersData.data[0];
     console.log(`🏢 Testing sync for supplier: ${supplier.code} - ${supplier.name}`);
-    
+
     // Start sync for this supplier
     const syncResponse = await fetch(`${STRAPI_BASE_URL}/api/promidata-sync/start`, {
       method: 'POST',
@@ -118,11 +118,11 @@ async function testSingleSupplierSync() {
         supplierId: supplier.id
       })
     });
-    
+
     if (!syncResponse.ok) {
       throw new Error(`HTTP ${syncResponse.status}: ${syncResponse.statusText}`);
     }
-    
+
     const result = await syncResponse.json();
     console.log('✅ Sync completed:', result);
     return result;
@@ -134,23 +134,23 @@ async function testSingleSupplierSync() {
 
 async function main() {
   console.log('🚀 Starting Promidata Sync Test\n');
-  
+
   // Test 1: Connection
   await testPromidataConnection();
   console.log('');
-  
+
   // Test 2: Import Categories
   await importCategories();
   console.log('');
-  
+
   // Test 3: Get Sync Status
   await getSyncStatus();
   console.log('');
-  
+
   // Test 4: Test Single Supplier Sync
   await testSingleSupplierSync();
   console.log('');
-  
+
   console.log('🎉 Test completed!');
 }
 

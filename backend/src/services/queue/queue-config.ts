@@ -204,6 +204,37 @@ export const meilisearchSyncJobOptions = {
 };
 
 /**
+ * Gemini File Search Sync Worker Configuration
+ * Medium concurrency for Gemini RAG indexing
+ */
+export const geminiSyncWorkerOptions: WorkerOptions = {
+  connection: getRedisConnection(),
+  concurrency: getEnvNumber('BULLMQ_CONCURRENCY_GEMINI', 5), // 5 documents at once
+  limiter: {
+    max: 10, // Max 10 jobs per...
+    duration: 1000, // ...1 second
+  },
+  settings: {
+    backoffStrategy: (attemptsMade: number) => {
+      // Exponential backoff: 2^attempt * 10 seconds
+      return Math.pow(2, attemptsMade) * 10000;
+    },
+  },
+};
+
+/**
+ * Gemini Sync Job Options
+ */
+export const geminiSyncJobOptions = {
+  attempts: 3, // Retry up to 3 times
+  backoff: {
+    type: 'exponential' as const,
+    delay: 10000, // 10 seconds
+  },
+  timeout: getEnvNumber('BULLMQ_JOB_TIMEOUT_GEMINI', 120000), // 2 minutes default
+};
+
+/**
  * Job ID Generator
  * Creates unique, sortable job IDs with UUID to prevent collisions
  */

@@ -61,4 +61,27 @@ export default ({ env }) => ({
       },
     },
   },
+  documentation: {
+    enabled: true,
+    config: {
+      openapi: '3.0.0',
+      info: {
+        version: '1.0.0',
+        title: 'PromoAtlas PIM API',
+        description: 'API documentation for PromoAtlas Product Information Management system',
+        contact: {
+          name: 'PromoAtlas Team',
+        },
+      },
+      'x-strapi-config': {
+        plugins: ['users-permissions', 'upload'],
+      },
+      servers: [
+        {
+          url: env('API_URL', 'http://localhost:1337'),
+          description: 'Development server',
+        },
+      ],
+    },
+  },
 });

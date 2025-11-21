@@ -1,3 +1,8 @@
+/**
+ * Gemini Sync Routes
+ * Routes for managing Gemini RAG synchronization
+ */
+
 export default {
   routes: [
     {
@@ -7,6 +12,8 @@ export default {
       config: {
         policies: [],
         middlewares: [],
+        description: 'Initialize Gemini FileSearchStore',
+        tags: ['Gemini Sync'],
       },
     },
     {
@@ -16,6 +23,8 @@ export default {
       config: {
         policies: [],
         middlewares: [],
+        description: 'Trigger sync of all active products to Gemini',
+        tags: ['Gemini Sync'],
       },
     },
   ],

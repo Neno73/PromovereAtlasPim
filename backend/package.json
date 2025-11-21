@@ -12,7 +12,10 @@
     "start": "strapi start",
     "strapi": "strapi",
     "upgrade": "npx @strapi/upgrade latest",
-    "upgrade:dry": "npx @strapi/upgrade latest --dry"
+    "upgrade:dry": "npx @strapi/upgrade latest --dry",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.844.0",
@@ -21,10 +24,13 @@
     "@google-ai/generativelanguage": "^3.5.0",
     "@google/genai": "^1.30.0",
     "@strapi/plugin-cloud": "5.17.0",
+    "@strapi/plugin-documentation": "^5.17.0",
     "@strapi/plugin-users-permissions": "5.17.0",
     "@strapi/provider-upload-aws-s3": "^5.18.0",
     "@strapi/strapi": "5.17.0",
     "aws-sdk": "^2.1692.0",
+    "axios": "^1.13.2",
+    "axios-retry": "^4.5.0",
     "better-sqlite3": "11.3.0",
     "bullmq": "^5.0.0",
     "dotenv": "^17.2.0",
@@ -40,9 +46,12 @@
     "styled-components": "^6.0.0"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
     "typescript": "^5"
   },
   "engines": {

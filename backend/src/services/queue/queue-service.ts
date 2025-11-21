@@ -217,6 +217,42 @@ class QueueService {
   }
 
   /**
+   * Enqueue multiple Gemini File Search sync jobs (Batch)
+   */
+  public async enqueueGeminiSyncBatch(
+    jobs: Array<{
+      operation: 'add' | 'update' | 'delete';
+      documentId: string;
+      priority?: number;
+      delay?: number;
+    }>
+  ): Promise<Job<GeminiSyncJobData>[]> {
+    this.ensureInitialized();
+
+    const bulkJobs = jobs.map(job => {
+      const jobId = generateJobId('gemini-sync', job.documentId);
+      return {
+        name: jobId,
+        data: {
+          operation: job.operation,
+          documentId: job.documentId,
+          priority: job.priority,
+          delay: job.delay
+        },
+        opts: {
+          ...geminiSyncJobOptions,
+          priority: job.priority || 0,
+          delay: job.delay || 0
+        }
+      };
+    });
+
+    const createdJobs = await this.geminiSyncQueue!.addBulk(bulkJobs);
+    strapi.log.info(`🤖 Enqueued batch of ${createdJobs.length} Gemini sync jobs`);
+    return createdJobs;
+  }
+
+  /**
    * Get job by ID
    */
   public async getJob(

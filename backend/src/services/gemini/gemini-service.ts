@@ -18,23 +18,47 @@ const STORE_DISPLAY_NAME = 'PromoAtlas Product Catalog';
 class GeminiService {
     private client: any = null;
     private storeId: string | null = null;
+    private storeCreationPromise: Promise<string | null> | null = null;
 
     constructor() {
         const apiKey = process.env.GEMINI_API_KEY;
         if (apiKey) {
             this.client = new GoogleGenAI({ apiKey });
+            strapi.log.info('✅ Gemini client initialized');
         } else {
-            strapi.log.warn('GEMINI_API_KEY not found. Gemini Service will be disabled.');
+            strapi.log.warn('⚠️  GEMINI_API_KEY not configured - Gemini features disabled');
         }
     }
 
     /**
      * Get or Create the PromoAtlas File Search Store
+     * Includes mutex to prevent race conditions on concurrent calls
      */
     async getOrCreateStore() {
         if (!this.client) return null;
         if (this.storeId) return this.storeId;
 
+        // If creation is already in progress, wait for it
+        if (this.storeCreationPromise) {
+            return this.storeCreationPromise;
+        }
+
+        // Start creation and store promise
+        this.storeCreationPromise = this._createStore();
+
+        try {
+            const result = await this.storeCreationPromise;
+            return result;
+        } finally {
+            // Clear promise after completion
+            this.storeCreationPromise = null;
+        }
+    }
+
+    /**
+     * Internal method to create or find the store
+     */
+    private async _createStore(): Promise<string | null> {
         try {
             // List stores to find ours
             const stores = await this.client.fileSearchStores.list();
@@ -79,6 +103,8 @@ class GeminiService {
     async upsertProduct(product: any) {
         if (!this.client) return;
 
+        let tempFilePath: string | null = null;
+
         try {
             const storeId = await this.getOrCreateStore();
             if (!storeId) {
@@ -91,9 +117,9 @@ class GeminiService {
             const jsonContent = JSON.stringify(productDoc, null, 2);
             const fileName = `${productDoc.sku}.json`;
 
-            // 2. Write to temp file
-            const tempFilePath = path.join(os.tmpdir(), fileName);
-            fs.writeFileSync(tempFilePath, jsonContent);
+            // 2. Write to temp file with secure permissions (read/write for owner only)
+            tempFilePath = path.join(os.tmpdir(), fileName);
+            fs.writeFileSync(tempFilePath, jsonContent, { mode: 0o600 });
 
             // 3. Upload to Gemini FileSearchStore
             // Note: Using the correct parameter name from Google's documentation
@@ -131,14 +157,79 @@ class GeminiService {
                 } as any
             });
 
-            // Cleanup
-            fs.unlinkSync(tempFilePath);
-
             return operation;
 
         } catch (error: any) {
             strapi.log.error(`Failed to upsert product ${product.sku} to Gemini:`, error);
             throw error;
+        } finally {
+            // Cleanup temp file (guaranteed execution)
+            if (tempFilePath && fs.existsSync(tempFilePath)) {
+                try {
+                    fs.unlinkSync(tempFilePath);
+                } catch (cleanupError) {
+                    strapi.log.warn(`Failed to cleanup temp file ${tempFilePath}:`, cleanupError);
+                }
+            }
+        }
+    }
+
+    /**
+     * Add or Update a document by ID
+     * Fetches product from Strapi and upserts to Gemini
+     */
+    async addOrUpdateDocument(documentId: string) {
+        try {
+            // Fetch product from Strapi
+            const product = await strapi.documents('api::product.product').findOne({
+                documentId,
+                populate: ['supplier', 'categories', 'price_tiers', 'dimensions']
+            });
+
+            if (!product) {
+                return { success: false, error: `Product ${documentId} not found in Strapi` };
+            }
+
+            await this.upsertProduct(product);
+            return { success: true };
+
+        } catch (error: any) {
+            strapi.log.error(`Failed to add/update document ${documentId}:`, error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Delete a document by ID
+     */
+    async deleteDocument(documentId: string) {
+        try {
+            // We might not have the product if it's already deleted from Strapi
+            // But we need the file URI to delete from Gemini.
+            // If we can't find it in Strapi, we might need to search Gemini by name/metadata?
+            // For now, we'll try to find it. If not found, we can't easily delete from Gemini 
+            // unless we store the mapping elsewhere or derive the filename.
+
+            // Assuming filename is based on SKU, but we need SKU.
+            // If product is deleted, we can't get SKU.
+            // This is a limitation. Ideally we pass SKU or URI to delete.
+
+            // For this implementation, we'll assume the worker passes documentId.
+            // If product is gone, we log a warning.
+
+            const product = await strapi.documents('api::product.product').findOne({
+                documentId
+            });
+
+            if (product) {
+                await this.deleteProduct(product);
+                return { success: true };
+            }
+
+            return { success: false, error: 'Product not found for deletion' };
+
+        } catch (error: any) {
+            return { success: false, error: error.message };
         }
     }
 
@@ -154,6 +245,9 @@ class GeminiService {
                 // The exact API method depends on the SDK structure
                 // For now, we'll log and clear the reference
                 strapi.log.info(`Clearing Gemini reference for: ${product.sku}`);
+
+                // TODO: Implement actual Gemini deletion when SDK method is confirmed
+                // await this.client.files.delete({ name: product.gemini_file_uri });
 
                 await strapi.documents('api::product.product').update({
                     documentId: product.documentId,

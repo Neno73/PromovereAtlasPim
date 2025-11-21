@@ -40,23 +40,11 @@ export default {
         defaultMessage: "Queue Dashboard",
       },
       Component: async () => {
-        const mod = await import("./extensions/bull-board/admin/src/pages/Dashboard");
-        return mod.Dashboard;
-      },
-    });
-
-    // Add job manager page
-    app.addMenuLink({
-      to: "/queue-management",
-      icon: () => <DarkIcon><span className="icon-list">☰</span></DarkIcon>,
-      intlLabel: {
-        id: "queue-management.plugin.name",
-        defaultMessage: "Job Manager",
-      },
-      Component: async () => {
-        const mod = await import("./pages/QueueManagement");
+        const mod = await import("./pages/QueueDashboard");
         return mod.default;
       },
     });
+
+
   },
 };

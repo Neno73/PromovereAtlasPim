@@ -69,7 +69,10 @@ export interface ImageUploadJobData {
   entityType: 'product' | 'product-variant';
   entityId: number;
   fieldName: 'main_image' | 'gallery_images' | 'primary_image' | 'model_image';
+  index?: number; // Gallery image index (for ordering)
   productFamilyJobId?: string; // Optional: link back to parent job
+  updateParentProduct?: boolean; // If true, also set this image as parent Product's main_image
+  parentProductId?: number; // Parent Product ID (when updateParentProduct is true)
 }
 
 export interface ImageUploadJobResult {
@@ -101,6 +104,26 @@ export interface MeilisearchSyncJobResult {
 }
 
 /**
+ * Gemini File Search Sync Job
+ * Syncs product to Google Gemini File Search for AI-powered RAG
+ * Reads FROM Meilisearch (not Strapi) - Meilisearch is source of truth
+ */
+export interface GeminiSyncJobData {
+  operation: 'add' | 'update' | 'delete';
+  documentId: string;      // Strapi documentId (string)
+  priority?: number;       // Higher = more important (user-initiated changes)
+  delay?: number;          // Optional delay before processing (milliseconds)
+}
+
+export interface GeminiSyncJobResult {
+  success: boolean;
+  operation: 'add' | 'update' | 'delete';
+  documentId: string;
+  error?: string;
+  skipped?: boolean;       // True if skipped because product not in Meilisearch
+}
+
+/**
  * Job Progress Data
  * Standardized progress reporting across all jobs
  */
@@ -123,6 +146,7 @@ export const QUEUE_NAMES = {
   PRODUCT_FAMILY: 'product-family',
   IMAGE_UPLOAD: 'image-upload',
   MEILISEARCH_SYNC: 'meilisearch-sync',
+  GEMINI_SYNC: 'gemini-sync',
 } as const;
 
 /**
@@ -134,4 +158,5 @@ export const JOB_PREFIXES = {
   PRODUCT_FAMILY: 'prod-fam',
   IMAGE_UPLOAD: 'img-up',
   MEILISEARCH_SYNC: 'meili-sync',
+  GEMINI_SYNC: 'gemini-sync',
 } as const;

@@ -139,6 +139,24 @@ export default {
         await workerManager.start();
         strapi.log.info('✅ Queue service and workers initialized successfully');
 
+        // Register Gemini File Search service with Meilisearch dependency
+        try {
+          // @ts-ignore - Custom service not in Strapi types
+          const geminiService = strapi.service('gemini-file-search');
+          // @ts-ignore - Custom service not in Strapi types
+          const meilisearchService = strapi.service('api::product.meilisearch');
+
+          if (geminiService && meilisearchService) {
+            geminiService.setMeilisearchService(meilisearchService);
+            strapi.log.info('✅ Gemini File Search service registered with Meilisearch dependency');
+          } else {
+            strapi.log.warn('⚠️  Gemini or Meilisearch service not available, skipping dependency injection');
+          }
+        } catch (error) {
+          strapi.log.error('❌ Failed to register Gemini service:', error);
+          // Don't throw - allow app to continue without Gemini if not available
+        }
+
         // Initialize Bull Board for queue monitoring
         try {
           const serverAdapter = new KoaAdapter();

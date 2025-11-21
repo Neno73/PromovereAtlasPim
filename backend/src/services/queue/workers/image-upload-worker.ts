@@ -16,6 +16,7 @@ import { imageUploadWorkerOptions } from '../queue-config';
 // Import media services
 import imageUploadService from '../../promidata/media/image-upload-service';
 import variantSyncService from '../../promidata/sync/variant-sync-service';
+import productSyncService from '../../promidata/sync/product-sync-service';
 
 /**
  * Image Upload Job Data
@@ -27,6 +28,8 @@ export interface ImageUploadJobData {
   entityId: number;          // Product or ProductVariant ID
   fieldName: 'primary_image' | 'gallery_images';
   index?: number;            // Gallery image index (for ordering)
+  updateParentProduct?: boolean; // If true, also set this image as parent Product's main_image
+  parentProductId?: number;  // Parent Product ID (when updateParentProduct is true)
 }
 
 /**
@@ -36,7 +39,7 @@ export function createImageUploadWorker(): Worker<ImageUploadJobData> {
   const worker = new Worker<ImageUploadJobData>(
     'image-upload',
     async (job: Job<ImageUploadJobData>) => {
-      const { imageUrl, fileName, entityType, entityId, fieldName, index } = job.data;
+      const { imageUrl, fileName, entityType, entityId, fieldName, index, updateParentProduct, parentProductId } = job.data;
 
       // Input validation
       if (!imageUrl || typeof imageUrl !== 'string') {
@@ -76,6 +79,14 @@ export function createImageUploadWorker(): Worker<ImageUploadJobData> {
           if (fieldName === 'primary_image') {
             // Update primary image
             await variantSyncService.updateImages(entityId, result.mediaId);
+
+            // If this is the first variant, also update parent Product's main_image
+            if (updateParentProduct && parentProductId) {
+              await productSyncService.update(parentProductId, {
+                main_image: result.mediaId
+              });
+              strapi.log.info(`  └─ Updated Product ${parentProductId} main_image from first variant`);
+            }
           } else {
             // Update gallery images
             // For now, we'll update one at a time
@@ -83,7 +94,7 @@ export function createImageUploadWorker(): Worker<ImageUploadJobData> {
             await variantSyncService.updateImages(entityId, undefined, [result.mediaId]);
           }
         }
-        // TODO: Handle product images when needed
+        // Product images handled via updateParentProduct flag from first variant
 
         await job.updateProgress({ step: 'complete', percentage: 100 });
 

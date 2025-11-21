@@ -13,7 +13,7 @@ const PRODUCT_LIMIT = parseInt(process.env.REINDEX_LIMIT || '10');
 
 const meilisearchClient = new MeiliSearch({
   host: 'https://search.sols.mk',
-  apiKey: '9abe8ab8d2b01b42cc32a7ad6055a5e4520533ce379348d3fd770e307cb54054'
+  apiKey: process.env.MEILISEARCH_ADMIN_KEY
 });
 
 async function reindexProducts() {

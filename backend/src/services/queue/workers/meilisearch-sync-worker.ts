@@ -135,28 +135,9 @@ export function createMeilisearchSyncWorker(): Worker<
 
           await job.updateProgress({ step: 'complete', percentage: 100 });
 
-          // Trigger Gemini sync after successful Meilisearch sync (event-based trigger)
-          // Only sync products (not variants) to Gemini File Search
-          // Note: operation is already 'add' or 'update' here (delete handled above)
-          if (entityType === 'product') {
-            try {
-              // @ts-ignore - Custom queue service not in Strapi types
-              const queueService = strapi.service('queue');
-
-              // Enqueue Gemini sync with immediate execution (no delay)
-              await queueService.enqueueGeminiSync(
-                operation, // 'add' or 'update'
-                documentId,
-                5, // Normal priority
-                0  // Immediate (no delay) - Meilisearch is already updated
-              );
-
-              strapi.log.debug(`🤖 Triggered Gemini sync for ${documentId} (after Meilisearch completion)`);
-            } catch (geminiError) {
-              // Don't fail Meilisearch job if Gemini enqueue fails
-              strapi.log.warn(`⚠️  Failed to enqueue Gemini sync for ${documentId}:`, geminiError);
-            }
-          }
+          // NOTE: Gemini sync is now manual only (via admin UI "Gemini" button)
+          // Removed automatic trigger to allow manual control over when/which suppliers sync to Gemini
+          // See: backend/src/admin/pages/supplier-sync.tsx → handleGeminiSync()
 
           return {
             success: true,

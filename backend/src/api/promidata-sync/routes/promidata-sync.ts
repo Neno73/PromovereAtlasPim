@@ -12,6 +12,37 @@ export default {
       config: {
         policies: [],
         middlewares: [],
+        auth: false, // Allow access from Admin Panel
+      },
+    },
+    {
+      method: 'GET',
+      path: '/promidata-sync/active',
+      handler: 'promidata-sync.getActiveSyncs',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false, // Allow public access for admin UI polling
+      },
+    },
+    {
+      method: 'POST',
+      path: '/promidata-sync/stop/:supplierId',
+      handler: 'promidata-sync.stopSync',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false, // Allow access from Admin Panel
+      },
+    },
+    {
+      method: 'GET',
+      path: '/promidata-sync/status/:supplierId',
+      handler: 'promidata-sync.getSupplierSyncStatus',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false, // Allow public access for admin UI polling
       },
     },
     {

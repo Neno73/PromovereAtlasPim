@@ -319,53 +319,69 @@ const QueueManagement: React.FC = () => {
           <Typography variant="delta" paddingBottom={4}>
             Queue Overview
           </Typography>
-          <Grid.Root gap={4}>
-            <Grid.Item col={4} s={12}>
-              <QueueCard
-                stats={allStats.supplierSync}
-                onPause={() => handlePauseQueue('supplier-sync')}
-                onResume={() => handleResumeQueue('supplier-sync')}
-                onClean={() => handleCleanQueue('supplier-sync')}
-                onRetryFailed={() => handleRetryFailedJobs('supplier-sync')}
-              />
-            </Grid.Item>
-            <Grid.Item col={4} s={12}>
-              <QueueCard
-                stats={allStats.productFamily}
-                onPause={() => handlePauseQueue('product-family')}
-                onResume={() => handleResumeQueue('product-family')}
-                onClean={() => handleCleanQueue('product-family')}
-                onRetryFailed={() => handleRetryFailedJobs('product-family')}
-              />
-            </Grid.Item>
-            <Grid.Item col={4} s={12}>
-              <QueueCard
-                stats={allStats.imageUpload}
-                onPause={() => handlePauseQueue('image-upload')}
-                onResume={() => handleResumeQueue('image-upload')}
-                onClean={() => handleCleanQueue('image-upload')}
-                onRetryFailed={() => handleRetryFailedJobs('image-upload')}
-              />
-            </Grid.Item>
-            <Grid.Item col={4} s={12}>
-              <QueueCard
-                stats={allStats.meilisearchSync}
-                onPause={() => handlePauseQueue('meilisearch-sync')}
-                onResume={() => handleResumeQueue('meilisearch-sync')}
-                onClean={() => handleCleanQueue('meilisearch-sync')}
-                onRetryFailed={() => handleRetryFailedJobs('meilisearch-sync')}
-              />
-            </Grid.Item>
-            <Grid.Item col={4} s={12}>
-              <QueueCard
-                stats={allStats.geminiSync}
-                onPause={() => handlePauseQueue('gemini-sync')}
-                onResume={() => handleResumeQueue('gemini-sync')}
-                onClean={() => handleCleanQueue('gemini-sync')}
-                onRetryFailed={() => handleRetryFailedJobs('gemini-sync')}
-              />
-            </Grid.Item>
-          </Grid.Root>
+
+          {/* Main Sync Queues - Primary operations */}
+          <Box paddingBottom={4}>
+            <Typography variant="sigma" textColor="neutral600" paddingBottom={2}>
+              Sync Operations
+            </Typography>
+            <Grid.Root gap={4}>
+              <Grid.Item col={6} s={12}>
+                <QueueCard
+                  stats={allStats.supplierSync}
+                  onPause={() => handlePauseQueue('supplier-sync')}
+                  onResume={() => handleResumeQueue('supplier-sync')}
+                  onClean={() => handleCleanQueue('supplier-sync')}
+                  onRetryFailed={() => handleRetryFailedJobs('supplier-sync')}
+                />
+              </Grid.Item>
+              <Grid.Item col={6} s={12}>
+                <QueueCard
+                  stats={allStats.productFamily}
+                  onPause={() => handlePauseQueue('product-family')}
+                  onResume={() => handleResumeQueue('product-family')}
+                  onClean={() => handleCleanQueue('product-family')}
+                  onRetryFailed={() => handleRetryFailedJobs('product-family')}
+                />
+              </Grid.Item>
+            </Grid.Root>
+          </Box>
+
+          {/* Processing Queues */}
+          <Box paddingBottom={4}>
+            <Typography variant="sigma" textColor="neutral600" paddingBottom={2}>
+              Processing & Storage
+            </Typography>
+            <Grid.Root gap={4}>
+              <Grid.Item col={4} s={12}>
+                <QueueCard
+                  stats={allStats.imageUpload}
+                  onPause={() => handlePauseQueue('image-upload')}
+                  onResume={() => handleResumeQueue('image-upload')}
+                  onClean={() => handleCleanQueue('image-upload')}
+                  onRetryFailed={() => handleRetryFailedJobs('image-upload')}
+                />
+              </Grid.Item>
+              <Grid.Item col={4} s={12}>
+                <QueueCard
+                  stats={allStats.meilisearchSync}
+                  onPause={() => handlePauseQueue('meilisearch-sync')}
+                  onResume={() => handleResumeQueue('meilisearch-sync')}
+                  onClean={() => handleCleanQueue('meilisearch-sync')}
+                  onRetryFailed={() => handleRetryFailedJobs('meilisearch-sync')}
+                />
+              </Grid.Item>
+              <Grid.Item col={4} s={12}>
+                <QueueCard
+                  stats={allStats.geminiSync}
+                  onPause={() => handlePauseQueue('gemini-sync')}
+                  onResume={() => handleResumeQueue('gemini-sync')}
+                  onClean={() => handleCleanQueue('gemini-sync')}
+                  onRetryFailed={() => handleRetryFailedJobs('gemini-sync')}
+                />
+              </Grid.Item>
+            </Grid.Root>
+          </Box>
         </Box>
 
         {/* Jobs Section */}

@@ -64,7 +64,7 @@ class PromidataClient {
     config: RetryConfig = {}
   ): Promise<Response> {
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
-    let lastError: Error;
+    let lastError: Error = new Error('Unknown error');
 
     for (let attempt = 0; attempt < retryConfig.maxRetries; attempt++) {
       try {
@@ -77,6 +77,7 @@ class PromidataClient {
             : this.calculateBackoffDelay(attempt, retryConfig.baseDelay, retryConfig.maxDelay);
 
           strapi.log.warn(`[Promidata] Rate limited on ${url}. Waiting ${retryAfter}ms before retry ${attempt + 1}/${retryConfig.maxRetries}`);
+          lastError = new Error(`Rate limited (429) on ${url}`);
           await this.delay(retryAfter);
           continue;
         }
@@ -85,6 +86,7 @@ class PromidataClient {
         if (response.status >= 500) {
           const delayMs = this.calculateBackoffDelay(attempt, retryConfig.baseDelay, retryConfig.maxDelay);
           strapi.log.warn(`[Promidata] Server error ${response.status} on ${url}. Retrying in ${delayMs}ms (${attempt + 1}/${retryConfig.maxRetries})`);
+          lastError = new Error(`Server error ${response.status}: ${response.statusText}`);
           await this.delay(delayMs);
           continue;
         }
@@ -97,6 +99,7 @@ class PromidataClient {
             // Retry 4xx if explicitly configured
             const delayMs = this.calculateBackoffDelay(attempt, retryConfig.baseDelay, retryConfig.maxDelay);
             strapi.log.warn(`[Promidata] Client error ${response.status} on ${url}. Retrying in ${delayMs}ms (${attempt + 1}/${retryConfig.maxRetries})`);
+            lastError = new Error(`Client error ${response.status}: ${response.statusText}`);
             await this.delay(delayMs);
             continue;
           }

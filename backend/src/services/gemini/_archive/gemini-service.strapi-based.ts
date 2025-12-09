@@ -1,7 +1,43 @@
 /**
- * Gemini Service
+ * @deprecated ARCHIVED - DO NOT USE
  * 
- * Manages interaction with Google Gemini API for RAG (Retrieval Augmented Generation).
+ * This file has been archived and replaced by the Meilisearch-based service.
+ * 
+ * ---
+ * 
+ * WHY THIS WAS REPLACED:
+ * 
+ * This service fetches product data directly from Strapi (PostgreSQL),
+ * which is slower and doesn't follow our architecture principle:
+ * "Meilisearch is the source of truth for flattened, aggregated product data"
+ * 
+ * THE NEW SERVICE:
+ * - Location: src/api/gemini-sync/services/gemini-file-search.ts
+ * - Access via: strapi.service('api::gemini-sync.gemini-file-search')
+ * - Fetches from: Meilisearch (faster, pre-indexed, consistent format)
+ * 
+ * ARCHITECTURE:
+ * 
+ * ┌─────────┐    sync     ┌─────────────┐    upload    ┌────────────┐
+ * │ Strapi  │ ──────────> │ Meilisearch │ ───────────> │   Gemini   │
+ * │   DB    │             │   (index)   │              │ FileSearch │
+ * └─────────┘             └─────────────┘              └────────────┘
+ *                               │                            │
+ *                               │ display data               │ semantic search
+ *                               ▼                            ▼
+ *                         ┌─────────────────────────────────────┐
+ *                         │           Chat UI (atlasv2)         │
+ *                         │  AI finds products via Gemini RAG   │
+ *                         │  Displays data from Meilisearch     │
+ *                         │  → Prevents hallucinations!         │
+ *                         └─────────────────────────────────────┘
+ * 
+ * Archived on: 2025-12-04
+ * 
+ * ---
+ * 
+ * Original description:
+ * Gemini Service - Manages interaction with Google Gemini API for RAG.
  * Uses FileSearchStores for persistent embedding storage.
  * 
  * Based on: https://ai.google.dev/gemini-api/docs/file-search

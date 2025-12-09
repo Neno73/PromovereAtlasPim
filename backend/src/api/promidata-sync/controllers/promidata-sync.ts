@@ -4,6 +4,7 @@
  */
 
 import queueService from '../../../services/queue/queue-service';
+import { syncLockService } from '../../../services/sync-lock-service';
 
 // Define a simple context type
 interface Context {
@@ -20,7 +21,7 @@ interface Context {
 export default {
   /**
    * Start manual sync for all suppliers or a specific supplier
-   * UPDATED: Now uses BullMQ queue instead of direct sync
+   * UPDATED: Now uses BullMQ queue with lock checking
    */
   async startSync(ctx: Context) {
     try {
@@ -37,7 +38,27 @@ export default {
           return;
         }
 
-        // Enqueue supplier sync job
+        // Check if sync is already running (via lock)
+        const syncId = await syncLockService.acquirePromidataLock(supplierId);
+        if (!syncId) {
+          ctx.body = {
+            success: false,
+            message: `Sync already running for supplier ${supplier.code}`,
+            isRunning: true
+          };
+          return;
+        }
+
+        // Update supplier status to 'running'
+        await strapi.documents('api::supplier.supplier').update({
+          documentId: supplierId,
+          data: {
+            last_sync_status: 'running',
+            last_sync_message: `Sync started at ${new Date().toISOString()}`
+          }
+        });
+
+        // Enqueue supplier sync job (pass syncId for lock tracking)
         const job = await queueService.enqueueSupplierSync(
           supplierId,
           supplier.code,
@@ -50,7 +71,8 @@ export default {
           data: {
             jobId: job.id,
             supplierId,
-            supplierCode: supplier.code
+            supplierCode: supplier.code,
+            syncId
           }
         };
       } else {
@@ -61,7 +83,25 @@ export default {
         });
 
         const jobs = [];
+        const skipped = [];
+
         for (const supplier of suppliers) {
+          // Check lock for each supplier
+          const syncId = await syncLockService.acquirePromidataLock(supplier.documentId);
+          if (!syncId) {
+            skipped.push({ supplierId: supplier.documentId, code: supplier.code, reason: 'already running' });
+            continue;
+          }
+
+          // Update supplier status
+          await strapi.documents('api::supplier.supplier').update({
+            documentId: supplier.documentId,
+            data: {
+              last_sync_status: 'running',
+              last_sync_message: `Sync started at ${new Date().toISOString()}`
+            }
+          });
+
           const job = await queueService.enqueueSupplierSync(
             supplier.documentId,
             supplier.code,
@@ -72,12 +112,106 @@ export default {
 
         ctx.body = {
           success: true,
-          message: `${jobs.length} sync jobs enqueued`,
-          data: { jobs }
+          message: `${jobs.length} sync jobs enqueued, ${skipped.length} skipped (already running)`,
+          data: { jobs, skipped }
         };
       }
     } catch (error) {
       ctx.badRequest('Sync failed', { details: error.message });
+    }
+  },
+
+  /**
+   * Get all active/running syncs
+   */
+  async getActiveSyncs(ctx: Context) {
+    try {
+      const activeSyncs = await syncLockService.getAllActiveSyncs();
+
+      ctx.body = {
+        success: true,
+        data: {
+          promidata: activeSyncs.promidata,
+          gemini: activeSyncs.gemini
+        }
+      };
+    } catch (error) {
+      ctx.badRequest('Failed to get active syncs', { details: error.message });
+    }
+  },
+
+  /**
+   * Stop a running sync for a specific supplier
+   */
+  async stopSync(ctx: Context) {
+    try {
+      const { supplierId } = ctx.params;
+
+      if (!supplierId) {
+        ctx.badRequest('Supplier ID is required');
+        return;
+      }
+
+      // Request stop
+      const stopRequested = await syncLockService.requestPromidataStop(supplierId);
+
+      if (!stopRequested) {
+        ctx.body = {
+          success: false,
+          message: 'No sync is currently running for this supplier'
+        };
+        return;
+      }
+
+      // Update supplier status
+      await strapi.documents('api::supplier.supplier').update({
+        documentId: supplierId,
+        data: {
+          last_sync_message: `Stop requested at ${new Date().toISOString()}`
+        }
+      });
+
+      ctx.body = {
+        success: true,
+        message: 'Stop signal sent. Sync will stop after current batch completes.'
+      };
+    } catch (error) {
+      ctx.badRequest('Failed to stop sync', { details: error.message });
+    }
+  },
+
+  /**
+   * Check sync status for a specific supplier (includes lock status)
+   */
+  async getSupplierSyncStatus(ctx: Context) {
+    try {
+      const { supplierId } = ctx.params;
+
+      if (!supplierId) {
+        ctx.badRequest('Supplier ID is required');
+        return;
+      }
+
+      const status = await syncLockService.getPromidataStatus(supplierId);
+      const supplier = await strapi.documents('api::supplier.supplier').findOne({
+        documentId: supplierId
+      });
+
+      ctx.body = {
+        success: true,
+        data: {
+          supplierId,
+          supplierCode: supplier?.code,
+          isRunning: status.isRunning,
+          stopRequested: status.stopRequested,
+          lockInfo: status.lockInfo,
+          lastSyncStatus: supplier?.last_sync_status,
+          lastSyncDate: supplier?.last_sync_date,
+          lastSyncMessage: supplier?.last_sync_message
+        }
+      };
+    } catch (error) {
+      ctx.badRequest('Failed to get sync status', { details: error.message });
     }
   },
 

@@ -22,7 +22,7 @@ export default ({ env }) => ({
       host: env("MEILISEARCH_HOST"),
       apiKey: env("MEILISEARCH_ADMIN_KEY"),
       product: {
-        indexName: env("MEILISEARCH_INDEX_NAME", "promoatlas_products"),
+        indexName: "pim_products",
         entriesQuery: {
           populate: [
             "supplier",
@@ -35,15 +35,51 @@ export default ({ env }) => ({
           ],
         },
         transformEntry({ entry }) {
-          // Transform Strapi entry to Meilisearch document
+          const name = entry.name || {};
+          const description = entry.description || {};
+          const shortDescription = entry.short_description || {};
           return {
             id: entry.documentId,
-            ...entry,
+            sku: entry.sku,
+            a_number: entry.a_number,
+            name_en: name.en || '',
+            name_de: name.de || '',
+            name_fr: name.fr || '',
+            name_es: name.es || '',
+            description_en: description.en || '',
+            description_de: description.de || '',
+            short_description_en: shortDescription.en || '',
+            brand: entry.brand || '',
+            supplier_name: entry.supplier?.name || entry.supplier_name || '',
+            category: entry.category || '',
+            colors: entry.available_colors || [],
+            sizes: entry.available_sizes || [],
+            hex_colors: entry.hex_colors || [],
+            price_min: parseFloat(entry.price_min) || 0,
+            price_max: parseFloat(entry.price_max) || 0,
+            main_image_url: entry.main_image?.url || '',
+            is_active: entry.is_active !== false,
+            updated_at: entry.updatedAt,
+          };
+        },
+      },
+      category: {
+        indexName: "pim_categories",
+        transformEntry({ entry }) {
+          const name = entry.name || {};
+          return {
+            id: entry.documentId,
+            code: entry.code,
+            name_en: name.en || '',
+            name_de: name.de || '',
+            name_fr: name.fr || '',
+            name_es: name.es || '',
+            sort_order: entry.sort_order || 0,
           };
         },
       },
       "product-variant": {
-        indexName: "promoatlas_product_variant",
+        indexName: "pim_product_variants",
         entriesQuery: {
           populate: [
             "product",
@@ -52,10 +88,17 @@ export default ({ env }) => ({
           ],
         },
         transformEntry({ entry }) {
-          // Transform Strapi entry to Meilisearch document
           return {
             id: entry.documentId,
-            ...entry,
+            sku: entry.sku,
+            name: entry.name || '',
+            color: entry.color || '',
+            size: entry.size || '',
+            hex_color: entry.hex_color || '',
+            product_sku: entry.product?.sku || '',
+            product_name: entry.product?.name?.en || '',
+            is_active: entry.is_active !== false,
+            primary_image_url: entry.primary_image?.url || '',
           };
         },
       },

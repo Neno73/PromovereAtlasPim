@@ -31,6 +31,8 @@ const QueueCard: React.FC<QueueCardProps> = ({
       'supplier-sync': 'Supplier Sync',
       'product-family': 'Product Family',
       'image-upload': 'Image Upload',
+      'meilisearch-sync': 'Meilisearch Sync',
+      'gemini-sync': 'Gemini Sync',
     };
     return names[queueName] || queueName;
   };
@@ -50,9 +52,10 @@ const QueueCard: React.FC<QueueCardProps> = ({
       hasRadius
       padding={4}
       shadow="tableShadow"
+      style={{ minHeight: '240px', display: 'flex', flexDirection: 'column' }}
     >
       {/* Header */}
-      <Flex direction="column" alignItems="flex-start" gap={2}>
+      <Flex direction="column" alignItems="flex-start" gap={2} style={{ flex: 1 }}>
         <Flex justifyContent="space-between" width="100%">
           <Typography variant="delta" fontWeight="bold">
             {getQueueDisplayName(stats.queueName)}

@@ -186,12 +186,13 @@ export const ProductList: FC = () => {
                 <>
                   <div className="products-grid">
                     {products.map((product) => {
-                      console.log('Rendering product:', product);
+                      // Meilisearch returns 'id', Strapi API returns 'documentId'
+                      const productId = product.id || (product as any).documentId;
                       return (
                         <ProductCard
-                          key={product.id}
+                          key={productId}
                           product={product}
-                          onClick={() => handleProductClick(product.documentId)}
+                          onClick={() => handleProductClick(productId)}
                         />
                       );
                     })}

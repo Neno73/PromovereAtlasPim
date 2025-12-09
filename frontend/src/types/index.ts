@@ -160,3 +160,39 @@ export interface ApiResponse<T> {
     };
   };
 }
+
+/**
+ * Meilisearch-specific fields that extend Product
+ * Used when products come from Meilisearch instead of Strapi API
+ */
+export interface MeilisearchFields {
+  // Flat multilingual fields
+  name_en?: string;
+  name_de?: string;
+  name_fr?: string;
+  name_es?: string;
+  description_en?: string;
+  description_de?: string;
+  description_fr?: string;
+  description_es?: string;
+  // Flat price fields
+  price_min?: number;
+  price_max?: number;
+  currency?: string;
+  // Flat supplier/category
+  supplier_name?: string;
+  supplier_code?: string;
+  category?: string;
+  // Flat image URL
+  main_image_url?: string;
+  // Color arrays
+  colors?: string[];
+  hex_colors?: string[];
+  // Index signature for dynamic field access (e.g., name_${lang})
+  [key: string]: string | number | string[] | undefined;
+}
+
+/**
+ * Combined product type that supports both Strapi and Meilisearch formats
+ */
+export type ProductData = Product & MeilisearchFields;

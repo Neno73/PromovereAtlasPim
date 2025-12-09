@@ -467,6 +467,28 @@
   border: 2px solid #fff;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.color-option .color-check {
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+  line-height: 1;
+}
+
+/* For light colors, use dark checkmark */
+.color-option.selected .color-swatch[style*="white"],
+.color-option.selected .color-swatch[style*="#FFFFFF"],
+.color-option.selected .color-swatch[style*="#fff"],
+.color-option.selected .color-swatch[style*="ivory"],
+.color-option.selected .color-swatch[style*="cream"],
+.color-option.selected .color-swatch[style*="beige"] {
+  border-color: #ccc;
 }
 
 .color-option .color-name {

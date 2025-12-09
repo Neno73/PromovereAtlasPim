@@ -2,7 +2,7 @@ import { useState, useEffect, FC, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Product, ProductVariant, ApiResponse, Media } from '../types';
 import { apiService } from '../services/api';
-import { getLocalizedText, formatPrice } from '../utils/i18n';
+import { getLocalizedText, formatPrice, getColorHex } from '../utils/i18n';
 import { useLanguage } from '../contexts/LanguageContext';
 import './ProductDetail.css';
 
@@ -317,8 +317,11 @@ export const ProductDetail: FC = () => {
                   <label>Color:</label>
                   <div className="color-options">
                     {uniqueColors.map(color => {
-                      const variantForColor = productData.variants?.find(v => v.color === color && v.is_primary_for_color);
+                      const variantForColor = productData.variants?.find(v => v.color === color && v.is_primary_for_color)
+                        || productData.variants?.find(v => v.color === color);
                       const isSelected = selectedVariant?.color === color;
+                      const hexColor = variantForColor?.hex_color || variantForColor?.supplier_color_code;
+                      const displayColor = getColorHex(color, hexColor);
                       return (
                         <button
                           key={color}
@@ -331,14 +334,12 @@ export const ProductDetail: FC = () => {
                           }}
                           title={color}
                         >
-                          {variantForColor?.hex_color || variantForColor?.supplier_color_code ? (
-                            <span
-                              className="color-swatch"
-                              style={{
-                                backgroundColor: variantForColor.hex_color || variantForColor.supplier_color_code
-                              }}
-                            />
-                          ) : null}
+                          <span
+                            className="color-swatch"
+                            style={{ background: displayColor }}
+                          >
+                            {isSelected && <span className="color-check">✓</span>}
+                          </span>
                           <span className="color-name">{color}</span>
                         </button>
                       );

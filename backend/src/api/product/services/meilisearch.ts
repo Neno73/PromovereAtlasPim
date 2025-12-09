@@ -75,6 +75,9 @@ export class MeilisearchService {
       try {
         this.index = await this.client.getIndex(this.config.indexName);
         this.strapi.log.info(`Meilisearch index "${this.config.indexName}" found`);
+
+        // NOTE: Removed primary key validation - using Strapi Meilisearch plugin
+        // The plugin uses "_meilisearch_id" as primary key, not "id"
       } catch (error) {
         // Index doesn't exist, create it
         this.strapi.log.info(`Creating Meilisearch index: ${this.config.indexName}`);
@@ -82,11 +85,10 @@ export class MeilisearchService {
           primaryKey: 'id', // Use Strapi documentId as primary key
         });
 
-        // Wait for index creation (Meilisearch 0.54.0 API)
-        // @ts-ignore - MeiliSearch SDK version mismatch
-        await this.client.waitForTask(task.taskUid);
+        // Wait for index creation (using SDK's built-in polling)
+        await this.client.tasks.waitForTask(task.taskUid);
         this.index = await this.client.getIndex(this.config.indexName);
-        this.strapi.log.info(`Meilisearch index "${this.config.indexName}" created`);
+        this.strapi.log.info(`Meilisearch index "${this.config.indexName}" created with primary key: id`);
       }
 
       // Configure index settings
@@ -219,8 +221,7 @@ export class MeilisearchService {
     try {
       this.strapi.log.info('Configuring Meilisearch index settings...');
       const task = await this.index.updateSettings(settings);
-      // @ts-ignore - MeiliSearch SDK types incomplete
-      await this.client.waitForTask(task.taskUid as number);
+      await this.client.tasks.waitForTask(task.taskUid);
       this.strapi.log.info('Meilisearch index settings configured successfully');
     } catch (error) {
       this.strapi.log.error('Failed to configure Meilisearch index settings', error);
@@ -427,13 +428,10 @@ export class MeilisearchService {
         // Add documents to Meilisearch
         const task = await this.index!.addDocuments(documents);
 
-        // Wait for task completion
-        // @ts-ignore - MeiliSearch SDK types incomplete
-        await this.client.waitForTask(task.taskUid as number);
+        // Wait for task completion (SDK's waitForTask returns the completed Task)
+        const taskInfo = await this.client.tasks.waitForTask(task.taskUid);
 
         // Check task status
-        // @ts-ignore - MeiliSearch SDK types incomplete
-        const taskInfo = await this.client.getTask(task.taskUid as number);
         if (taskInfo.status === 'succeeded') {
           stats.indexedDocuments += batch.length;
         } else {

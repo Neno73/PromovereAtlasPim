@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-*Last updated: 2025-11-16*
+*Last updated: 2025-12-05*
 
 This log tracks significant architectural decisions made during the development of PromoAtlas PIM.
 
@@ -12,6 +12,232 @@ When adding a decision, include:
 - **Decision**: What we decided to do
 - **Consequences**: Trade-offs and implications
 - **Status**: Proposed / Accepted / Deprecated / Superseded
+
+---
+
+## [2025-12-05] Gemini FileSearchStore: Namespace Fix & Strapi-Based Tracking
+
+**Status**: Accepted (Completed)
+
+**Context**:
+A mystery emerged during Gemini sync operations:
+- Logs showed "✅ Synced product X to Gemini File Search"
+- But `files.list()` returned 0 files
+- `getStats()` always reported 0 files
+- `deleteDocument()` for deduplication silently failed
+- Meanwhile, the atlasv2 chat UI (deployed on Vercel) correctly found products via semantic search
+
+Investigation revealed:
+1. Files ARE uploaded to FileSearchStore (confirmed via atlasv2 semantic search)
+2. `files.list()` queries the default Files API namespace, NOT FileSearchStore
+3. FileSearchStore uses a completely different API than the standard Files API
+4. The atlasv2 chat UI uses correct API format: `fileSearchStoreNames` not `fileSearchStoreIds`
+5. FileSearchStore does NOT support individual file deletion (only entire store deletion)
+
+**Decision**:
+Implemented Strapi-based tracking instead of relying on FileSearchStore APIs for stats/deduplication:
+
+1. **Added `gemini_file_uri` field to Product schema**:
+   - Tracks sync status per product
+   - Set to operation name after successful upload
+   - Set to `null` when cleared
+
+2. **Fixed `getStats()` to use Strapi EntityService**:
+   ```typescript
+   async getStats() {
+     const syncedProducts = await strapi.entityService.count('api::product.product', {
+       filters: { gemini_file_uri: { $notNull: true } }
+     });
+     const totalProducts = await strapi.entityService.count('api::product.product', {});
+     return { syncedProducts, totalProducts, ... };
+   }
+   ```
+
+3. **Fixed `deleteDocument()` to clear tracking field**:
+   ```typescript
+   async deleteDocument(documentId: string) {
+     // Note: FileSearchStore doesn't support individual file deletion
+     await strapi.entityService.update('api::product.product', documentId, {
+       data: { gemini_file_uri: null }
+     });
+     return { success: true };
+   }
+   ```
+
+4. **Removed broken deduplication logic**:
+   - Old code tried to delete existing files before re-upload
+   - This never worked (wrong API namespace)
+   - Files accumulate in FileSearchStore but semantic search still works
+
+5. **Fixed `healthCheck()` to verify FileSearchStore access**:
+   ```typescript
+   async healthCheck() {
+     const storeId = await this.getOrCreateStore();
+     return !!storeId;
+   }
+   ```
+
+**Implementation**:
+
+Files Modified:
+- `backend/src/api/gemini-sync/services/gemini-file-search.ts`:
+  - Removed broken deduplication (lines 430-439)
+  - Added `gemini_file_uri` save after upload
+  - Rewrote `getStats()` to use Strapi counts
+  - Rewrote `deleteDocument()` to clear tracking field
+  - Fixed `healthCheck()` to verify store access
+
+Files Created:
+- `backend/scripts/verify-gemini-store.js` - Verification script for debugging
+
+**Verification**:
+- Ran semantic search query "Show me chewing gum products"
+- Successfully returned products A407-2030, A407-2031 (Commercial Sweets)
+- Confirmed files ARE in FileSearchStore
+- Build compiles without TypeScript errors
+
+**Consequences**:
+
+*Positive*:
+- **Accurate Stats**: `getStats()` now returns correct sync counts
+- **Clear Tracking**: `gemini_file_uri` shows which products are synced
+- **Working healthCheck**: Properly verifies FileSearchStore access
+- **No Breaking Changes**: Existing synced files remain searchable
+
+*Negative*:
+- **No True Deduplication**: Files accumulate in FileSearchStore
+- **Storage Growth**: Repeated syncs add duplicate files
+- **Strapi Dependency**: Stats require Strapi database access
+
+*Trade-offs*:
+- Accepted file accumulation (semantic search still works correctly)
+- Chose Strapi tracking over FileSearchStore metadata (more reliable)
+- Store ID discovery via displayName vs. hardcoded ID (more flexible)
+
+**Key Learnings**:
+
+1. **FileSearchStore is a separate namespace**: Files uploaded there are NOT visible via `files.list()`
+2. **API format matters**: Use `fileSearchStoreNames` not `fileSearchStoreIds` for queries
+3. **No individual deletion**: FileSearchStore only supports full store deletion
+4. **Verify with semantic search**: The definitive test is whether AI can find the content
+
+**Related Documentation**:
+- ARCHITECTURE.md updated with Gemini FileSearchStore Service section
+- GOTCHAS.md updated with FileSearchStore limitations
+- Verification script: `backend/scripts/verify-gemini-store.js`
+
+---
+
+## [2025-11-27] Sync Lock Service: Distributed Locking & Graceful Stop
+
+**Status**: Accepted (Completed)
+
+**Context**:
+A critical incident occurred when the Gemini sync endpoint was called multiple times (likely from UI clicks), resulting in:
+- Over 1 million duplicate jobs queued in the gemini-sync queue
+- Multiple background processes running simultaneously
+- Queue growing at ~10,000 jobs/second
+- No mechanism to stop runaway syncs
+- No protection against concurrent sync operations
+
+The system had no:
+1. Distributed lock mechanism to prevent concurrent syncs
+2. Stop signal to gracefully terminate running syncs
+3. UI feedback showing sync status
+4. Way to cancel a sync once started
+
+**Decision**:
+Implemented a comprehensive sync concurrency control system:
+
+1. **Sync Lock Service** (`src/services/sync-lock-service.ts`):
+   - Redis-based distributed locking using NX SET with TTL
+   - Separate lock namespaces for Promidata and Gemini syncs
+   - Stop signal mechanism via Redis keys
+   - Auto-expiry: 1 hour for locks, 5 minutes for stop signals
+   - Uses SCAN instead of KEYS (Upstash compatibility)
+
+2. **API Endpoints**:
+   - `GET /api/promidata-sync/active` - List active syncs (public for UI polling)
+   - `POST /api/promidata-sync/stop/:supplierId` - Request graceful stop
+   - `GET /api/gemini-sync/active` - List active Gemini syncs
+   - `POST /api/gemini-sync/stop/:supplierCode` - Request Gemini stop
+
+3. **Worker Integration**:
+   - supplier-sync-worker checks stop signal between processing steps
+   - gemini-sync controller checks stop signal between batches
+   - Locks released in completed/failed event handlers
+   - Graceful shutdown: completes current batch before stopping
+
+4. **Admin UI Changes** (`src/admin/pages/supplier-sync.tsx`):
+   - Sync button toggles to "Stop" while sync is running
+   - Polls /api/promidata-sync/active every 5 seconds
+   - Tracks syncing state for both Promidata and Gemini
+   - Shows active sync count badge
+
+**Implementation**:
+
+Files Created:
+- `backend/src/services/sync-lock-service.ts` - Centralized lock/stop service
+
+Files Modified:
+- `backend/src/api/promidata-sync/controllers/promidata-sync.ts` - Lock acquisition, stop endpoints
+- `backend/src/api/promidata-sync/routes/promidata-sync.ts` - New routes
+- `backend/src/api/gemini-sync/controllers/gemini-sync.ts` - Lock acquisition, stop signal checking
+- `backend/src/api/gemini-sync/routes/gemini-sync.ts` - New routes
+- `backend/src/services/queue/workers/supplier-sync-worker.ts` - Stop signal checking, lock release
+- `backend/src/admin/pages/supplier-sync.tsx` - Toggle Sync/Stop UI
+
+Key Code Pattern (Distributed Lock):
+```typescript
+// Acquire lock (returns null if already locked)
+const syncId = await syncLockService.acquirePromidataLock(supplierId);
+if (!syncId) {
+  return { success: false, isRunning: true, message: 'Sync already running' };
+}
+
+// Check stop signal in worker loop
+const shouldStop = await syncLockService.isPromidataStopRequested(supplierId);
+if (shouldStop) {
+  return { stopped: true, message: 'Sync stopped by user' };
+}
+
+// Release lock in event handler
+worker.on('completed', async (job) => {
+  await syncLockService.releasePromidataLock(supplierId);
+});
+```
+
+**Consequences**:
+
+*Positive*:
+- **No More Runaway Syncs**: Duplicate sync requests immediately rejected
+- **Graceful Cancellation**: Users can stop syncs mid-process
+- **Clear UI Feedback**: Button state shows sync is running
+- **Auto-Recovery**: TTL ensures orphaned locks auto-release
+- **Distributed**: Works across multiple Strapi instances
+
+*Negative*:
+- **Redis Dependency**: Sync operations now require Redis connectivity
+- **Polling Overhead**: UI polls every 5 seconds (minimal impact)
+- **Complexity**: Additional service layer for lock management
+
+*Trade-offs*:
+- Chose Redis over database for locks (faster, auto-expiry built-in)
+- Chose polling over WebSocket (simpler, sufficient for admin UI)
+- Chose SCAN over KEYS (required for Upstash compatibility)
+
+**Gotcha Discovered**:
+Upstash Redis disables the KEYS command for performance reasons. Had to use SCAN with cursor iteration instead. See GOTCHAS.md for details.
+
+**Verification**:
+- Build compiles without TypeScript errors
+- Backend starts with all 5 workers
+- Duplicate sync request blocked: `Failed to acquire Gemini lock for A109 - already running`
+- Active syncs endpoint returns correct data
+
+**Related Documentation**:
+- ARCHITECTURE.md updated with Sync Lock Service section
+- GOTCHAS.md updated with Upstash KEYS restriction
 
 ---
 

@@ -1,16 +1,35 @@
 /**
  * Gemini Sync Worker
- * Processes Gemini File Search sync jobs from the gemini-sync queue
- *
- * Responsibilities:
- * 1. Read product FROM Meilisearch (NOT Strapi) - Meilisearch is source of truth
- * 2. Transform Meilisearch document to Gemini JSON format
- * 3. Upload to Gemini File Search
- * 4. Handle errors (skip if product not in Meilisearch)
- *
- * Architecture Principle: "Always repair Meilisearch before repairing Gemini"
- * - If product not in Meilisearch → skip with warning (don't retry/fail)
- * - This ensures data consistency and prevents duplicate transformation logic
+ * 
+ * Processes Gemini File Search sync jobs from the gemini-sync queue.
+ * 
+ * ---
+ * 
+ * DATA FLOW (Meilisearch-based):
+ * 
+ *   1. Job received with { operation, documentId }
+ *   2. Fetch product FROM Meilisearch (NOT Strapi DB)
+ *   3. Transform Meilisearch document to Gemini JSON format
+ *   4. Upload to Gemini File Search Store
+ * 
+ * ---
+ * 
+ * ARCHITECTURE PRINCIPLE: "Always repair Meilisearch before repairing Gemini"
+ * 
+ *   - If product not in Meilisearch → skip with warning (don't retry/fail)
+ *   - This ensures Meilisearch is the single source of truth
+ *   - Chat UI uses Gemini for semantic search, Meilisearch for display
+ *   - This prevents AI hallucinations (display data always from Meilisearch)
+ * 
+ * ---
+ * 
+ * SERVICE USED:
+ *   - api::gemini-sync.gemini-file-search (Meilisearch-based)
+ *   - Accessed via strapi.service() at runtime (not imported as singleton)
+ * 
+ * ---
+ * 
+ * @module GeminiSyncWorker
  */
 
 import { Worker, Job } from 'bullmq';
@@ -19,10 +38,34 @@ import type {
   GeminiSyncJobData,
   GeminiSyncJobResult,
 } from '../job-types';
-import geminiService from '../../gemini/gemini-service';
+
+// Import the service type for type hints (not the actual service)
+import type { GeminiFileSearchService } from '../../../api/gemini-sync/services/gemini-file-search';
+
+/**
+ * Get the Gemini File Search service from Strapi's service registry
+ * 
+ * This service fetches data FROM Meilisearch (not Strapi DB directly),
+ * which is faster and ensures data consistency.
+ */
+function getGeminiService(): GeminiFileSearchService {
+  // @ts-ignore - Custom service not in Strapi types
+  const service = strapi.service('api::gemini-sync.gemini-file-search');
+
+  if (!service) {
+    throw new Error(
+      'Gemini File Search service not available. ' +
+      'Ensure the service is registered and Meilisearch is configured.'
+    );
+  }
+
+  return service as GeminiFileSearchService;
+}
 
 /**
  * Create Gemini Sync Worker
+ * 
+ * Processes jobs to sync products from Meilisearch to Gemini File Search.
  */
 export function createGeminiSyncWorker(): Worker<
   GeminiSyncJobData,
@@ -44,8 +87,8 @@ export function createGeminiSyncWorker(): Worker<
       strapi.log.info(`🤖 [Gemini] ${operation} product ${documentId}`);
 
       try {
-        // Service is imported directly
-
+        // Get service from Strapi registry (uses Meilisearch as data source)
+        const geminiService = getGeminiService();
 
         if (operation === 'delete') {
           // Delete operation
@@ -66,8 +109,12 @@ export function createGeminiSyncWorker(): Worker<
             documentId,
           };
         } else {
-          // Add or Update operation - read FROM Meilisearch
-          await job.updateProgress({ step: 'syncing', percentage: 50 });
+          // Add or Update operation - reads FROM Meilisearch
+          await job.updateProgress({ step: 'fetching-from-meilisearch', percentage: 25 });
+
+          strapi.log.debug(`📥 [Gemini] Fetching ${documentId} from Meilisearch...`);
+
+          await job.updateProgress({ step: 'syncing-to-gemini', percentage: 50 });
 
           const result = await geminiService.addOrUpdateDocument(documentId);
 
@@ -75,7 +122,11 @@ export function createGeminiSyncWorker(): Worker<
 
           if (!result.success) {
             // Check if error is "not in Meilisearch"
-            if (result.error?.includes('not in Meilisearch') || result.error?.includes('Not found in Meilisearch')) {
+            if (
+              result.error?.includes('not in Meilisearch') ||
+              result.error?.includes('Not found in Meilisearch') ||
+              result.error?.includes('Product not in Meilisearch')
+            ) {
               // Architecture principle: Skip if not in Meilisearch (don't fail job)
               strapi.log.warn(
                 `⚠️  [Gemini] Skipped ${documentId}: ${result.error} ` +
@@ -104,7 +155,7 @@ export function createGeminiSyncWorker(): Worker<
       } catch (error) {
         strapi.log.error(`❌ Failed to sync product ${documentId} to Gemini:`, error);
 
-        // Return error result (will trigger retry)
+        // Return error result (will trigger retry based on job config)
         return {
           success: false,
           operation,
@@ -122,7 +173,7 @@ export function createGeminiSyncWorker(): Worker<
       strapi.log.info(
         `⏭️  [Gemini] Skipped ${result.operation} for ${result.documentId} (not in Meilisearch)`
       );
-    } else {
+    } else if (result.success) {
       strapi.log.info(
         `✅ [Gemini] Completed ${result.operation} for ${result.documentId}`
       );
@@ -148,7 +199,8 @@ export function createGeminiSyncWorker(): Worker<
     strapi.log.warn(`⚠️ [Gemini] Job ${jobId} stalled (processing too long)`);
   });
 
-  strapi.log.info('✅ Gemini sync worker initialized (concurrency: 5)');
+  strapi.log.info('✅ Gemini sync worker initialized (concurrency: 5, data source: Meilisearch)');
 
   return worker;
 }
+

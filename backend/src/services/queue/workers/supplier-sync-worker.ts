@@ -22,6 +22,7 @@ import importParser from '../../promidata/parsers/import-parser';
 import productParser from '../../promidata/parsers/product-parser';
 import groupingService from '../../promidata/transformers/grouping';
 import productSyncService from '../../promidata/sync/product-sync-service';
+import { syncLockService } from '../../sync-lock-service';
 
 /**
  * Supplier Sync Job Data
@@ -71,6 +72,15 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
       strapi.log.info(`${'='.repeat(60)}\n`);
 
       try {
+        // Helper to check stop signal
+        const checkStopSignal = async (): Promise<boolean> => {
+          const shouldStop = await syncLockService.isPromidataStopRequested(supplierId);
+          if (shouldStop) {
+            strapi.log.info(`⏹️  Stop signal received for ${supplierCode}. Stopping sync...`);
+          }
+          return shouldStop;
+        };
+
         // Step 1: Parse Import.txt
         await job.updateProgress({ step: 'parsing_import', percentage: 10 });
         strapi.log.info(`📋 Step 1: Parsing Import.txt for ${supplierCode}...`);
@@ -83,8 +93,14 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
           return {
             supplierCode,
             productsProcessed: 0,
-            message: 'No products found'
+            message: 'No products found',
+            stopped: false
           };
+        }
+
+        // Check stop signal between steps
+        if (await checkStopSignal()) {
+          return { supplierCode, stopped: true, message: 'Sync stopped by user' };
         }
 
         // Step 2: Fetch variant data
@@ -113,6 +129,11 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
         }
 
         strapi.log.info(`✓ Extracted ${allVariantData.length} variant entries from ChildProducts arrays`);
+
+        // Check stop signal between steps
+        if (await checkStopSignal()) {
+          return { supplierCode, stopped: true, message: 'Sync stopped by user' };
+        }
 
         // Step 3: Group by a_number
         await job.updateProgress({ step: 'grouping', percentage: 50 });
@@ -163,8 +184,14 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
             supplierCode,
             productsProcessed: 0,
             skipped: filterResult.skipped,
-            efficiency: filterResult.efficiency
+            efficiency: filterResult.efficiency,
+            stopped: false
           };
+        }
+
+        // Check stop signal before enqueueing (last chance to stop)
+        if (await checkStopSignal()) {
+          return { supplierCode, stopped: true, message: 'Sync stopped by user before enqueueing' };
         }
 
         // Step 5: Enqueue product family jobs
@@ -226,16 +253,30 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
 
   // Event handlers
   worker.on('completed', async (job) => {
-    strapi.log.info(`✅ [Worker] Supplier sync job ${job.id} completed`);
+    const { supplierId, supplierNumericId, supplierCode } = job.data;
+    const wasStopped = job.returnvalue?.stopped;
+
+    strapi.log.info(`✅ [Worker] Supplier sync job ${job.id} completed${wasStopped ? ' (stopped by user)' : ''}`);
+
+    // Release lock
+    try {
+      await syncLockService.releasePromidataLock(supplierId);
+      strapi.log.info(`✓ Released lock for ${supplierCode}`);
+    } catch (lockError) {
+      strapi.log.error(`Failed to release lock for ${supplierCode}:`, lockError);
+    }
 
     // Update supplier last_sync_date
     try {
-      const { supplierNumericId, supplierCode } = job.data;
+      const statusMessage = wasStopped
+        ? `Sync stopped by user`
+        : `Enqueued ${job.returnvalue?.familiesEnqueued || 0} families, skipped ${job.returnvalue?.skipped || 0} unchanged`;
+
       await strapi.entityService.update('api::supplier.supplier', supplierNumericId, {
         data: {
           last_sync_date: new Date(),
-          last_sync_status: 'completed',
-          last_sync_message: `Enqueued ${job.returnvalue?.familiesEnqueued || 0} families, skipped ${job.returnvalue?.skipped || 0} unchanged`
+          last_sync_status: wasStopped ? 'failed' : 'completed',
+          last_sync_message: statusMessage
         }
       });
       strapi.log.info(`✓ Updated last_sync_date for ${supplierCode}`);
@@ -247,10 +288,19 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
   worker.on('failed', async (job, error) => {
     strapi.log.error(`❌ [Worker] Supplier sync job ${job?.id} failed:`, error);
 
-    // Update supplier last_sync_status to failed
-    try {
-      if (job?.data) {
-        const { supplierNumericId, supplierCode } = job.data;
+    if (job?.data) {
+      const { supplierId, supplierNumericId, supplierCode } = job.data;
+
+      // Release lock
+      try {
+        await syncLockService.releasePromidataLock(supplierId);
+        strapi.log.info(`✓ Released lock for ${supplierCode}`);
+      } catch (lockError) {
+        strapi.log.error(`Failed to release lock for ${supplierCode}:`, lockError);
+      }
+
+      // Update supplier last_sync_status to failed
+      try {
         await strapi.entityService.update('api::supplier.supplier', supplierNumericId, {
           data: {
             last_sync_date: new Date(),
@@ -259,9 +309,9 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
           }
         });
         strapi.log.info(`✓ Updated last_sync_status to failed for ${supplierCode}`);
+      } catch (updateError) {
+        strapi.log.error(`Failed to update supplier last_sync_status:`, updateError);
       }
-    } catch (updateError) {
-      strapi.log.error(`Failed to update supplier last_sync_status:`, updateError);
     }
   });
 

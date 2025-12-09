@@ -1,6 +1,6 @@
 # Tech Stack
 
-*Last updated: 2025-11-04 15:05*
+*Last updated: 2025-12-05 14:50*
 
 Complete technology stack for PromoAtlas PIM system with versions and rationale.
 
@@ -17,8 +17,10 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 ### Strapi Plugins
 - **@strapi/plugin-users-permissions** (5.17.0) - Authentication & authorization
 - **@strapi/plugin-cloud** (5.17.0) - Cloud integrations
+- **@strapi/plugin-documentation** - OpenAPI/Swagger API documentation
 - **strapi-provider-cloudflare-r2** (^0.3.0) - Cloudflare R2 storage provider
 - **@strapi/provider-upload-aws-s3** (5.18.0) - S3-compatible upload provider
+- **strapi-plugin-meilisearch** - Meilisearch integration for product search
 
 ### Database
 - **PostgreSQL** via Neon - Primary database
@@ -34,21 +36,44 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
   - **SDK**: `@aws-sdk/client-s3` (3.844.0)
   - **Features**: Public bucket access, automatic image URL generation
 
+### Search Engine
+- **Meilisearch** (^0.54.0) - Full-text search engine
+  - **Why**: Fast, typo-tolerant search with faceting and filtering
+  - **Host**: External Meilisearch instance (search.sols.mk)
+  - **Index**: `pim_products` - Flattened product documents
+  - **Features**: Faceted search, typo tolerance, instant results
+  - **Integration**: strapi-plugin-meilisearch for automatic indexing
+
+### AI/RAG Integration
+- **@google/genai** (^1.30.0) - Google Gemini AI SDK
+  - **Why**: Semantic search and AI-powered product discovery
+  - **Feature**: FileSearchStore for RAG (Retrieval Augmented Generation)
+  - **Store**: `promoatlas-product-catalog-xfex8hxfyifx`
+  - **Data Flow**: Strapi → Meilisearch → Gemini FileSearchStore
+  - **Tracking**: `gemini_file_uri` field on Product tracks sync status
+
 ### HTTP Client
 - **node-fetch** (2.7.0) - HTTP requests for Promidata API integration
   - **Why**: Simple, Promise-based API for external data fetching
+- **axios** + **axios-retry** - HTTP client with automatic retries
+  - **Why**: Robust HTTP calls with exponential backoff for external APIs
 
 ### Queue System
 - **BullMQ** (^5.0.0) - Redis-based job queue for background processing
   - **Why**: Handles long-running sync operations, concurrent job processing, job retries
   - **Redis Client**: ioredis (^5.3.0)
   - **Redis Provider**: Upstash (serverless Redis)
-  - **Workers**: 3 active workers for parallel processing
+  - **Workers**: 5 active workers for parallel processing
     - `supplier-sync` (concurrency: 1) - Processes supplier sync jobs sequentially
     - `product-family` (concurrency: 3) - Creates product families with parallelism
     - `image-upload` (concurrency: 10) - High-concurrency image uploads to R2
+    - `meilisearch-sync` (concurrency: 5) - Syncs products to Meilisearch index
+    - `gemini-sync` (concurrency: 5) - Syncs products to Gemini FileSearchStore
   - **Features**: Job retries, progress tracking, failure handling, queue monitoring
   - **Configuration**: Lazy Redis connection to prevent startup issues
+- **@bull-board/api** + **@bull-board/koa** - Queue monitoring dashboard
+  - **Why**: Visual queue management, job inspection, retry failed jobs
+  - **Access**: Strapi Admin → Queue Dashboard
 
 ### Build Tools
 - **TypeScript** (5.7.3) - Type safety
@@ -115,9 +140,12 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
   - Frontend: `package-lock.json` present
 
 ### Testing
-- **No test framework currently configured**
-  - Opportunity: Add Jest/Vitest for unit tests
-  - Opportunity: Add Playwright for E2E tests (MCP available)
+- **Jest** (^30.2.0) - Testing framework for backend
+  - **Why**: Industry standard, good TypeScript support via ts-jest
+  - **Config**: `jest.config.js` in backend root
+  - **Commands**: `npm run test`, `npm run test:watch`, `npm run test:coverage`
+  - **Coverage**: Worker tests in `src/services/queue/workers/__tests__/`
+- **Playwright MCP** - E2E browser testing (available via MCP)
 
 ### Docker
 - **Docker support available**
@@ -157,9 +185,14 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 | DB Driver | pg | 8.16.3 | Database connection |
 | Storage | Cloudflare R2 | - | Image hosting |
 | AWS SDK | @aws-sdk/client-s3 | 3.844.0 | R2 integration |
+| Search Engine | Meilisearch | 0.54.0 | Full-text search |
+| AI/RAG | @google/genai | 1.30.0 | Gemini FileSearchStore |
 | HTTP Client | node-fetch | 2.7.0 | API calls |
+| HTTP Client | axios | - | Retry-enabled API calls |
 | Queue System | BullMQ | 5.0.0 | Background jobs |
+| Queue UI | @bull-board/* | - | Queue monitoring |
 | Redis Client | ioredis | 5.3.0 | Queue backend |
+| Testing | Jest | 30.2.0 | Unit tests |
 | Routing | React Router DOM | 6.26.0 | Client routing |
 | Node Runtime | Node.js | 18-22 | Server runtime |
 
@@ -197,6 +230,20 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 - Global CDN included
 - Cost-effective for image-heavy PIM
 
+### Why Meilisearch (not Elasticsearch)?
+- Simpler setup and maintenance
+- Fast typo-tolerant search out-of-box
+- Lower resource requirements
+- Strapi plugin for automatic indexing
+- Free hosted tier available
+
+### Why Gemini FileSearchStore (for RAG)?
+- Native RAG support with semantic embeddings
+- Persistent store (files survive API calls)
+- Integrated with Gemini models
+- Good for product catalog semantic search
+- Enables AI-powered product discovery
+
 ## Dependencies to Watch
 
 ### Security Updates
@@ -216,9 +263,10 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 ## Future Considerations
 
 ### Testing
-- Add **Vitest** for unit tests (Vite-native)
+- ✅ **Jest** added for backend unit tests (2025-12)
 - Add **Playwright** for E2E tests (MCP already available)
-- Add **React Testing Library** for component tests
+- Add **React Testing Library** for frontend component tests
+- Add **Vitest** for frontend unit tests (Vite-native)
 
 ### Monitoring
 - Integrate **Sentry** for error tracking (MCP available)

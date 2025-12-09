@@ -1,6 +1,6 @@
 # Architecture
 
-*Last updated: 2025-11-09 22:25*
+*Last updated: 2025-12-05 15:00*
 
 System design and component structure for PromoAtlas PIM.
 
@@ -330,11 +330,95 @@ const promidataConfig = {
 };
 ```
 
-#### AutoRAG Service
+#### Gemini FileSearchStore Service (RAG)
+
+**Location**: `backend/src/api/gemini-sync/services/gemini-file-search.ts`
+
+**Purpose**: Sync products to Google Gemini FileSearchStore for AI-powered semantic search and chat-based product discovery.
+
+**Architecture Overview**:
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
+│  Strapi Product │────▶│ gemini-file-     │────▶│ Gemini FileSearch   │
+│  (Source Truth) │     │ search.ts        │     │ Store (Embeddings)  │
+└─────────────────┘     └──────────────────┘     └─────────────────────┘
+        │                       │                         │
+        │                       │                         ▼
+        │                       │                 ┌─────────────────────┐
+        └───────────────────────┴────────────────▶│   atlasv2 Chat UI   │
+                gemini_file_uri tracking          │ (Semantic Search)   │
+                                                  └─────────────────────┘
+```
+
+**Key Concepts**:
+
+1. **FileSearchStore vs Files API**: Two separate namespaces in Gemini
+   - `ai.files.list()` → Default Files API (NOT where we upload)
+   - `ai.fileSearchStores.*` → FileSearchStore API (WHERE files live)
+   - Files uploaded to FileSearchStore are NOT visible via `files.list()`
+
+2. **Store Discovery**: Service finds store by `displayName = 'PromoAtlas Product Catalog'`
+   - Store ID: `fileSearchStores/promoatlas-product-catalog-xfex8hxfyifx`
+   - Created once, reused for all uploads
+
+3. **Correct API Format** (CRITICAL):
+   ```typescript
+   // ✅ CORRECT - Used in atlasv2 chat UI
+   config: {
+     tools: [{
+       fileSearch: {
+         fileSearchStoreNames: [storeId]  // Note: Names, not Ids
+       }
+     }]
+   }
+
+   // ❌ WRONG - Will not find files
+   tools: [{
+     fileSearch: {
+       fileSearchStoreIds: [storeId]
+     }
+   }]
+   ```
+
+**Key Methods**:
+
+```typescript
+class GeminiFileSearchService {
+  // Upload product to FileSearchStore
+  async syncDocument(product: Product): Promise<SyncResult>
+
+  // Get sync statistics (counts synced products in Strapi)
+  async getStats(): Promise<{ syncedProducts, totalProducts, ... }>
+
+  // Clear sync status (FileSearchStore doesn't support individual deletion)
+  async deleteDocument(documentId: string): Promise<{ success: boolean }>
+
+  // Verify FileSearchStore access
+  async healthCheck(): Promise<boolean>
+
+  // Get or create store by displayName
+  private async getOrCreateStore(): Promise<string>
+}
+```
+
+**Sync Status Tracking**:
+- `gemini_file_uri` field on Product tracks sync status
+- Set to operation name after successful upload
+- Set to `null` when cleared via `deleteDocument()`
+- `getStats()` counts products where `gemini_file_uri IS NOT NULL`
+
+**Important Limitation**: FileSearchStore does NOT support individual file deletion. Only the entire store can be deleted. Files accumulate but semantic search still returns relevant results.
+
+**Integration Points**:
+- Called from Promidata sync after product update
+- Manual sync via `/api/gemini-sync/*` endpoints
+- Chat UI queries via atlasv2 Vercel app
+
+#### AutoRAG Service (Legacy)
 
 **Location**: `backend/src/services/autorag.ts`
 
-**Purpose**: Real-time sync of products to AutoRAG vector database for AI-powered search
+**Purpose**: Legacy real-time sync of products to AutoRAG vector database
 
 **Key Methods**:
 - `syncProduct(product)` - Send product to AutoRAG
@@ -342,6 +426,8 @@ const promidataConfig = {
 - `transformProductForAutoRAG(product)` - Convert Strapi product to AutoRAG format
 
 **Integration**: Called from product lifecycle hooks
+
+**Note**: Being superseded by Gemini FileSearchStore for semantic search
 
 #### Queue Service (BullMQ)
 
@@ -404,6 +490,63 @@ const stats = await queueService.getQueueStats();
 - **Promidata Sync Service**: Enqueues supplier sync jobs
 - **Product Service**: Enqueues family and image jobs
 - **Bootstrap** (`src/index.ts`): Initializes workers on startup
+
+#### Sync Lock Service (Concurrency Control)
+
+**Location**: `backend/src/services/sync-lock-service.ts`
+
+**Purpose**: Prevents duplicate sync operations and provides graceful stop mechanism using Redis-based distributed locking.
+
+**Key Features**:
+- **Distributed Locking**: Redis NX SET with TTL prevents concurrent syncs
+- **Stop Signal**: Workers check for stop signals between batches
+- **Auto-Cleanup**: 1 hour TTL auto-releases orphaned locks, 5 minute TTL for stop signals
+
+**Architecture**:
+```typescript
+// Lock key patterns
+PROMIDATA_LOCK_PREFIX = 'sync:promidata:lock:'     // e.g., sync:promidata:lock:abc123
+GEMINI_LOCK_PREFIX = 'sync:gemini:lock:'           // e.g., sync:gemini:lock:A109
+PROMIDATA_STOP_PREFIX = 'sync:promidata:stop:'     // Stop signal keys
+GEMINI_STOP_PREFIX = 'sync:gemini:stop:'
+```
+
+**Key Methods**:
+```typescript
+// Promidata sync
+acquirePromidataLock(supplierId): Promise<string | null>  // Returns syncId or null if locked
+releasePromidataLock(supplierId): Promise<void>
+requestPromidataStop(supplierId): Promise<boolean>
+isPromidataStopRequested(supplierId): Promise<boolean>
+
+// Gemini sync
+acquireGeminiLock(supplierCode): Promise<string | null>
+releaseGeminiLock(supplierCode): Promise<void>
+requestGeminiStop(supplierCode): Promise<boolean>
+isGeminiStopRequested(supplierCode): Promise<boolean>
+
+// Utilities
+getAllActiveSyncs(): Promise<{ promidata: [], gemini: [] }>
+forceReleaseAllLocks(): Promise<void>  // Emergency reset
+```
+
+**API Endpoints** (Added 2025-11-27):
+- `GET /api/promidata-sync/active` - List active Promidata syncs
+- `POST /api/promidata-sync/stop/:supplierId` - Request stop for supplier sync
+- `GET /api/promidata-sync/status/:supplierId` - Get sync status for supplier
+- `GET /api/gemini-sync/active` - List active Gemini syncs
+- `POST /api/gemini-sync/stop/:supplierCode` - Request stop for Gemini sync
+- `GET /api/gemini-sync/status/:supplierCode` - Get Gemini sync status
+
+**Worker Integration**:
+- Workers check `isPromidataStopRequested()` or `isGeminiStopRequested()` between processing batches
+- On stop signal: Complete current batch, then exit gracefully
+- Lock released in `completed` and `failed` event handlers
+
+**Admin UI** (`src/admin/pages/supplier-sync.tsx`):
+- Sync button toggles to "Stop" while sync is running
+- Polls `/api/promidata-sync/active` every 5 seconds
+- Shows active sync count badge
 
 **Monitoring**:
 - **Bull Board Dashboard**: Professional queue monitoring UI at `/admin/queues`

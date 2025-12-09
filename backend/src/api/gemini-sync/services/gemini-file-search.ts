@@ -1,21 +1,51 @@
 /**
  * Gemini File Search Service
  *
- * Handles synchronization of products to Google Gemini File Search for AI-powered RAG:
- * - Reads transformed documents FROM Meilisearch (not Strapi)
- * - Converts Meilisearch documents to Gemini-compatible JSON
- * - Uploads to Gemini File Search for semantic search
- * - Bulk sync from Meilisearch index for initial indexing
- *
- * Architecture Principle: "Always repair Meilisearch before repairing Gemini"
- * - Meilisearch is source of truth for flattened, aggregated product data
- * - If product not in Meilisearch → skip Gemini sync (don't fail)
- *
+ * Synchronizes products from Meilisearch to Google Gemini FileSearchStore for RAG.
+ * 
+ * ---
+ * 
+ * ARCHITECTURE (Single Source of Truth):
+ * 
+ *   ┌─────────┐    sync     ┌─────────────┐    upload    ┌────────────┐
+ *   │ Strapi  │ ──────────> │ Meilisearch │ ───────────> │   Gemini   │
+ *   │   DB    │             │   (index)   │              │ FileSearch │
+ *   └─────────┘             └─────────────┘              └────────────┘
+ *                                 │                            │
+ *                                 │ display data               │ semantic search
+ *                                 ▼                            ▼
+ *                           ┌─────────────────────────────────────┐
+ *                           │           Chat UI (atlasv2)         │
+ *                           │  AI finds products via Gemini RAG   │
+ *                           │  Displays data from Meilisearch     │
+ *                           │  → Prevents hallucinations!         │
+ *                           └─────────────────────────────────────┘
+ * 
+ * ---
+ * 
+ * PRINCIPLE: "Always repair Meilisearch before repairing Gemini"
+ * 
+ *   - Meilisearch is the source of truth for flattened, aggregated product data
+ *   - If product not in Meilisearch → skip Gemini sync (don't fail)
+ *   - Chat UI retrieves product IDs via Gemini semantic search
+ *   - Chat UI displays actual data from Meilisearch (never from Gemini)
+ *   - This prevents AI hallucinations in product display
+ * 
+ * ---
+ * 
+ * KEY RESPONSIBILITIES:
+ *   1. Read transformed documents FROM Meilisearch (not Strapi DB)
+ *   2. Convert Meilisearch documents to Gemini-compatible JSON
+ *   3. Upload JSON files to Gemini FileSearchStore
+ *   4. Handle bulk sync from Meilisearch index
+ * 
+ * ---
+ * 
  * @module GeminiFileSearchService
  */
 
 import { GoogleGenAI } from '@google/genai';
-import type { MeilisearchProductDocument } from '../api/product/services/meilisearch-types';
+import type { MeilisearchProductDocument } from '../../product/services/meilisearch-types';
 
 /**
  * Gemini File Search Configuration
@@ -118,12 +148,20 @@ interface BulkSyncStats {
 
 /**
  * Main Gemini File Search Service Class
+ * 
+ * Provides synchronization of product data from Meilisearch to Gemini FileSearchStore.
  */
 export class GeminiFileSearchService {
   private ai: GoogleGenAI;
   private config: GeminiConfig;
   private strapi: any;
   private meilisearchService: any;
+
+  // FileSearchStore caching (prevents redundant API calls)
+  private storeId: string | null = null;
+  private storeCreationPromise: Promise<string | null> | null = null;
+
+  private static readonly STORE_DISPLAY_NAME = 'PromoAtlas Product Catalog';
 
   constructor(strapi: any) {
     this.strapi = strapi;
@@ -133,7 +171,7 @@ export class GeminiFileSearchService {
       apiKey: process.env.GEMINI_API_KEY || '',
       projectId: process.env.GOOGLE_CLOUD_PROJECT || '',
       projectNumber: process.env.GOOGLE_CLOUD_PROJECT_NUMBER || '',
-      storeName: process.env.GEMINI_FILE_SEARCH_STORE_NAME || 'Atlas-Rag',
+      storeName: process.env.GEMINI_FILE_SEARCH_STORE_NAME || 'PromoAtlas-RAG',
     };
 
     // Validate configuration
@@ -147,17 +185,95 @@ export class GeminiFileSearchService {
     // Initialize Gemini client
     this.ai = new GoogleGenAI({ apiKey: this.config.apiKey });
 
-    // Get Meilisearch service (will be injected in bootstrap)
+    // Meilisearch service will be injected in bootstrap
     this.meilisearchService = null;
 
-    strapi.log.info(`Gemini File Search service initialized for project: ${this.config.projectId}`);
+    strapi.log.info(
+      `Gemini File Search service initialized ` +
+      `(project: ${this.config.projectId}, data source: Meilisearch)`
+    );
   }
 
   /**
    * Set Meilisearch service (called during bootstrap)
+   * 
+   * This dependency injection ensures the service reads from Meilisearch
+   * instead of making direct Strapi DB queries.
    */
   setMeilisearchService(meilisearchService: any): void {
     this.meilisearchService = meilisearchService;
+    this.strapi.log.info('✅ Gemini service connected to Meilisearch');
+  }
+
+  /**
+   * Get or create the Gemini FileSearchStore
+   * 
+   * Uses mutex pattern to prevent race conditions when multiple workers
+   * try to create the store simultaneously.
+   */
+  async getOrCreateStore(): Promise<string | null> {
+    // Return cached store ID if available
+    if (this.storeId) {
+      return this.storeId;
+    }
+
+    // If creation is already in progress, wait for it (mutex pattern)
+    if (this.storeCreationPromise) {
+      return this.storeCreationPromise;
+    }
+
+    // Start creation and store promise
+    this.storeCreationPromise = this._createOrFindStore();
+
+    try {
+      const result = await this.storeCreationPromise;
+      return result;
+    } finally {
+      // Clear promise after completion
+      this.storeCreationPromise = null;
+    }
+  }
+
+  /**
+   * Internal: Create or find the FileSearchStore
+   */
+  private async _createOrFindStore(): Promise<string | null> {
+    try {
+      // List existing stores to find ours
+      const storesPager = await this.ai.fileSearchStores.list();
+
+      // Iterate through paginated results using for-await
+      let existingStore: any = null;
+      for await (const store of storesPager) {
+        if (store.displayName === GeminiFileSearchService.STORE_DISPLAY_NAME) {
+          existingStore = store;
+          break;
+        }
+      }
+
+      if (existingStore) {
+        this.storeId = existingStore.name;
+        this.strapi.log.info(`📦 Found existing Gemini FileSearchStore: ${this.storeId}`);
+      } else {
+        // Create new store
+        this.strapi.log.info(
+          `📦 Creating new Gemini FileSearchStore: ${GeminiFileSearchService.STORE_DISPLAY_NAME}`
+        );
+        const newStore = await this.ai.fileSearchStores.create({
+          config: {
+            displayName: GeminiFileSearchService.STORE_DISPLAY_NAME
+          }
+        });
+        this.storeId = newStore.name;
+        this.strapi.log.info(`✅ Created Gemini FileSearchStore: ${this.storeId}`);
+      }
+
+      return this.storeId;
+
+    } catch (error: any) {
+      this.strapi.log.error('Failed to get/create Gemini FileSearchStore:', error);
+      return null;
+    }
   }
 
   /**
@@ -241,24 +357,44 @@ export class GeminiFileSearchService {
       category: meilisearchDoc.category,
       category_codes: meilisearchDoc.category_codes || [],
 
-      // Timestamps (convert Unix timestamp to ISO string)
-      created_at: new Date(meilisearchDoc.createdAt).toISOString(),
-      updated_at: new Date(meilisearchDoc.updatedAt).toISOString(),
+      // Timestamps (handle both plugin format and custom service format)
+      // Plugin uses: updated_at (string), Custom service uses: createdAt/updatedAt (number)
+      // Use type assertion to access snake_case fields from plugin
+      created_at: (meilisearchDoc as any).created_at
+        ? new Date((meilisearchDoc as any).created_at).toISOString()
+        : meilisearchDoc.createdAt
+          ? new Date(meilisearchDoc.createdAt).toISOString()
+          : new Date().toISOString(), // Fallback to current date if missing
+      updated_at: (meilisearchDoc as any).updated_at
+        ? new Date((meilisearchDoc as any).updated_at).toISOString()
+        : meilisearchDoc.updatedAt
+          ? new Date(meilisearchDoc.updatedAt).toISOString()
+          : new Date().toISOString(), // Fallback to current date if missing
     };
   }
 
   /**
    * Add or update a single document in Gemini File Search
    *
-   * Architecture: Reads FROM Meilisearch (not Strapi)
-   * - If product not in Meilisearch → skip with warning (don't fail)
-   * - This ensures Meilisearch is always source of truth
+   * ARCHITECTURE: Reads FROM Meilisearch (not Strapi DB)
+   * 
+   * This ensures:
+   * - Faster sync (Meilisearch already has indexed data)
+   * - Data consistency (same format everywhere)
+   * - Single source of truth (Meilisearch)
+   * 
+   * If product not in Meilisearch → skip with warning (don't fail)
    */
   async addOrUpdateDocument(documentId: string): Promise<{ success: boolean; error?: string }> {
+    let tempFilePath: string | null = null;
+
     try {
       // Ensure Meilisearch service is available
       if (!this.meilisearchService) {
-        throw new Error('Meilisearch service not initialized');
+        throw new Error(
+          'Meilisearch service not initialized. ' +
+          'Ensure setMeilisearchService() was called during bootstrap.'
+        );
       }
 
       // Ensure Meilisearch index is initialized
@@ -266,10 +402,19 @@ export class GeminiFileSearchService {
         await this.meilisearchService.initializeIndex();
       }
 
-      // Fetch document FROM Meilisearch (not Strapi)
+      // Get or create the FileSearchStore
+      const storeId = await this.getOrCreateStore();
+      if (!storeId) {
+        throw new Error('Failed to get or create Gemini FileSearchStore');
+      }
+
+      // Fetch document FROM Meilisearch (not Strapi DB)
+      // NOTE: The Meilisearch Strapi plugin uses "product-{documentId}" as the primary key
       let meilisearchDoc: MeilisearchProductDocument;
       try {
-        meilisearchDoc = await this.meilisearchService.index.getDocument(documentId);
+        const meilisearchId = `product-${documentId}`;
+        meilisearchDoc = await this.meilisearchService.index.getDocument(meilisearchId);
+        this.strapi.log.debug(`📥 [Gemini] Fetched ${documentId} from Meilisearch (ID: ${meilisearchId})`);
       } catch (error) {
         // Product not in Meilisearch → skip (architecture principle: fix Meilisearch first)
         this.strapi.log.warn(
@@ -282,20 +427,26 @@ export class GeminiFileSearchService {
       // Transform to Gemini format
       const geminiDoc = this.transformMeilisearchToGemini(meilisearchDoc);
 
+      // NOTE: FileSearchStore doesn't support individual file deletion.
+      // Files accumulate but semantic search still returns relevant results.
+      // The gemini_file_uri field tracks sync status for each product.
+
       // Convert to JSON string
       const jsonContent = JSON.stringify(geminiDoc, null, 2);
 
-      // Create temporary file for upload
-      const fileName = `product-${documentId}.json`;
-      const tempFilePath = `/tmp/${fileName}`;
+      // Create temporary file for upload (use SKU for meaningful filename)
+      const fileName = `${geminiDoc.sku || documentId}.json`;
+      tempFilePath = `/tmp/${fileName}`;
 
-      // Write to temporary file
+      // Write to temporary file with secure permissions
       const fs = require('fs');
-      fs.writeFileSync(tempFilePath, jsonContent);
+      const os = require('os');
+      tempFilePath = require('path').join(os.tmpdir(), fileName);
+      fs.writeFileSync(tempFilePath, jsonContent, { mode: 0o600 });
 
-      // Upload file to Gemini File Search Store (indefinite persistence)
+      // Upload file to Gemini FileSearchStore
       const operation = await this.ai.fileSearchStores.uploadToFileSearchStore({
-        fileSearchStoreName: `projects/${this.config.projectNumber}/locations/us-central1/fileSearchStores/${this.config.storeName}`,
+        fileSearchStoreName: storeId,
         file: tempFilePath,
         config: {
           mimeType: 'application/json',
@@ -303,17 +454,40 @@ export class GeminiFileSearchService {
         }
       });
 
-      // Clean up temporary file
-      fs.unlinkSync(tempFilePath);
-
       this.strapi.log.info(
         `✅ Synced product ${geminiDoc.sku} to Gemini File Search (${operation.name})`
       );
+
+      // Save the Gemini file reference to Strapi for tracking
+      // This helps with stats and knowing which products are synced
+      try {
+        await this.strapi.entityService.update('api::product.product', documentId, {
+          data: {
+            gemini_file_uri: operation.name,
+          },
+        });
+        this.strapi.log.debug(`📝 Saved gemini_file_uri for ${geminiDoc.sku}`);
+      } catch (updateError) {
+        // Non-fatal: file was uploaded, just couldn't update tracking field
+        this.strapi.log.warn(`Could not update gemini_file_uri for ${documentId}:`, updateError);
+      }
 
       return { success: true };
     } catch (error) {
       this.strapi.log.error(`Failed to sync product ${documentId} to Gemini:`, error);
       return { success: false, error: error.message || 'Unknown error' };
+    } finally {
+      // Cleanup temp file (guaranteed execution)
+      if (tempFilePath) {
+        try {
+          const fs = require('fs');
+          if (fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath);
+          }
+        } catch (cleanupError) {
+          this.strapi.log.warn(`Failed to cleanup temp file ${tempFilePath}:`, cleanupError);
+        }
+      }
     }
   }
 
@@ -322,30 +496,21 @@ export class GeminiFileSearchService {
    */
   async deleteDocument(documentId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      // List files to find the one to delete
-      const pager = await this.ai.files.list();
-      let fileToDelete = null;
+      // NOTE: FileSearchStore doesn't support individual file deletion.
+      // Files remain in the store but we can clear the tracking field.
+      // Next sync will upload a fresh copy (semantic search handles duplicates).
 
-      // Iterate through pager to find file with matching documentId in displayName
-      for await (const file of pager) {
-        if (file.displayName?.includes(documentId)) {
-          fileToDelete = file;
-          break;
-        }
-      }
+      // Clear the gemini_file_uri to mark product as needing re-sync
+      await this.strapi.entityService.update('api::product.product', documentId, {
+        data: {
+          gemini_file_uri: null,
+        },
+      });
 
-      if (!fileToDelete) {
-        this.strapi.log.warn(`Product ${documentId} not found in Gemini File Search`);
-        return { success: false, error: 'File not found' };
-      }
-
-      // Delete file using its name
-      await this.ai.files.delete({ name: fileToDelete.name });
-
-      this.strapi.log.info(`🗑️  Deleted product ${documentId} from Gemini File Search`);
+      this.strapi.log.info(`🗑️  Cleared Gemini sync status for product ${documentId}`);
       return { success: true };
     } catch (error) {
-      this.strapi.log.error(`Failed to delete product ${documentId} from Gemini:`, error);
+      this.strapi.log.error(`Failed to clear Gemini status for ${documentId}:`, error);
       return { success: false, error: error.message || 'Unknown error' };
     }
   }
@@ -473,22 +638,29 @@ export class GeminiFileSearchService {
   /**
    * Get Gemini File Search statistics
    */
-  async getStats(): Promise<{ totalFiles: number; totalBytes: number }> {
+  async getStats(): Promise<{ totalFiles: number; totalBytes: number; syncedProducts: number; totalProducts: number }> {
     try {
-      const pager = await this.ai.files.list();
-      let totalFiles = 0;
-      let totalBytes = 0;
+      // Count products synced to Gemini (have gemini_file_uri set)
+      const syncedProducts = await this.strapi.entityService.count('api::product.product', {
+        filters: {
+          gemini_file_uri: { $notNull: true },
+        },
+      });
 
-      // Iterate through all files to count and sum sizes
-      for await (const file of pager) {
-        totalFiles++;
-        const sizeBytes = typeof file.sizeBytes === 'string'
-          ? parseInt(file.sizeBytes, 10)
-          : (file.sizeBytes || 0);
-        totalBytes += sizeBytes;
-      }
+      // Count total products
+      const totalProducts = await this.strapi.entityService.count('api::product.product', {});
 
-      return { totalFiles, totalBytes };
+      // NOTE: FileSearchStore doesn't provide a way to list files or get byte counts.
+      // We return synced product count as proxy for file count.
+      // Estimated size based on ~2KB per product JSON document.
+      const estimatedBytes = syncedProducts * 2048;
+
+      return {
+        totalFiles: syncedProducts,  // Each synced product = 1 file in FileSearchStore
+        totalBytes: estimatedBytes,  // Estimated size
+        syncedProducts,
+        totalProducts,
+      };
     } catch (error) {
       this.strapi.log.error('Failed to get Gemini stats:', error);
       throw error;
@@ -500,9 +672,9 @@ export class GeminiFileSearchService {
    */
   async healthCheck(): Promise<boolean> {
     try {
-      // Simple test: list files (just create pager, don't iterate)
-      await this.ai.files.list();
-      return true;
+      // Check if we can access our FileSearchStore
+      const storeId = await this.getOrCreateStore();
+      return !!storeId;
     } catch (error) {
       this.strapi.log.error('Gemini health check failed:', error);
       return false;

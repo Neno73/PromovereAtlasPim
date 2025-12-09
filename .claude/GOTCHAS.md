@@ -1,8 +1,129 @@
 # Known Issues & Workarounds
 
-*Last updated: 2025-11-16*
+*Last updated: 2025-12-05*
 
 Known issues and workarounds in PromoAtlas PIM. **Fixed issues archived.**
+
+## Gemini FileSearchStore Issues
+
+### 1. FileSearchStore vs Files API Namespace Confusion
+
+**Location**: `backend/src/api/gemini-sync/services/gemini-file-search.ts`
+
+**Issue**:
+```
+Files uploaded to FileSearchStore are NOT visible via files.list()
+```
+
+**Description**:
+- Gemini has TWO separate namespaces for files
+- `ai.files.list()` → Default Files API (uploads here are NOT searchable)
+- `ai.fileSearchStores.uploadFile()` → FileSearchStore (uploads here ARE searchable)
+- Files uploaded to FileSearchStore do NOT appear in `files.list()` results
+
+**Impact**:
+- Scripts using `files.list()` report 0 files when files exist
+- Debugging tools show "empty" when store has content
+- Confusion about whether sync is working
+
+**Verification**:
+Use semantic search to verify files exist (not `files.list()`):
+```typescript
+const response = await client.models.generateContent({
+  model: 'gemini-2.0-flash',
+  contents: 'Show me chewing gum products',
+  config: {
+    tools: [{
+      fileSearch: {
+        fileSearchStoreNames: [storeId]  // ✅ Correct format
+      }
+    }]
+  }
+});
+```
+
+**Key Insight**: If the AI can find products via semantic search, files ARE uploaded correctly.
+
+---
+
+### 2. FileSearchStore Does NOT Support Individual File Deletion
+
+**Location**: `backend/src/api/gemini-sync/services/gemini-file-search.ts`
+
+**Issue**:
+```
+Individual files cannot be deleted from FileSearchStore
+```
+
+**Description**:
+- FileSearchStore API only supports deleting the ENTIRE store
+- No API exists to delete individual files
+- This means deduplication via delete-then-upload is impossible
+
+**Impact**:
+- Files accumulate in the store over time
+- Re-syncing a product adds a new file (doesn't replace)
+- Storage grows with each sync cycle
+
+**Current Workaround**:
+- Accept file accumulation (semantic search still works)
+- Track sync status in Strapi via `gemini_file_uri` field
+- Consider periodic store recreation for cleanup (requires full re-sync)
+
+**Tracking Pattern**:
+```typescript
+// After upload, save to Strapi
+await strapi.entityService.update('api::product.product', documentId, {
+  data: { gemini_file_uri: operation.name }
+});
+
+// To "delete" (just clears tracking, file remains in store)
+await strapi.entityService.update('api::product.product', documentId, {
+  data: { gemini_file_uri: null }
+});
+```
+
+---
+
+### 3. Wrong API Format for FileSearch Queries
+
+**Location**: Any code querying FileSearchStore
+
+**Issue**:
+```typescript
+// ❌ WRONG - Uses fileSearchStoreIds (won't find files)
+tools: [{ fileSearch: { fileSearchStoreIds: [storeId] } }]
+
+// ✅ CORRECT - Uses fileSearchStoreNames
+config: { tools: [{ fileSearch: { fileSearchStoreNames: [storeId] } }] }
+```
+
+**Description**:
+- API format differs between documentation versions
+- `fileSearchStoreIds` is NOT the correct parameter
+- Must use `fileSearchStoreNames` inside `config.tools`
+
+**Impact**:
+- Queries return no results even when files exist
+- AI responds with "I don't have access to product catalog"
+
+**Solution**:
+Always use this format for FileSearch queries:
+```typescript
+const response = await client.models.generateContent({
+  model: 'gemini-2.0-flash',
+  contents: prompt,
+  config: {
+    tools: [{
+      fileSearch: {
+        fileSearchStoreNames: [storeId]
+      }
+    }]
+  }
+});
+```
+
+---
 
 ## Backend Issues
 
@@ -109,6 +230,60 @@ ADD COLUMN name_en TEXT GENERATED ALWAYS AS (name->>'en') STORED;
 -- Create index
 CREATE INDEX idx_products_name_en ON products(name_en);
 ```
+
+---
+
+### 5. Upstash Redis KEYS Command Disabled
+
+**Location**: `backend/src/services/sync-lock-service.ts`
+
+**Issue**:
+```
+Error: ERR KEYS command is disabled because total number of keys is too large, please use SCAN
+```
+
+**Description**:
+- Upstash (serverless Redis) disables the `KEYS` command for performance
+- Any code using `client.keys('pattern*')` will fail
+- This is a security/performance measure, not a bug
+
+**Impact**:
+- Code that worked locally with regular Redis fails on Upstash
+- Affects any pattern-based key lookup
+
+**Solution**:
+Use `SCAN` with cursor iteration instead of `KEYS`:
+
+```typescript
+// ❌ DON'T DO THIS (fails on Upstash)
+const keys = await client.keys('sync:promidata:lock:*');
+
+// ✅ DO THIS INSTEAD
+private async scanKeys(pattern: string): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor = '0';
+
+  do {
+    const [nextCursor, foundKeys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+    cursor = nextCursor;
+    keys.push(...foundKeys);
+  } while (cursor !== '0');
+
+  return keys;
+}
+
+// Usage
+const keys = await this.scanKeys('sync:promidata:lock:*');
+```
+
+**Key Difference**:
+- `KEYS` blocks Redis and scans entire keyspace (O(N))
+- `SCAN` iterates incrementally with cursor, non-blocking
+- Both return same results, but `SCAN` is production-safe
+
+**Affected Code**:
+- `sync-lock-service.ts`: `getAllActiveSyncs()` and `forceReleaseAllLocks()`
+- Any future code listing Redis keys by pattern
 
 ---
 

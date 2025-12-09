@@ -26,7 +26,7 @@ export default {
       path: '/products/reindex',
       handler: 'product.reindex',
       config: {
-        policies: [], // Admin-only - TODO: Add admin policy
+        policies: ['admin::isAuthenticatedAdmin'],
       },
     },
   ],

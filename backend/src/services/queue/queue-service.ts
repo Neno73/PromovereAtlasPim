@@ -320,7 +320,8 @@ class QueueService {
         if (job.returnvalue) {
           if (job.returnvalue.wasDedup === true) {
             deduplicated++;
-          } else if (job.returnvalue.success === true) {
+          } else if (job.returnvalue.wasDedup === false || job.returnvalue.mediaId) {
+            // wasDedup: false means actual upload, or if mediaId exists the job completed successfully
             actualUploads++;
           }
         }

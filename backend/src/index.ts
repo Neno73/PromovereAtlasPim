@@ -60,6 +60,8 @@ export default {
         'api::category.category.findOne',
         'api::supplier.supplier.find',
         'api::supplier.supplier.findOne',
+        'api::gemini-sync.gemini-sync.stats',
+        'api::gemini-sync.gemini-sync.triggerBySupplier',
       ];
 
       for (const action of permissionsToSet) {
@@ -142,7 +144,7 @@ export default {
         // Register Gemini File Search service with Meilisearch dependency
         try {
           // @ts-ignore - Custom service not in Strapi types
-          const geminiService = strapi.service('gemini-file-search');
+          const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
           // @ts-ignore - Custom service not in Strapi types
           const meilisearchService = strapi.service('api::product.meilisearch');
 

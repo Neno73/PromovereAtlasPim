@@ -174,12 +174,46 @@ const COLOR_NAME_TO_HEX: Record<string, string> = {
 };
 
 /**
+ * Valid CSS color names (allowlist for security)
+ * Only these color names are allowed as CSS values to prevent injection attacks
+ */
+const VALID_CSS_COLORS = new Set([
+  // Extended CSS color names not in our mapping
+  'aliceblue', 'antiquewhite', 'aquamarine', 'azure', 'bisque', 'blanchedalmond',
+  'blueviolet', 'burlywood', 'cadetblue', 'chartreuse', 'chocolate', 'cornflowerblue',
+  'cornsilk', 'crimson', 'darkblue', 'darkcyan', 'darkgoldenrod', 'darkgray', 'darkgrey',
+  'darkgreen', 'darkkhaki', 'darkmagenta', 'darkolivegreen', 'darkorange', 'darkorchid',
+  'darkred', 'darksalmon', 'darkseagreen', 'darkslateblue', 'darkslategray', 'darkslategrey',
+  'darkturquoise', 'darkviolet', 'deeppink', 'deepskyblue', 'dimgray', 'dimgrey',
+  'dodgerblue', 'firebrick', 'floralwhite', 'forestgreen', 'fuchsia', 'gainsboro',
+  'ghostwhite', 'goldenrod', 'greenyellow', 'honeydew', 'hotpink', 'indianred',
+  'lawngreen', 'lemonchiffon', 'lightblue', 'lightcoral', 'lightcyan', 'lightgoldenrodyellow',
+  'lightgray', 'lightgrey', 'lightgreen', 'lightpink', 'lightsalmon', 'lightseagreen',
+  'lightskyblue', 'lightslategray', 'lightslategrey', 'lightsteelblue', 'lightyellow',
+  'limegreen', 'linen', 'mediumaquamarine', 'mediumblue', 'mediumorchid', 'mediumpurple',
+  'mediumseagreen', 'mediumslateblue', 'mediumspringgreen', 'mediumturquoise', 'mediumvioletred',
+  'midnightblue', 'mintcream', 'mistyrose', 'moccasin', 'navajowhite', 'oldlace',
+  'olivedrab', 'orangered', 'orchid', 'palegoldenrod', 'palegreen', 'paleturquoise',
+  'palevioletred', 'papayawhip', 'peachpuff', 'peru', 'plum', 'powderblue',
+  'rosybrown', 'royalblue', 'saddlebrown', 'sandybrown', 'seagreen', 'seashell',
+  'sienna', 'skyblue', 'slateblue', 'slategray', 'slategrey', 'snow', 'springgreen',
+  'steelblue', 'thistle', 'tomato', 'wheat', 'whitesmoke', 'yellowgreen',
+  // Basic colors (also in our mapping but included for completeness)
+  'black', 'white', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink',
+  'brown', 'grey', 'gray', 'navy', 'beige', 'gold', 'silver', 'maroon', 'olive',
+  'teal', 'cyan', 'magenta', 'coral', 'turquoise', 'khaki', 'ivory', 'cream',
+  'tan', 'burgundy', 'charcoal', 'mint', 'lavender', 'peach', 'salmon', 'indigo',
+  'violet', 'aqua', 'lime',
+]);
+
+/**
  * Get hex color from color name
  * Returns the hex code, CSS color name, or fallback color
+ * SECURITY: All outputs are validated to prevent CSS injection attacks
  */
 export function getColorHex(colorName: string | undefined | null, hexColor?: string | null): string {
-  // First priority: provided hex color
-  if (hexColor && hexColor.startsWith('#')) {
+  // First priority: provided hex color (validate format)
+  if (hexColor && /^#[0-9A-Fa-f]{3,8}$/.test(hexColor)) {
     return hexColor;
   }
 
@@ -187,10 +221,10 @@ export function getColorHex(colorName: string | undefined | null, hexColor?: str
     return '#CCCCCC'; // Default grey for unknown
   }
 
-  // Normalize color name: lowercase, trim
-  const normalized = colorName.toLowerCase().trim();
+  // Normalize color name: lowercase, trim, remove any non-alphanumeric characters except spaces
+  const normalized = colorName.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '');
 
-  // Check our mapping
+  // Check our mapping first (safe - all values are hex codes)
   if (COLOR_NAME_TO_HEX[normalized]) {
     return COLOR_NAME_TO_HEX[normalized];
   }
@@ -202,7 +236,11 @@ export function getColorHex(colorName: string | undefined | null, hexColor?: str
     }
   }
 
-  // Try using the color name directly as CSS color (works for many standard colors)
-  // CSS supports many color names like "red", "blue", "tomato", etc.
-  return colorName.toLowerCase();
+  // SECURITY: Only allow validated CSS color names to prevent injection
+  if (VALID_CSS_COLORS.has(normalized)) {
+    return normalized;
+  }
+
+  // Safe fallback for unknown colors
+  return '#CCCCCC';
 }

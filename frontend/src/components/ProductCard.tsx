@@ -1,5 +1,5 @@
 import { FC } from 'react';
-import { Product } from '../types';
+import { Product, ProductData, ProductVariant, PriceTier } from '../types';
 import { getLocalizedText, formatPrice, getColorHex } from '../utils/i18n';
 import { useLanguage } from '../contexts/LanguageContext';
 import './ProductCard.css';
@@ -17,10 +17,11 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
     return null;
   }
 
-  const productData = product as any; // Cast to any to access Meilisearch flat fields
+  // ProductData type supports both Strapi nested format and Meilisearch flat format
+  const productData = product as ProductData;
 
   // Get primary variant (for display in product list)
-  const primaryVariant = productData.variants?.find((v: any) => v.is_primary_for_color);
+  const primaryVariant = productData.variants?.find((v: ProductVariant) => v.is_primary_for_color);
 
   // Get the best available image URL (prioritize variant, fallback to product)
   const getImageUrl = (): string | null => {
@@ -54,24 +55,27 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
 
   // Helper to get localized text from both Meilisearch flat format and Strapi nested format
   const getLocalizedField = (baseName: string): string => {
+    // Use Record type for dynamic field access
+    const data = productData as unknown as Record<string, string | number | object | undefined>;
+
     // Try Meilisearch flat format first: name_en, name_de, etc.
     const langKey = `${baseName}_${language}`;
-    if (productData[langKey]) {
-      return productData[langKey];
+    if (data[langKey] && typeof data[langKey] === 'string') {
+      return data[langKey] as string;
     }
     // Fallback chain for Meilisearch: en → de → fr → es
-    if (productData[`${baseName}_en`]) return productData[`${baseName}_en`];
-    if (productData[`${baseName}_de`]) return productData[`${baseName}_de`];
-    if (productData[`${baseName}_fr`]) return productData[`${baseName}_fr`];
-    if (productData[`${baseName}_es`]) return productData[`${baseName}_es`];
+    if (data[`${baseName}_en`]) return data[`${baseName}_en`] as string;
+    if (data[`${baseName}_de`]) return data[`${baseName}_de`] as string;
+    if (data[`${baseName}_fr`]) return data[`${baseName}_fr`] as string;
+    if (data[`${baseName}_es`]) return data[`${baseName}_es`] as string;
 
     // Try Strapi nested format: { en: "...", de: "..." }
-    if (productData[baseName] && typeof productData[baseName] === 'object') {
-      return getLocalizedText(productData[baseName], language);
+    if (data[baseName] && typeof data[baseName] === 'object') {
+      return getLocalizedText(data[baseName] as Record<string, string>, language);
     }
     // Return as string if it's a plain string
-    if (typeof productData[baseName] === 'string') {
-      return productData[baseName];
+    if (typeof data[baseName] === 'string') {
+      return data[baseName] as string;
     }
     return '';
   };
@@ -93,7 +97,7 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
     if (!productData.price_tiers || productData.price_tiers.length === 0) {
       return null;
     }
-    const lowestTier = productData.price_tiers.reduce((min: any, tier: any) =>
+    const lowestTier = productData.price_tiers.reduce((min: PriceTier, tier: PriceTier) =>
       tier.price < min.price ? tier : min,
       productData.price_tiers[0]
     );
@@ -201,7 +205,7 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
         </div>
 
         {/* Show color info - from variants or Meilisearch colors array */}
-        {(primaryVariant?.color || (productData.colors?.length > 0)) && (() => {
+        {(primaryVariant?.color || (productData.colors && productData.colors.length > 0)) && (() => {
           const colorName = primaryVariant?.color || productData.colors?.[0] || '';
           const hexColor = primaryVariant?.hex_color || primaryVariant?.supplier_color_code || productData.hex_colors?.[0];
           const displayColor = getColorHex(colorName, hexColor);

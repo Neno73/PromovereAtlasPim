@@ -1,6 +1,6 @@
-import { FC, useState, useRef, useEffect } from 'react';
+import { FC } from 'react';
 import { Product } from '../types';
-import { getLocalizedText, formatPrice } from '../utils/i18n';
+import { getLocalizedText, formatPrice, getColorHex } from '../utils/i18n';
 import { useLanguage } from '../contexts/LanguageContext';
 import './ProductCard.css';
 
@@ -11,103 +11,139 @@ interface ProductCardProps {
 
 export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
   const { language } = useLanguage();
-  const [imageFitStrategy, setImageFitStrategy] = useState<'cover' | 'contain'>('cover');
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const imageRef = useRef<HTMLImageElement>(null);
 
   if (!product) {
     // This will prevent the component from crashing if the product data is malformed.
     return null;
   }
 
-  const productData = product;
+  const productData = product as any; // Cast to any to access Meilisearch flat fields
 
   // Get primary variant (for display in product list)
-  const primaryVariant = productData.variants?.find(v => v.is_primary_for_color);
+  const primaryVariant = productData.variants?.find((v: any) => v.is_primary_for_color);
 
-  // Get the best available image (prioritize variant, fallback to product)
-  const getProductImage = () => {
+  // Get the best available image URL (prioritize variant, fallback to product)
+  const getImageUrl = (): string | null => {
     // Try primary variant images first
-    if (primaryVariant?.primary_image) {
-      return primaryVariant.primary_image;
+    if (primaryVariant?.primary_image?.url) {
+      return primaryVariant.primary_image.url;
     }
-    if (primaryVariant?.gallery_images?.[0]) {
-      return primaryVariant.gallery_images[0];
+    if (primaryVariant?.gallery_images?.[0]?.url) {
+      return primaryVariant.gallery_images[0].url;
     }
-    // Fallback to product-level images
-    if (productData.main_image) {
-      return productData.main_image;
+
+    // Check for Meilisearch flat string format (main_image_url)
+    if (productData.main_image_url) {
+      return productData.main_image_url;
     }
-    if (productData.gallery_images?.[0]) {
-      return productData.gallery_images[0];
+
+    // Fallback to product-level images (Strapi object format)
+    if (productData.main_image?.url) {
+      return productData.main_image.url;
     }
-    if (productData.model_image) {
-      return productData.model_image;
+    if (productData.gallery_images?.[0]?.url) {
+      return productData.gallery_images[0].url;
+    }
+    if (productData.model_image?.url) {
+      return productData.model_image.url;
     }
     return null;
   };
 
-  const productImage = getProductImage();
-  const imageUrl = productImage ? productImage.url : null;
+  const imageUrl = getImageUrl();
 
-  // Smart image fitting logic
-  const handleImageLoad = () => {
-    const img = imageRef.current;
-    if (img) {
-      const aspectRatio = img.naturalWidth / img.naturalHeight;
-      
-      // Determine fitting strategy based on aspect ratio
-      // Default to 'contain' to prevent cropping, only use 'cover' for very standard ratios
-      // This ensures no important image content gets cropped
-      const strategy = (aspectRatio >= 1.2 && aspectRatio <= 1.8) ? 'cover' : 'contain';
-      
-      // Debug log to see what's happening
-      console.log(`Image aspect ratio: ${aspectRatio.toFixed(2)}, strategy: ${strategy}, dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
-      
-      setImageFitStrategy(strategy);
-      setImageLoaded(true);
+  // Helper to get localized text from both Meilisearch flat format and Strapi nested format
+  const getLocalizedField = (baseName: string): string => {
+    // Try Meilisearch flat format first: name_en, name_de, etc.
+    const langKey = `${baseName}_${language}`;
+    if (productData[langKey]) {
+      return productData[langKey];
     }
+    // Fallback chain for Meilisearch: en → de → fr → es
+    if (productData[`${baseName}_en`]) return productData[`${baseName}_en`];
+    if (productData[`${baseName}_de`]) return productData[`${baseName}_de`];
+    if (productData[`${baseName}_fr`]) return productData[`${baseName}_fr`];
+    if (productData[`${baseName}_es`]) return productData[`${baseName}_es`];
+
+    // Try Strapi nested format: { en: "...", de: "..." }
+    if (productData[baseName] && typeof productData[baseName] === 'object') {
+      return getLocalizedText(productData[baseName], language);
+    }
+    // Return as string if it's a plain string
+    if (typeof productData[baseName] === 'string') {
+      return productData[baseName];
+    }
+    return '';
   };
 
-  // Reset when image URL changes
-  useEffect(() => {
-    setImageFitStrategy('cover');
-    setImageLoaded(false);
-  }, [imageUrl]);
+  const name = getLocalizedField('name');
+  const description = getLocalizedField('description');
   
-  const name = getLocalizedText(productData.name, language);
-  const description = getLocalizedText(productData.description, language);
-  
-  // Get lowest price from price tiers
-  const getLowestPrice = () => {
+  // Get lowest price - supports both Meilisearch (price_min) and Strapi (price_tiers) formats
+  const getLowestPrice = (): { price: number; currency: string } | null => {
+    // Try Meilisearch flat format first
+    if (productData.price_min !== undefined && productData.price_min !== null) {
+      return {
+        price: productData.price_min,
+        currency: productData.currency || 'EUR'
+      };
+    }
+
+    // Fallback to Strapi price_tiers format
     if (!productData.price_tiers || productData.price_tiers.length === 0) {
       return null;
     }
-    const lowestTier = productData.price_tiers.reduce((min, tier) => 
+    const lowestTier = productData.price_tiers.reduce((min: any, tier: any) =>
       tier.price < min.price ? tier : min,
       productData.price_tiers[0]
     );
-    return lowestTier;
+    return {
+      price: lowestTier.price,
+      currency: lowestTier.currency || 'EUR'
+    };
   };
 
   const lowestPrice = getLowestPrice();
-  const primaryCategory = productData.categories?.[0];
-  const supplier = productData.supplier;
+
+  // Get category - supports both Meilisearch (category string) and Strapi (categories array)
+  const getCategoryName = (): string => {
+    // Try Meilisearch flat format
+    if (productData.category && typeof productData.category === 'string') {
+      return productData.category;
+    }
+    // Try Strapi categories array format
+    if (productData.categories?.[0]) {
+      const cat = productData.categories[0];
+      if (typeof cat.name === 'object') {
+        return getLocalizedText(cat.name, language);
+      }
+      return cat.name || cat.code || '';
+    }
+    return '';
+  };
+
+  // Get supplier name - supports both Meilisearch (supplier_name) and Strapi (supplier.name)
+  const getSupplierName = (): string => {
+    if (productData.supplier_name) {
+      return productData.supplier_name;
+    }
+    if (productData.supplier?.name) {
+      return productData.supplier.name;
+    }
+    return '';
+  };
+
+  const categoryName = getCategoryName();
+  const supplierName = getSupplierName();
 
   return (
     <div className="product-card" onClick={onClick}>
-      <div className={`product-image ${imageFitStrategy === 'contain' ? 'image-contain' : 'image-cover'}`}>
+      <div className="product-image">
         {imageUrl ? (
-          <img 
-            ref={imageRef}
-            src={imageUrl} 
-            alt={productImage?.alternativeText || name}
+          <img
+            src={imageUrl}
+            alt={name}
             loading="lazy"
-            onLoad={handleImageLoad}
-            style={{
-              objectFit: imageFitStrategy,
-              opacity: imageLoaded ? 1 : 0,
-            }}
           />
         ) : (
           <div className="no-image">
@@ -151,32 +187,36 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
         )}
         
         <div className="product-details">
-          {primaryCategory && (
+          {categoryName && (
             <span className="product-category">
-              {getLocalizedText(primaryCategory.name, language)}
+              {categoryName}
             </span>
           )}
 
-          {supplier && (
+          {supplierName && (
             <span className="product-supplier">
-              {supplier.name}
+              {supplierName}
             </span>
           )}
         </div>
 
-        {primaryVariant?.color && (
-          <div className="product-color">
-            <span className="color-label">Color:</span>
-            <span className="color-name">{primaryVariant.color}</span>
-            {(primaryVariant.supplier_color_code || primaryVariant.hex_color) && (
+        {/* Show color info - from variants or Meilisearch colors array */}
+        {(primaryVariant?.color || (productData.colors?.length > 0)) && (() => {
+          const colorName = primaryVariant?.color || productData.colors?.[0] || '';
+          const hexColor = primaryVariant?.hex_color || primaryVariant?.supplier_color_code || productData.hex_colors?.[0];
+          const displayColor = getColorHex(colorName, hexColor);
+          return (
+            <div className="product-color">
+              <span className="color-label">Color:</span>
+              <span className="color-name">{colorName}</span>
               <span
                 className="color-swatch"
-                style={{ backgroundColor: primaryVariant.supplier_color_code || primaryVariant.hex_color }}
-                title={primaryVariant.supplier_color_code || primaryVariant.hex_color}
+                style={{ background: displayColor }}
+                title={colorName}
               ></span>
-            )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

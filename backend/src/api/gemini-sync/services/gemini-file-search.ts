@@ -166,6 +166,12 @@ export class GeminiFileSearchService {
   constructor(strapi: any) {
     this.strapi = strapi;
 
+    // DEBUG: Log environment variable state
+    strapi.log.debug(
+      `[GeminiFileSearch] Constructor called. GEMINI_API_KEY defined: ${typeof process.env.GEMINI_API_KEY !== 'undefined'}, ` +
+      `value length: ${process.env.GEMINI_API_KEY?.length || 0}`
+    );
+
     // Load configuration from environment variables
     this.config = {
       apiKey: process.env.GEMINI_API_KEY || '',
@@ -176,6 +182,7 @@ export class GeminiFileSearchService {
 
     // Validate configuration
     if (!this.config.apiKey) {
+      strapi.log.error('[GeminiFileSearch] GEMINI_API_KEY is empty or not set!');
       throw new Error('GEMINI_API_KEY environment variable is required');
     }
     if (!this.config.projectId) {
@@ -409,12 +416,11 @@ export class GeminiFileSearchService {
       }
 
       // Fetch document FROM Meilisearch (not Strapi DB)
-      // NOTE: The Meilisearch Strapi plugin uses "product-{documentId}" as the primary key
+      // NOTE: Meilisearch uses the Strapi documentId directly as the primary key
       let meilisearchDoc: MeilisearchProductDocument;
       try {
-        const meilisearchId = `product-${documentId}`;
-        meilisearchDoc = await this.meilisearchService.index.getDocument(meilisearchId);
-        this.strapi.log.debug(`📥 [Gemini] Fetched ${documentId} from Meilisearch (ID: ${meilisearchId})`);
+        meilisearchDoc = await this.meilisearchService.index.getDocument(documentId);
+        this.strapi.log.debug(`📥 [Gemini] Fetched ${documentId} from Meilisearch`);
       } catch (error) {
         // Product not in Meilisearch → skip (architecture principle: fix Meilisearch first)
         this.strapi.log.warn(
@@ -459,14 +465,20 @@ export class GeminiFileSearchService {
       );
 
       // Save the Gemini file reference to Strapi for tracking
-      // This helps with stats and knowing which products are synced
+      // Also save the promidata_hash for hash-based deduplication
       try {
+        // Fetch product from Strapi to get promidata_hash
+        const product = await this.strapi.entityService.findOne('api::product.product', documentId, {
+          fields: ['promidata_hash']
+        });
+
         await this.strapi.entityService.update('api::product.product', documentId, {
           data: {
             gemini_file_uri: operation.name,
+            gemini_synced_hash: product?.promidata_hash || null,
           },
         });
-        this.strapi.log.debug(`📝 Saved gemini_file_uri for ${geminiDoc.sku}`);
+        this.strapi.log.debug(`📝 Saved gemini_file_uri and gemini_synced_hash for ${geminiDoc.sku}`);
       } catch (updateError) {
         // Non-fatal: file was uploaded, just couldn't update tracking field
         this.strapi.log.warn(`Could not update gemini_file_uri for ${documentId}:`, updateError);
@@ -497,13 +509,14 @@ export class GeminiFileSearchService {
   async deleteDocument(documentId: string): Promise<{ success: boolean; error?: string }> {
     try {
       // NOTE: FileSearchStore doesn't support individual file deletion.
-      // Files remain in the store but we can clear the tracking field.
+      // Files remain in the store but we can clear the tracking fields.
       // Next sync will upload a fresh copy (semantic search handles duplicates).
 
-      // Clear the gemini_file_uri to mark product as needing re-sync
+      // Clear both gemini_file_uri and gemini_synced_hash to mark product as needing re-sync
       await this.strapi.entityService.update('api::product.product', documentId, {
         data: {
           gemini_file_uri: null,
+          gemini_synced_hash: null,
         },
       });
 

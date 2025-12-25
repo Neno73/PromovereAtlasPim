@@ -1,36 +1,52 @@
 /**
  * Gemini Sync Worker
- * 
+ *
  * Processes Gemini File Search sync jobs from the gemini-sync queue.
- * 
+ *
  * ---
- * 
+ *
  * DATA FLOW (Meilisearch-based):
- * 
+ *
  *   1. Job received with { operation, documentId }
  *   2. Fetch product FROM Meilisearch (NOT Strapi DB)
  *   3. Transform Meilisearch document to Gemini JSON format
  *   4. Upload to Gemini File Search Store
- * 
+ *
  * ---
- * 
+ *
  * ARCHITECTURE PRINCIPLE: "Always repair Meilisearch before repairing Gemini"
- * 
+ *
  *   - If product not in Meilisearch → skip with warning (don't retry/fail)
  *   - This ensures Meilisearch is the single source of truth
  *   - Chat UI uses Gemini for semantic search, Meilisearch for display
  *   - This prevents AI hallucinations (display data always from Meilisearch)
- * 
+ *
  * ---
- * 
+ *
  * SERVICE USED:
  *   - api::gemini-sync.gemini-file-search (Meilisearch-based)
  *   - Accessed via strapi.service() at runtime (not imported as singleton)
- * 
+ *
  * ---
- * 
+ *
  * @module GeminiSyncWorker
  */
+
+// Load environment variables explicitly (BullMQ workers need this)
+// Note: Strapi already loads .env at startup, but we ensure it's available
+// in case the worker runs before Strapi's env loading completes
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Load from backend/.env explicitly (handles any CWD issues)
+// From dist/src/services/queue/workers → go up 5 levels to backend/
+const envPath = path.resolve(__dirname, '../../../../../.env');
+dotenv.config({ path: envPath });
+
+import type { Core } from '@strapi/strapi';
+
+// Declare global strapi instance (available at runtime via Strapi)
+declare const strapi: Core.Strapi;
 
 import { Worker, Job } from 'bullmq';
 import { geminiSyncWorkerOptions } from '../queue-config';
@@ -74,6 +90,9 @@ export function createGeminiSyncWorker(): Worker<
   const worker = new Worker<GeminiSyncJobData, GeminiSyncJobResult>(
     'gemini-sync',
     async (job: Job<GeminiSyncJobData>) => {
+      // DEBUG: Log at start of processor
+      console.log(`[GEMINI-WORKER-DEBUG] Processing job ${job.id}, strapi available: ${typeof strapi !== 'undefined'}`);
+
       const { operation, documentId } = job.data;
 
       // Input validation
@@ -84,6 +103,7 @@ export function createGeminiSyncWorker(): Worker<
         throw new Error('Invalid job data: documentId must be a non-empty string');
       }
 
+      console.log(`[GEMINI-WORKER-DEBUG] About to call strapi.log.info for ${documentId}`);
       strapi.log.info(`🤖 [Gemini] ${operation} product ${documentId}`);
 
       try {

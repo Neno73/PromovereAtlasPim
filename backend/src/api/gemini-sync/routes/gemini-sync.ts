@@ -86,5 +86,89 @@ export default {
         tags: ['Gemini Sync'],
       },
     },
+    {
+      method: 'GET',
+      path: '/gemini-sync/store-info',
+      handler: 'gemini-sync.getStoreInfo',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false, // Allow access from Admin Panel
+        description: 'Get FileSearchStore details and health status',
+        tags: ['Gemini Sync'],
+      },
+    },
+    {
+      method: 'POST',
+      path: '/gemini-sync/test-search',
+      handler: 'gemini-sync.testSearch',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false, // Allow access from Admin Panel
+        description: 'Test semantic search against FileSearchStore',
+        tags: ['Gemini Sync'],
+      },
+    },
+    {
+      method: 'GET',
+      path: '/gemini-sync/stores',
+      handler: 'gemini-sync.listStores',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
+        description: 'List all FileSearchStores',
+        tags: ['Gemini Sync'],
+      },
+    },
+    {
+      method: 'POST',
+      path: '/gemini-sync/stores/create',
+      handler: 'gemini-sync.createStore',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
+        description: 'Create a new FileSearchStore',
+        tags: ['Gemini Sync'],
+      },
+    },
+    {
+      method: 'DELETE',
+      path: '/gemini-sync/stores/:storeId',
+      handler: 'gemini-sync.deleteStore',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
+        description: 'Delete a FileSearchStore',
+        tags: ['Gemini Sync'],
+      },
+    },
+    {
+      method: 'GET',
+      path: '/gemini-sync/detailed-stats',
+      handler: 'gemini-sync.getDetailedStats',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
+        description: 'Get detailed statistics with active/pending/failed counts',
+        tags: ['Gemini Sync'],
+      },
+    },
+    {
+      method: 'GET',
+      path: '/gemini-sync/search-history',
+      handler: 'gemini-sync.getSearchHistory',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
+        description: 'Get recent search history',
+        tags: ['Gemini Sync'],
+      },
+    },
   ],
 };

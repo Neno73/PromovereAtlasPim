@@ -45,6 +45,19 @@ export default {
       },
     });
 
+    // Add Gemini Dashboard
+    app.addMenuLink({
+      to: "/gemini-dashboard",
+      icon: () => <DarkIcon><span className="icon-gemini">◈</span></DarkIcon>,
+      intlLabel: {
+        id: "gemini-dashboard.plugin.name",
+        defaultMessage: "Gemini Dashboard",
+      },
+      Component: async () => {
+        const mod = await import("./pages/gemini-dashboard");
+        return mod.default;
+      },
+    });
 
   },
 };

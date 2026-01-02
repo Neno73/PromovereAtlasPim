@@ -53,6 +53,9 @@ const createRedisConnection = () => {
 
 export const redisConnection = createRedisConnection();
 
+// Alias for workers that need to create new connections
+export const getRedisConnection = createRedisConnection;
+
 /**
  * Default Queue Options
  * Applied to all queues unless overridden

@@ -475,7 +475,21 @@ async function processFullSync(lockKey: string, syncId: string) {
 
       // IMPORTANT: Strapi 5 Document Service uses start/limit, NOT page/pageSize!
       // Using wrong format causes pagination to be ignored → infinite loop!
+      // HASH-BASED DEDUPLICATION: Only sync products that:
+      // 1. Have never been synced (gemini_synced_hash is null), OR
+      // 2. Have been updated since last sync (promidata_hash != gemini_synced_hash)
       const products = await strapi.documents('api::product.product').findMany({
+        filters: {
+          $or: [
+            { gemini_synced_hash: { $null: true } },  // Never synced to Gemini
+            {
+              $and: [
+                { promidata_hash: { $notNull: true } },
+                { $not: { promidata_hash: { $eq: '$gemini_synced_hash' } } }  // Hash changed
+              ]
+            }
+          ]
+        },
         start,
         limit: batchSize,
         // No need to populate relations for queue job, just need documentId
@@ -538,11 +552,23 @@ async function processSupplierSync(supplierCode: string, syncId: string) {
 
       // IMPORTANT: Strapi 5 Document Service uses start/limit, NOT page/pageSize!
       // Using wrong format causes pagination to be ignored → infinite loop!
+      // HASH-BASED DEDUPLICATION: Only sync products that:
+      // 1. Have never been synced (gemini_synced_hash is null), OR
+      // 2. Have been updated since last sync (promidata_hash != gemini_synced_hash)
       const products = await strapi.documents('api::product.product').findMany({
         filters: {
           supplier: {
             code: supplierCode
-          }
+          },
+          $or: [
+            { gemini_synced_hash: { $null: true } },  // Never synced to Gemini
+            {
+              $and: [
+                { promidata_hash: { $notNull: true } },
+                { $not: { promidata_hash: { $eq: '$gemini_synced_hash' } } }  // Hash changed
+              ]
+            }
+          ]
         },
         start,
         limit: batchSize,

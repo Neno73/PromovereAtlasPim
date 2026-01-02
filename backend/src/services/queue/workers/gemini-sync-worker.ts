@@ -29,19 +29,14 @@
  *
  * ---
  *
+ * NOTE: Environment variables are loaded by Strapi at startup.
+ * Since we use inline processors (not sandboxed), workers share the same
+ * process.env as Strapi - no need for separate dotenv.config() here.
+ *
+ * ---
+ *
  * @module GeminiSyncWorker
  */
-
-// Load environment variables explicitly (BullMQ workers need this)
-// Note: Strapi already loads .env at startup, but we ensure it's available
-// in case the worker runs before Strapi's env loading completes
-import * as dotenv from 'dotenv';
-import * as path from 'path';
-
-// Load from backend/.env explicitly (handles any CWD issues)
-// From dist/src/services/queue/workers → go up 5 levels to backend/
-const envPath = path.resolve(__dirname, '../../../../../.env');
-dotenv.config({ path: envPath });
 
 import type { Core } from '@strapi/strapi';
 
@@ -90,8 +85,12 @@ export function createGeminiSyncWorker(): Worker<
   const worker = new Worker<GeminiSyncJobData, GeminiSyncJobResult>(
     'gemini-sync',
     async (job: Job<GeminiSyncJobData>) => {
-      // DEBUG: Log at start of processor
-      console.log(`[GEMINI-WORKER-DEBUG] Processing job ${job.id}, strapi available: ${typeof strapi !== 'undefined'}`);
+      // DEBUG: Write to file to bypass all logging issues
+      const fs = require('fs');
+      const apiKeyExists = typeof process.env.GEMINI_API_KEY !== 'undefined' && process.env.GEMINI_API_KEY !== '';
+      const apiKeyLen = process.env.GEMINI_API_KEY?.length || 0;
+      const debugMsg = `[${new Date().toISOString()}] Job ${job.id} | GEMINI_API_KEY: ${apiKeyExists ? `yes (${apiKeyLen} chars)` : 'NO'} | strapi: ${typeof strapi}\n`;
+      fs.appendFileSync('/tmp/gemini-worker-debug.log', debugMsg);
 
       const { operation, documentId } = job.data;
 
@@ -103,7 +102,6 @@ export function createGeminiSyncWorker(): Worker<
         throw new Error('Invalid job data: documentId must be a non-empty string');
       }
 
-      console.log(`[GEMINI-WORKER-DEBUG] About to call strapi.log.info for ${documentId}`);
       strapi.log.info(`🤖 [Gemini] ${operation} product ${documentId}`);
 
       try {
@@ -186,6 +184,15 @@ export function createGeminiSyncWorker(): Worker<
     },
     geminiSyncWorkerOptions
   );
+
+  // Worker connection event handlers - CRITICAL for debugging
+  worker.on('ready', () => {
+    strapi.log.info('🟢 [Gemini Worker] Connected to Redis and ready to process jobs');
+  });
+
+  worker.on('active', (job) => {
+    strapi.log.info(`📥 [Gemini] Job ${job.id} now active - processing ${job.data.operation} for ${job.data.documentId}`);
+  });
 
   // Worker event handlers
   worker.on('completed', (job, result) => {

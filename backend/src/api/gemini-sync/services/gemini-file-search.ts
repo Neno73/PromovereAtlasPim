@@ -166,10 +166,15 @@ export class GeminiFileSearchService {
   constructor(strapi: any) {
     this.strapi = strapi;
 
-    // DEBUG: Log environment variable state
-    strapi.log.debug(
-      `[GeminiFileSearch] Constructor called. GEMINI_API_KEY defined: ${typeof process.env.GEMINI_API_KEY !== 'undefined'}, ` +
-      `value length: ${process.env.GEMINI_API_KEY?.length || 0}`
+    // Enhanced logging for diagnostics
+    const apiKeyExists = typeof process.env.GEMINI_API_KEY !== 'undefined' && process.env.GEMINI_API_KEY !== '';
+    const apiKeyLength = process.env.GEMINI_API_KEY?.length || 0;
+    const projectExists = !!process.env.GOOGLE_CLOUD_PROJECT;
+
+    strapi.log.info(
+      `[GeminiFileSearch] Initializing service. ` +
+      `GEMINI_API_KEY: ${apiKeyExists ? `set (${apiKeyLength} chars)` : 'NOT SET'}, ` +
+      `GOOGLE_CLOUD_PROJECT: ${projectExists ? 'set' : 'NOT SET'}`
     );
 
     // Load configuration from environment variables
@@ -196,7 +201,7 @@ export class GeminiFileSearchService {
     this.meilisearchService = null;
 
     strapi.log.info(
-      `Gemini File Search service initialized ` +
+      `✅ Gemini File Search service initialized ` +
       `(project: ${this.config.projectId}, data source: Meilisearch)`
     );
   }

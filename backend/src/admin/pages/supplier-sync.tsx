@@ -371,7 +371,7 @@ const SupplierSyncPage = () => {
         </Typography>
 
         <Box padding={6} background="neutral0" shadow="filterShadow" hasRadius>
-          <Table colCount={6} rowCount={suppliers.length}>
+          <Table colCount={7} rowCount={suppliers.length}>
             <Thead>
               <Tr>
                 <Th>
@@ -379,6 +379,9 @@ const SupplierSyncPage = () => {
                 </Th>
                 <Th>
                   <Typography variant="sigma">Code</Typography>
+                </Th>
+                <Th>
+                  <Typography variant="sigma">Products</Typography>
                 </Th>
                 <Th>
                   <Typography variant="sigma">Status</Typography>
@@ -411,6 +414,15 @@ const SupplierSyncPage = () => {
                     <Td>
                       <Typography variant="omega" textColor="neutral600">
                         {supplier.code}
+                      </Typography>
+                    </Td>
+                    <Td>
+                      <Typography
+                        variant="omega"
+                        textColor={supplier.products_count > 0 ? "success600" : "neutral600"}
+                        fontWeight={supplier.products_count > 0 ? "semiBold" : "normal"}
+                      >
+                        {supplier.products_count || 0}
                       </Typography>
                     </Td>
                     <Td>{getStatusBadge(supplier)}</Td>
@@ -452,10 +464,16 @@ const SupplierSyncPage = () => {
                           {isStoppingGemini ? 'Stopping...' : 'Stop'}
                         </Button>
                       ) : (
-                        <Tooltip description={`Sync ${supplier.name} products to Gemini File Search`}>
+                        <Tooltip description={
+                          !supplier.is_active
+                            ? `Supplier ${supplier.name} is inactive`
+                            : !supplier.products_count || supplier.products_count === 0
+                            ? `No products synced yet. Sync from Promidata first.`
+                            : `Sync ${supplier.name} products to Gemini File Search`
+                        }>
                           <Button
                             onClick={() => handleGeminiSync(supplier)}
-                            disabled={!supplier.is_active}
+                            disabled={!supplier.is_active || !supplier.products_count || supplier.products_count === 0}
                             variant="tertiary"
                             size="S"
                             startIcon={<Database />}

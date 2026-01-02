@@ -32,6 +32,11 @@ interface SyncStatus {
 class SyncLockService {
   private redis: Redis | null = null;
   private instanceId: string;
+  private activeSyncsCache: {
+    data: { promidata: Array<any>; gemini: Array<any> } | null;
+    timestamp: number;
+  } = { data: null, timestamp: 0 };
+  private readonly CACHE_TTL_MS = 5000; // 5 seconds cache
 
   constructor() {
     // Unique ID for this Strapi instance
@@ -68,6 +73,13 @@ class SyncLockService {
     return `${Date.now()}-${Math.random().toString(36).substring(7)}`;
   }
 
+  /**
+   * Invalidate the active syncs cache (call when locks change)
+   */
+  private invalidateCache(): void {
+    this.activeSyncsCache = { data: null, timestamp: 0 };
+  }
+
   // ==========================================
   // PROMIDATA SYNC LOCK METHODS
   // ==========================================
@@ -98,6 +110,7 @@ class SyncLockService {
 
     if (result === 'OK') {
       strapi.log.info(`[SyncLock] Acquired Promidata lock for supplier ${supplierId} (syncId: ${syncId})`);
+      this.invalidateCache(); // Refresh dashboard cache
       return syncId;
     }
 
@@ -115,6 +128,7 @@ class SyncLockService {
 
     await client.del(lockKey);
     await client.del(stopKey);
+    this.invalidateCache(); // Refresh dashboard cache
     strapi.log.info(`[SyncLock] Released Promidata lock for supplier ${supplierId}`);
   }
 
@@ -198,6 +212,7 @@ class SyncLockService {
 
     if (result === 'OK') {
       strapi.log.info(`[SyncLock] Acquired Gemini lock for ${supplierCode} (syncId: ${syncId})`);
+      this.invalidateCache(); // Refresh dashboard cache
       return syncId;
     }
 
@@ -215,6 +230,7 @@ class SyncLockService {
 
     await client.del(lockKey);
     await client.del(stopKey);
+    this.invalidateCache(); // Refresh dashboard cache
     strapi.log.info(`[SyncLock] Released Gemini lock for ${supplierCode}`);
   }
 
@@ -273,6 +289,7 @@ class SyncLockService {
 
   /**
    * Scan for keys matching a pattern (SCAN is allowed on Upstash, KEYS is not)
+   * Note: Increased COUNT to 10,000 for better performance when Redis has many keys
    */
   private async scanKeys(pattern: string): Promise<string[]> {
     const client = this.getClient();
@@ -280,7 +297,7 @@ class SyncLockService {
     let cursor = '0';
 
     do {
-      const [nextCursor, foundKeys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      const [nextCursor, foundKeys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', 10000);
       cursor = nextCursor;
       keys.push(...foundKeys);
     } while (cursor !== '0');
@@ -290,11 +307,18 @@ class SyncLockService {
 
   /**
    * Get all active syncs (for admin dashboard)
+   * Uses 5-second cache to prevent repeated Redis SCAN operations
    */
   async getAllActiveSyncs(): Promise<{
     promidata: Array<{ supplierId: string; lockInfo: LockInfo }>;
     gemini: Array<{ supplierCode: string; lockInfo: LockInfo }>;
   }> {
+    // Check cache first
+    const now = Date.now();
+    if (this.activeSyncsCache.data && (now - this.activeSyncsCache.timestamp) < this.CACHE_TTL_MS) {
+      return this.activeSyncsCache.data;
+    }
+
     const client = this.getClient();
 
     // Get all lock keys using SCAN (KEYS is disabled on Upstash)
@@ -324,7 +348,15 @@ class SyncLockService {
       }
     }
 
-    return { promidata, gemini };
+    const result = { promidata, gemini };
+
+    // Update cache
+    this.activeSyncsCache = {
+      data: result,
+      timestamp: now
+    };
+
+    return result;
   }
 
   /**

@@ -247,9 +247,33 @@ class QueueService {
       };
     });
 
-    const createdJobs = await this.geminiSyncQueue!.addBulk(bulkJobs);
-    strapi.log.info(`🤖 Enqueued batch of ${createdJobs.length} Gemini sync jobs`);
-    return createdJobs;
+    // DEBUG: Log queue connection state before adding jobs
+    strapi.log.info(`🔍 [Queue Debug] gemini-sync queue ready: checking connection...`);
+
+    try {
+      // Verify queue is connected by getting counts
+      const waitingBefore = await this.geminiSyncQueue!.getWaitingCount();
+      strapi.log.info(`🔍 [Queue Debug] Waiting count before addBulk: ${waitingBefore}`);
+
+      const createdJobs = await this.geminiSyncQueue!.addBulk(bulkJobs);
+      strapi.log.info(`🤖 Enqueued batch of ${createdJobs.length} Gemini sync jobs`);
+
+      // Log the actual job IDs returned
+      strapi.log.info(`🔍 [Queue Debug] Job IDs: ${createdJobs.slice(0, 5).map(j => j.id).join(', ')}${createdJobs.length > 5 ? '...' : ''}`);
+
+      // Verify jobs were actually added
+      const waitingAfter = await this.geminiSyncQueue!.getWaitingCount();
+      strapi.log.info(`🔍 [Queue Debug] Waiting count after addBulk: ${waitingAfter}`);
+
+      if (waitingAfter === waitingBefore) {
+        strapi.log.error(`🚨 [Queue Debug] Jobs NOT added to Redis! waitingBefore=${waitingBefore}, waitingAfter=${waitingAfter}`);
+      }
+
+      return createdJobs;
+    } catch (error) {
+      strapi.log.error(`🚨 [Queue Debug] addBulk failed:`, error);
+      throw error;
+    }
   }
 
   /**

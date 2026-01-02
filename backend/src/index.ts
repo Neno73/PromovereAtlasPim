@@ -137,11 +137,9 @@ export default {
           throw new Error('Strapi database not initialized');
         }
 
-        await queueService.initialize();
-        await workerManager.start();
-        strapi.log.info('✅ Queue service and workers initialized successfully');
-
-        // Register Gemini File Search service with Meilisearch dependency
+        // IMPORTANT: Register Gemini service BEFORE starting workers
+        // This ensures the service is instantiated and cached before any jobs are processed
+        // Fixes race condition where workers could try to process jobs before service is ready
         try {
           // @ts-ignore - Custom service not in Strapi types
           const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
@@ -158,6 +156,11 @@ export default {
           strapi.log.error('❌ Failed to register Gemini service:', error);
           // Don't throw - allow app to continue without Gemini if not available
         }
+
+        // NOW start queue and workers (after services are ready)
+        await queueService.initialize();
+        await workerManager.start();
+        strapi.log.info('✅ Queue service and workers initialized successfully');
 
         // Initialize Bull Board for queue monitoring
         try {

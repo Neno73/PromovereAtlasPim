@@ -14,7 +14,7 @@
       "name": "Apache 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "x-generation-date": "2025-12-09T13:48:39.091Z"
+    "x-generation-date": "2026-01-02T17:23:02.673Z"
   },
   "x-strapi-config": {
     "plugins": [
@@ -6080,6 +6080,9 @@
                     "gemini_file_uri": {
                       "type": "string"
                     },
+                    "gemini_synced_hash": {
+                      "type": "string"
+                    },
                     "battery_information": {
                       "type": "string"
                     },
@@ -8158,6 +8161,9 @@
               "gemini_file_uri": {
                 "type": "string"
               },
+              "gemini_synced_hash": {
+                "type": "string"
+              },
               "battery_information": {
                 "type": "string"
               },
@@ -8407,6 +8413,9 @@
             "type": "string"
           },
           "gemini_file_uri": {
+            "type": "string"
+          },
+          "gemini_synced_hash": {
             "type": "string"
           },
           "battery_information": {
@@ -9419,6 +9428,9 @@
                       "type": "string"
                     },
                     "gemini_file_uri": {
+                      "type": "string"
+                    },
+                    "gemini_synced_hash": {
                       "type": "string"
                     },
                     "battery_information": {
@@ -12071,6 +12083,9 @@
               "gemini_file_uri": {
                 "type": "string"
               },
+              "gemini_synced_hash": {
+                "type": "string"
+              },
               "battery_information": {
                 "type": "string"
               },
@@ -14613,6 +14628,9 @@
                 "gemini_file_uri": {
                   "type": "string"
                 },
+                "gemini_synced_hash": {
+                  "type": "string"
+                },
                 "battery_information": {
                   "type": "string"
                 },
@@ -16758,6 +16776,9 @@
                       "type": "string"
                     },
                     "gemini_file_uri": {
+                      "type": "string"
+                    },
+                    "gemini_synced_hash": {
                       "type": "string"
                     },
                     "battery_information": {

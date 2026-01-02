@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-*Last updated: 2025-10-29 19:40*
+*Last updated: 2025-12-25*
 
 This log tracks significant architectural decisions made during the development of PromoAtlas PIM.
 
@@ -12,6 +12,750 @@ When adding a decision, include:
 - **Decision**: What we decided to do
 - **Consequences**: Trade-offs and implications
 - **Status**: Proposed / Accepted / Deprecated / Superseded
+
+---
+
+## [2025-12-25] Gemini Sync Worker Investigation - Meilisearch ID Format Fix
+
+**Status**: In Progress
+
+**Context**:
+After triggering Gemini sync for supplier A109, jobs were completing with `success: true` but no products were actually being uploaded to Gemini FileSearchStore. Investigation revealed:
+1. Worker IS running and processing jobs
+2. Products being skipped with "Not found in Meilisearch" error
+3. Gemini document count remained unchanged despite "successful" syncs
+
+**Root Cause Identified**:
+The `gemini-file-search.ts` service was looking for Meilisearch documents with wrong ID format:
+```typescript
+// WRONG - Was using prefixed ID
+const meilisearchId = `product-${documentId}`;
+meilisearchDoc = await this.meilisearchService.index.getDocument(meilisearchId);
+
+// CORRECT - Meilisearch uses documentId directly
+meilisearchDoc = await this.meilisearchService.index.getDocument(documentId);
+```
+
+**Fix Applied**:
+- File: `backend/src/api/gemini-sync/services/gemini-file-search.ts`
+- Removed `product-` prefix, now uses `documentId` directly
+- Verified via curl that Meilisearch does use plain documentId as primary key
+
+**Remaining Investigation** (to continue):
+After the Meilisearch ID fix, a new issue emerged:
+- Jobs logged as "Enqueued batch of N Gemini sync jobs"
+- But Redis job ID counter (`bull:gemini-sync:id`) not incrementing
+- Queue shows 0 waiting, 0 active
+- Jobs may not actually be reaching Redis
+
+Possible causes to investigate:
+1. BullMQ `addBulk` silently failing
+2. Queue connection issue
+3. Job deduplication in BullMQ
+
+**Files Modified**:
+- `backend/src/api/gemini-sync/services/gemini-file-search.ts` - Fixed Meilisearch ID format
+
+**Next Steps**:
+- Debug `enqueueGeminiSyncBatch` to verify jobs reach Redis
+- Check if hash-based deduplication query is filtering all products
+- Verify worker is connected to same Redis as queue
+
+---
+
+## [2025-12-25] Gemini FileSearchStore Admin Dashboard Implementation
+
+**Status**: Accepted (Completed)
+
+**Context**:
+After implementing the Gemini FileSearchStore backend integration (2025-12-05), there was no way for admins to:
+- Monitor FileSearchStore health and statistics
+- Test semantic search functionality
+- View document counts and storage usage
+- Debug search queries and results
+- Manage FileSearchStores via UI
+
+All operations required backend API calls or scripts, making it difficult to validate the integration was working correctly.
+
+**Decision**:
+Implemented a comprehensive admin dashboard providing full visibility and testing capabilities for the Gemini FileSearchStore integration:
+
+### 1. Admin Dashboard UI (`src/admin/pages/gemini-dashboard.tsx`)
+**Features** (674 lines):
+- **Real-time Statistics Display**:
+  - System health monitoring (OPERATIONAL/ERROR status)
+  - Active documents count (1,982)
+  - Pending/Failed document tracking
+  - Synced products count and coverage percentage
+  - Document status distribution pie chart (Chart.js)
+
+- **Current Store Details Card**:
+  - Display name, Store ID, total documents, size (MB)
+  - Last updated timestamp
+  - Expandable JSON view of store metadata
+
+- **Semantic Search Testing Interface**:
+  - Natural language query input with placeholder examples
+  - Real-time search execution with loading spinner
+  - Detailed product results (SKU, name, description, brand, supplier, currency)
+  - Empty query validation with warning notifications
+  - Success/error notifications via Strapi design system
+  - Search history tracking (placeholder for future implementation)
+
+- **Refresh Functionality**:
+  - Manual dashboard data refresh button
+  - Fetches latest: stats, stores, active syncs, search history
+  - Loading states during refresh
+
+**Technical Stack**:
+- Strapi Design System components (Box, Typography, Button, Alert, etc.)
+- useFetchClient() hook for API calls
+- React hooks for state management
+- Chart.js for data visualization
+
+### 2. Backend API Endpoints (`controllers/gemini-sync.ts`, `routes/gemini-sync.ts`)
+**New Endpoints** (+191 lines in controller, +84 lines in routes):
+- `GET /api/gemini-sync/detailed-stats` - Document statistics with active/pending/failed counts
+- `GET /api/gemini-sync/stores` - List all FileSearchStores
+- `POST /api/gemini-sync/stores/create` - Create new FileSearchStore
+- `DELETE /api/gemini-sync/stores/:storeId` - Delete store with force option
+- `POST /api/gemini-sync/test-search` - Execute semantic search query
+- `GET /api/gemini-sync/search-history?limit=N` - Retrieve search history
+
+**Access Control**:
+- Stats/stores/search endpoints: Public (for admin UI polling)
+- Create/delete store: Admin only
+- All authenticated via Strapi JWT tokens
+
+### 3. Gemini Service Enhancements (`services/gemini-file-search.ts`)
+**Critical Bug Fix** (+253 lines):
+Fixed Google AI API 400 error by correcting model and API structure:
+
+```typescript
+// ❌ WRONG (caused 400 "tool_type must have one initialized field")
+const response = await ai.models.generateContent({
+  model: 'gemini-2.0-flash',  // Doesn't support FileSearch
+  contents: query,
+  tools: [{ fileSearch: { ... } }]  // Wrong location
+});
+
+// ✅ CORRECT (per official docs: https://ai.google.dev/gemini-api/docs/file-search)
+const response = await ai.models.generateContent({
+  model: 'gemini-2.5-flash',  // Required for FileSearch
+  contents: query,
+  config: {  // Tools MUST be inside config
+    tools: [{
+      fileSearch: {
+        fileSearchStoreNames: [storeId]  // Use Names not Ids
+      }
+    }]
+  }
+});
+```
+
+**New Methods**:
+- `getDetailedStats()` - Comprehensive statistics including coverage
+- `listAllStores()` - List all FileSearchStores in project
+- `createNewStore(displayName)` - Create FileSearchStore
+- `deleteStoreById(storeId, force)` - Delete store with safety checks
+- `testSemanticSearch(query)` - Execute search and return grounded results
+- `getSearchHistory(limit)` - Placeholder for future implementation
+
+**Request Handling**:
+- Controller accepts both `{ data: { query } }` (useFetchClient) and `{ query }` (direct API)
+- Proper error sanitization
+- Token usage tracking in responses
+
+### 4. Admin Menu Integration (`src/admin/app.tsx`)
+**Changes** (+13 lines):
+- Added "Gemini Dashboard" menu item with sparkles icon (✨)
+- Route: `/admin/gemini-dashboard`
+- Icon color: `#32324D` (Strapi dark gray for visibility)
+- Position: Below Gemini Sync in sidebar
+
+### 5. Dependencies
+**Added** (`package.json`):
+- `@google/genai` ^1.30.0 - Official Google Generative AI SDK for Node.js
+
+**Implementation**:
+
+Files Created:
+- `backend/src/admin/pages/gemini-dashboard.tsx` - Dashboard UI (674 lines)
+
+Files Modified:
+- `backend/src/api/gemini-sync/controllers/gemini-sync.ts` - Added 6 endpoints (+191 lines)
+- `backend/src/api/gemini-sync/routes/gemini-sync.ts` - Route configuration (+84 lines)
+- `backend/src/api/gemini-sync/services/gemini-file-search.ts` - API fix & new methods (+253 lines)
+- `backend/src/admin/app.tsx` - Menu integration (+13 lines)
+- `backend/package.json`, `backend/package-lock.json` - Added @google/genai dependency
+
+**Total**: +1,577 lines added
+
+**Testing Performed**:
+
+### ✅ Semantic Search Tests
+1. **Query with Results**: "show me chewing gum products"
+   - ✅ Returned 2 products: A407-2030 (Sportlife® chewing gum classic), A407-2031 (Sportlife® chewing gum with Flap)
+   - ✅ Full details: SKU, Product Name, Description, Brand (Sportlife), Supplier (Commercial Sweets), Currency (EUR)
+   - ✅ Network: POST /api/gemini-sync/test-search → 200 OK (~4.6 seconds)
+   - ✅ Grounding: 5 retrieved document chunks from FileSearchStore
+   - ✅ Token usage: 740 total (83 prompt + 322 response + 154 thoughts + 181 tool use)
+
+2. **Query without Results**: "promotional mugs with custom logo", "promotional pens and pencils"
+   - ✅ Correctly displays "No products found matching your query"
+   - ✅ Expected behavior (semantic search finds no relevant matches)
+   - ✅ No errors or crashes
+
+3. **Empty Query Validation**:
+   - ✅ Shows warning notification: "⚠️ Warning: Please enter a search query"
+   - ✅ Prevents unnecessary API calls
+   - ✅ Console log: "⚠️ Empty search query"
+
+### ✅ Dashboard Features
+- ✅ System Health: OPERATIONAL - "FileSearchStore is accessible and healthy"
+- ✅ Statistics: 1,982 active documents, 0 pending, 0 failed
+- ✅ Synced Products: 0 (tracking via gemini_file_uri field)
+- ✅ Coverage: 0%
+- ✅ Store Details: All fields displaying correctly
+- ✅ Refresh Button: Triggers multiple API calls (detailed-stats, stores, active, search-history)
+- ✅ Loading States: Spinner displays during operations
+
+### ✅ Debug Logging (All Emoji Logs Present)
+Console output verified:
+```
+🔍 handleTestSearch called with query: show me chewing gum products
+📤 Making POST request to /api/gemini-sync/test-search
+📦 Request payload: Object { data: { query: "..." } }
+📥 Response received: Object { success: true, data: {...} }
+✅ Search successful: Object
+🏁 setSearching(false)
+```
+
+### ✅ Network Monitoring
+- All requests: 200 OK status codes
+- Response times: 4-5 seconds (normal for AI processing with semantic search)
+- No errors or failed requests
+- Request/response payloads properly formatted
+
+**Consequences**:
+
+*Positive*:
+- **Visibility**: Full transparency into FileSearchStore health and usage
+- **Testing**: Easy semantic search testing without backend scripts
+- **Debugging**: Console logs with emojis and detailed request/response tracking
+- **Monitoring**: Real-time statistics for document counts and sync coverage
+- **UX**: Strapi design system provides familiar, polished admin UI
+- **Validation**: Immediate feedback on search queries and results
+- **Documentation**: Inline references to official Google docs prevent future API misuse
+
+*Negative*:
+- **Maintenance**: Another admin page to maintain alongside core Strapi admin
+- **Bundle Size**: +674 lines of dashboard code, +@google/genai dependency
+- **API Surface**: 6 new endpoints to secure and maintain
+
+*Trade-offs*:
+- Chose Chart.js for visualization (familiar, well-documented) vs. custom SVG (lighter weight)
+- Chose public stats endpoints (easier polling) vs. admin-only (more secure)
+- Chose console logging (helpful debugging) vs. silent operation (cleaner console)
+- Chose detailed error messages (better UX) vs. generic errors (more secure)
+
+**Issues Resolved**:
+
+### 1. Google AI API 400 Error
+**Issue**: `"required one_of 'tool_type' must have one initialized field"`
+
+**Root Cause**:
+- Used `gemini-2.0-flash` (doesn't support FileSearch feature)
+- Placed `tools` at root level instead of inside `config` object
+
+**Solution**:
+- Changed to `gemini-2.5-flash` model (required for FileSearch support)
+- Moved `tools` inside `config.tools` structure
+- Added code comment with official documentation reference
+
+**Documentation Reference**: https://ai.google.dev/gemini-api/docs/file-search
+
+### 2. Frontend JavaScript Caching
+**Issue**: Browser served old JavaScript despite code changes and rebuilds
+
+**Root Cause**: Vite cache persisting across Strapi restarts
+
+**Solution**:
+- Cleared all caches:
+  - `node_modules/.vite`
+  - `node_modules/.cache`
+  - `.strapi/dist`
+  - `.strapi/client`
+- Killed all Strapi processes
+- Restarted with fresh build
+
+**Verification**: All emoji debug logs appeared after cache clear, confirming new code loaded
+
+### 3. Request Format Compatibility
+**Issue**: Frontend sends `{ data: { query } }`, direct API calls send `{ query }`
+
+**Solution**: Controller handles both formats:
+```typescript
+const { query } = ctx.request.body.data || ctx.request.body;
+```
+
+**Performance**:
+- **Dashboard load time**: <1 second
+- **Search response time**: 4-5 seconds (includes AI processing with semantic retrieval)
+- **Refresh operation**: ~2 seconds (multiple parallel API calls)
+- **Token usage per search**: ~740 tokens
+- **Grounding chunks**: 5 document chunks retrieved per search
+
+**Future Enhancements**:
+- [ ] Implement search history persistence (database table for query logs)
+- [ ] Add search result pagination for large result sets
+- [ ] Export search results to CSV/JSON
+- [ ] Advanced search filters (SKU range, supplier filter, date range)
+- [ ] Search analytics dashboard (top queries, success rate, avg response time)
+- [ ] Bulk document operations (upload, delete, reindex)
+- [ ] FileSearchStore comparison (diff between stores)
+- [ ] Scheduled search tests (health monitoring cron jobs)
+
+**Related Documentation**:
+- Official Gemini FileSearch docs: https://ai.google.dev/gemini-api/docs/file-search
+- ARCHITECTURE.md: Updated with Admin Dashboard section
+- GOTCHAS.md: Added API format and caching issues
+- STARTUP.md: Added dashboard access instructions
+
+**Related PRs**:
+- PR #23: feat: Gemini FileSearchStore Dashboard with Semantic Search
+
+---
+
+## [2025-12-05] Gemini FileSearchStore: Namespace Fix & Strapi-Based Tracking
+
+**Status**: Accepted (Completed)
+
+**Context**:
+A mystery emerged during Gemini sync operations:
+- Logs showed "✅ Synced product X to Gemini File Search"
+- But `files.list()` returned 0 files
+- `getStats()` always reported 0 files
+- `deleteDocument()` for deduplication silently failed
+- Meanwhile, the atlasv2 chat UI (deployed on Vercel) correctly found products via semantic search
+
+Investigation revealed:
+1. Files ARE uploaded to FileSearchStore (confirmed via atlasv2 semantic search)
+2. `files.list()` queries the default Files API namespace, NOT FileSearchStore
+3. FileSearchStore uses a completely different API than the standard Files API
+4. The atlasv2 chat UI uses correct API format: `fileSearchStoreNames` not `fileSearchStoreIds`
+5. FileSearchStore does NOT support individual file deletion (only entire store deletion)
+
+**Decision**:
+Implemented Strapi-based tracking instead of relying on FileSearchStore APIs for stats/deduplication:
+
+1. **Added `gemini_file_uri` field to Product schema**:
+   - Tracks sync status per product
+   - Set to operation name after successful upload
+   - Set to `null` when cleared
+
+2. **Fixed `getStats()` to use Strapi EntityService**:
+   ```typescript
+   async getStats() {
+     const syncedProducts = await strapi.entityService.count('api::product.product', {
+       filters: { gemini_file_uri: { $notNull: true } }
+     });
+     const totalProducts = await strapi.entityService.count('api::product.product', {});
+     return { syncedProducts, totalProducts, ... };
+   }
+   ```
+
+3. **Fixed `deleteDocument()` to clear tracking field**:
+   ```typescript
+   async deleteDocument(documentId: string) {
+     // Note: FileSearchStore doesn't support individual file deletion
+     await strapi.entityService.update('api::product.product', documentId, {
+       data: { gemini_file_uri: null }
+     });
+     return { success: true };
+   }
+   ```
+
+4. **Removed broken deduplication logic**:
+   - Old code tried to delete existing files before re-upload
+   - This never worked (wrong API namespace)
+   - Files accumulate in FileSearchStore but semantic search still works
+
+5. **Fixed `healthCheck()` to verify FileSearchStore access**:
+   ```typescript
+   async healthCheck() {
+     const storeId = await this.getOrCreateStore();
+     return !!storeId;
+   }
+   ```
+
+**Implementation**:
+
+Files Modified:
+- `backend/src/api/gemini-sync/services/gemini-file-search.ts`:
+  - Removed broken deduplication (lines 430-439)
+  - Added `gemini_file_uri` save after upload
+  - Rewrote `getStats()` to use Strapi counts
+  - Rewrote `deleteDocument()` to clear tracking field
+  - Fixed `healthCheck()` to verify store access
+
+Files Created:
+- `backend/scripts/verify-gemini-store.js` - Verification script for debugging
+
+**Verification**:
+- Ran semantic search query "Show me chewing gum products"
+- Successfully returned products A407-2030, A407-2031 (Commercial Sweets)
+- Confirmed files ARE in FileSearchStore
+- Build compiles without TypeScript errors
+
+**Consequences**:
+
+*Positive*:
+- **Accurate Stats**: `getStats()` now returns correct sync counts
+- **Clear Tracking**: `gemini_file_uri` shows which products are synced
+- **Working healthCheck**: Properly verifies FileSearchStore access
+- **No Breaking Changes**: Existing synced files remain searchable
+
+*Negative*:
+- **No True Deduplication**: Files accumulate in FileSearchStore
+- **Storage Growth**: Repeated syncs add duplicate files
+- **Strapi Dependency**: Stats require Strapi database access
+
+*Trade-offs*:
+- Accepted file accumulation (semantic search still works correctly)
+- Chose Strapi tracking over FileSearchStore metadata (more reliable)
+- Store ID discovery via displayName vs. hardcoded ID (more flexible)
+
+**Key Learnings**:
+
+1. **FileSearchStore is a separate namespace**: Files uploaded there are NOT visible via `files.list()`
+2. **API format matters**: Use `fileSearchStoreNames` not `fileSearchStoreIds` for queries
+3. **No individual deletion**: FileSearchStore only supports full store deletion
+4. **Verify with semantic search**: The definitive test is whether AI can find the content
+
+**Related Documentation**:
+- ARCHITECTURE.md updated with Gemini FileSearchStore Service section
+- GOTCHAS.md updated with FileSearchStore limitations
+- Verification script: `backend/scripts/verify-gemini-store.js`
+
+---
+
+## [2025-11-27] Sync Lock Service: Distributed Locking & Graceful Stop
+
+**Status**: Accepted (Completed)
+
+**Context**:
+A critical incident occurred when the Gemini sync endpoint was called multiple times (likely from UI clicks), resulting in:
+- Over 1 million duplicate jobs queued in the gemini-sync queue
+- Multiple background processes running simultaneously
+- Queue growing at ~10,000 jobs/second
+- No mechanism to stop runaway syncs
+- No protection against concurrent sync operations
+
+The system had no:
+1. Distributed lock mechanism to prevent concurrent syncs
+2. Stop signal to gracefully terminate running syncs
+3. UI feedback showing sync status
+4. Way to cancel a sync once started
+
+**Decision**:
+Implemented a comprehensive sync concurrency control system:
+
+1. **Sync Lock Service** (`src/services/sync-lock-service.ts`):
+   - Redis-based distributed locking using NX SET with TTL
+   - Separate lock namespaces for Promidata and Gemini syncs
+   - Stop signal mechanism via Redis keys
+   - Auto-expiry: 1 hour for locks, 5 minutes for stop signals
+   - Uses SCAN instead of KEYS (Upstash compatibility)
+
+2. **API Endpoints**:
+   - `GET /api/promidata-sync/active` - List active syncs (public for UI polling)
+   - `POST /api/promidata-sync/stop/:supplierId` - Request graceful stop
+   - `GET /api/gemini-sync/active` - List active Gemini syncs
+   - `POST /api/gemini-sync/stop/:supplierCode` - Request Gemini stop
+
+3. **Worker Integration**:
+   - supplier-sync-worker checks stop signal between processing steps
+   - gemini-sync controller checks stop signal between batches
+   - Locks released in completed/failed event handlers
+   - Graceful shutdown: completes current batch before stopping
+
+4. **Admin UI Changes** (`src/admin/pages/supplier-sync.tsx`):
+   - Sync button toggles to "Stop" while sync is running
+   - Polls /api/promidata-sync/active every 5 seconds
+   - Tracks syncing state for both Promidata and Gemini
+   - Shows active sync count badge
+
+**Implementation**:
+
+Files Created:
+- `backend/src/services/sync-lock-service.ts` - Centralized lock/stop service
+
+Files Modified:
+- `backend/src/api/promidata-sync/controllers/promidata-sync.ts` - Lock acquisition, stop endpoints
+- `backend/src/api/promidata-sync/routes/promidata-sync.ts` - New routes
+- `backend/src/api/gemini-sync/controllers/gemini-sync.ts` - Lock acquisition, stop signal checking
+- `backend/src/api/gemini-sync/routes/gemini-sync.ts` - New routes
+- `backend/src/services/queue/workers/supplier-sync-worker.ts` - Stop signal checking, lock release
+- `backend/src/admin/pages/supplier-sync.tsx` - Toggle Sync/Stop UI
+
+Key Code Pattern (Distributed Lock):
+```typescript
+// Acquire lock (returns null if already locked)
+const syncId = await syncLockService.acquirePromidataLock(supplierId);
+if (!syncId) {
+  return { success: false, isRunning: true, message: 'Sync already running' };
+}
+
+// Check stop signal in worker loop
+const shouldStop = await syncLockService.isPromidataStopRequested(supplierId);
+if (shouldStop) {
+  return { stopped: true, message: 'Sync stopped by user' };
+}
+
+// Release lock in event handler
+worker.on('completed', async (job) => {
+  await syncLockService.releasePromidataLock(supplierId);
+});
+```
+
+**Consequences**:
+
+*Positive*:
+- **No More Runaway Syncs**: Duplicate sync requests immediately rejected
+- **Graceful Cancellation**: Users can stop syncs mid-process
+- **Clear UI Feedback**: Button state shows sync is running
+- **Auto-Recovery**: TTL ensures orphaned locks auto-release
+- **Distributed**: Works across multiple Strapi instances
+
+*Negative*:
+- **Redis Dependency**: Sync operations now require Redis connectivity
+- **Polling Overhead**: UI polls every 5 seconds (minimal impact)
+- **Complexity**: Additional service layer for lock management
+
+*Trade-offs*:
+- Chose Redis over database for locks (faster, auto-expiry built-in)
+- Chose polling over WebSocket (simpler, sufficient for admin UI)
+- Chose SCAN over KEYS (required for Upstash compatibility)
+
+**Gotcha Discovered**:
+Upstash Redis disables the KEYS command for performance reasons. Had to use SCAN with cursor iteration instead. See GOTCHAS.md for details.
+
+**Verification**:
+- Build compiles without TypeScript errors
+- Backend starts with all 5 workers
+- Duplicate sync request blocked: `Failed to acquire Gemini lock for A109 - already running`
+- Active syncs endpoint returns correct data
+
+**Related Documentation**:
+- ARCHITECTURE.md updated with Sync Lock Service section
+- GOTCHAS.md updated with Upstash KEYS restriction
+
+---
+
+## [2025-11-16] Queue System Enhancements: Product Images, Meilisearch Sync & Status Tracking
+
+**Status**: Accepted (Completed)
+
+**Context**:
+During active Promidata sync operations, three critical issues were identified:
+1. **Missing Product images**: Products had no main_image, only variants had images
+2. **Meilisearch sync failures**: 61 jobs failing with missing documentId in job data
+3. **Stale sync dates**: Supplier last_sync_date not updating after sync completion
+
+**Decision**:
+Implemented three interconnected enhancements to the queue system:
+
+1. **Product-Level Images from First Variant**:
+   - Track first variant with `isFirstVariant` flag in product-family-worker
+   - For deduplicated images: Immediately set Product's main_image
+   - For new uploads: Add `updateParentProduct` and `parentProductId` flags to ImageUploadJobData
+   - Image-upload-worker checks flags and updates Product after variant image upload
+
+2. **Meilisearch documentId Propagation**:
+   - Added `documentId?: string` to VariantSyncResult interface
+   - Modified `create()` and `update()` to capture and return documentId from Strapi response
+   - Updated product-family-worker to pass documentId instead of undefined
+   - Added validation to warn if documentId missing before enqueue
+
+3. **Supplier Sync Status Tracking**:
+   - Added async event handlers to supplier-sync-worker
+   - On `completed`: Update supplier with `last_sync_date`, `last_sync_status: 'completed'`, and statistics message
+   - On `failed`: Update supplier with `last_sync_date`, `last_sync_status: 'failed'`, and error message
+
+4. **Admin UI Icon Visibility**:
+   - Created `DarkIcon` wrapper component with color `#32324D`
+   - Changed sidebar icon property from string to function returning styled component
+   - Used Unicode symbols (⟳, ■, ☰) for clean, visible icons
+
+**Implementation**:
+
+Files Modified:
+- `backend/src/services/queue/job-types.ts`: Added `updateParentProduct`, `parentProductId`, `index` fields to ImageUploadJobData
+- `backend/src/services/queue/workers/product-family-worker.ts`: Implemented first variant → Product image logic, fixed Meilisearch documentId
+- `backend/src/services/queue/workers/image-upload-worker.ts`: Added Product update logic when flags set
+- `backend/src/services/promidata/sync/variant-sync-service.ts`: Added documentId to VariantSyncResult and return values
+- `backend/src/services/queue/workers/supplier-sync-worker.ts`: Added completed/failed event handlers for status tracking
+- `backend/src/admin/app.tsx`: Fixed sidebar icon colors with DarkIcon component
+
+Key Code Pattern (Product Image Update):
+```typescript
+// Track first variant
+let isFirstVariant = true;
+
+// For deduplicated images
+if (dedupCheck.exists && dedupCheck.mediaId && isFirstVariant) {
+  await strapi.entityService.update('api::product.product', productId, {
+    data: { main_image: dedupCheck.mediaId }
+  });
+}
+
+// For new uploads
+const imageJobData: ImageUploadJobData = {
+  updateParentProduct: isFirstVariant,
+  parentProductId: isFirstVariant ? productId : undefined
+  // ... other fields
+};
+
+// After first variant processed
+if (isFirstVariant) isFirstVariant = false;
+```
+
+**Consequences**:
+
+*Positive*:
+- **Product Images**: Products now have main_image from first variant, improving catalog display
+- **Meilisearch Reliability**: All future sync jobs include documentId, preventing failures
+- **Status Transparency**: Suppliers show current sync status and last sync date in admin UI
+- **Icon Visibility**: Admin sidebar icons visible in dark color, improving UX
+- **Deduplication Optimized**: Existing images set immediately without job overhead
+
+*Negative*:
+- **Additional Complexity**: Product-family-worker now tracks first variant state
+- **Job Data Size**: ImageUploadJobData interface has 3 additional optional fields
+- **Tight Coupling**: Image-upload-worker now depends on product-sync-service
+
+*Trade-offs*:
+- Chose immediate Product update for deduplicated images (faster) vs. always queuing jobs (simpler)
+- Chose event handlers for status tracking (real-time) vs. polling approach (less complex)
+- Chose `is_primary_for_color` flag on variants (explicit) vs. always using first variant (implicit)
+
+**Verification**:
+- Backend compiled successfully without TypeScript errors
+- All 4 BullMQ workers initialized (supplier-sync, product-family, image-upload, meilisearch-sync)
+- Strapi started successfully on port 1337
+- Queue system operational with proper status tracking
+
+**Related Issues Fixed**:
+- TypeScript error: `updateParentProduct` property missing → Added to job-types.ts
+- TypeScript error: `index` property missing → Added to interface
+- TypeScript error: `'success'` not assignable to enum → Changed to `'completed'`
+- Meilisearch job data missing documentId → Propagated from entity service
+
+---
+
+## [2025-11-16] Product/ProductVariant Schema Consolidation & Aggregation Fields
+
+**Status**: Accepted (Completed)
+
+**Context**:
+Before schema consolidation, both Product and ProductVariant extracted the same product-level fields from Promidata, resulting in:
+- Data duplication (description, material, etc. stored 10+ times per product family)
+- Data inconsistency risk (variant fields could diverge from product fields)
+- RAG export confusion (which source of truth to use?)
+- Poor search performance (Meilisearch calculating aggregations on-the-fly for every query)
+- Inefficient database storage
+
+Additionally, Meilisearch service was calculating aggregations (available_colors, available_sizes, price_min, price_max) on-the-fly for every product query, causing ~50ms transformation overhead per product (10x slower than necessary).
+
+**Decision**:
+1. **Remove duplicate fields from ProductVariant**: Removed description, short_description, material, country_of_origin, production_time
+2. **Add aggregation fields to Product**: Added available_colors, available_sizes, hex_colors, price_min, price_max, rag_metadata
+3. **Calculate aggregations during sync**: product-transformer.ts now calculates and stores aggregation fields in database
+4. **Update Meilisearch to use stored fields**: Changed from on-the-fly calculation to direct field access
+
+**Implementation**:
+- **Product schema**: Added 6 new aggregation fields (available_colors, available_sizes, hex_colors, price_min, price_max, rag_metadata)
+- **ProductVariant schema**: Removed 5 duplicate fields
+- **product-transformer.ts**: Added 3 helper methods (extractAvailableHexColors, calculateMinPrice, calculateMaxPrice)
+- **variant-transformer.ts**: Commented out 5 extraction methods with detailed reasons
+- **meilisearch.ts**: Replaced ~40 lines of calculation logic with simple field access
+
+**Consequences**:
+- **Positive**:
+  - Single source of truth for product data (Product model)
+  - 10x Meilisearch performance improvement (~50ms → ~5ms per product)
+  - Better RAG export quality (consistent, deduplicated data)
+  - Reduced database storage (no duplicate text across 10+ variants)
+  - Clearer data model (variant-specific vs product-level data separation)
+  - Pre-calculated aggregations ready for frontend (colors, sizes, price range)
+- **Negative**:
+  - Breaking API changes (ProductVariant fields removed)
+  - Requires full sync to populate aggregation fields for existing products
+  - Frontend must use `variant.product.description` instead of `variant.description`
+- **Trade-offs**:
+  - Aggregation fields only updated during Promidata sync (not when variants manually updated)
+  - Could implement lifecycle hooks to auto-recalculate, but adds complexity
+
+**Migration Path**:
+- Database columns not dropped (data preserved, just not exposed via Strapi)
+- Comprehensive migration guide created: `backend/docs/SCHEMA_CONSOLIDATION_2025-11-16.md`
+- Rollback possible via database restore or code revert
+
+**RAG Preparation**:
+- `rag_metadata` field added with empty default `{}`
+- Will be populated separately when scaling to 100,000 products
+- Reserved for AI-generated semantic tags, use cases, target audience, sustainability scores
+
+**Related Documentation**:
+- Schema consolidation guide: `backend/docs/SCHEMA_CONSOLIDATION_2025-11-16.md`
+- Updated ARCHITECTURE.md to reflect new schema structure (2025-11-16)
+
+---
+
+## [2025-11-02] Product Hierarchy Migration Completion & TypeScript Resolution
+
+**Status**: Accepted (Completed)
+
+**Context**:
+After implementing the Product → Product Variant hierarchy (2025-10-29), the system had 17 TypeScript compilation errors in controller files that were still accessing variant-specific fields directly on the Product model. Additionally, database connection issues prevented the backend from starting (ECONNRESET errors).
+
+**Issues Encountered**:
+1. Controllers (`promidata-sync.ts`, `supplier.ts`) referenced fields that moved from Product to ProductVariant (colors, sizes, dimensions, etc.)
+2. Database connection timing out during Strapi initialization
+3. Queue system imports causing connection attempts during module load
+
+**Decision**:
+1. **Refactored Controllers**: Updated all controllers to:
+   - Populate `variants` relation when querying products
+   - Extract variant-specific data by iterating through `variants` array
+   - Provide fallback values for backward compatibility
+
+2. **Lazy Redis Connection**: Modified `queue-config.ts` to use lazy initialization via Proxy to prevent connection attempts during module load
+
+3. **Database Configuration**: Confirmed correct Neon PostgreSQL connection string and verified database was accessible
+
+**Implementation**:
+- `backend/src/api/promidata-sync/controllers/promidata-sync.ts`: Added variant population and data extraction logic
+- `backend/src/api/supplier/controllers/supplier.ts`: Refactored to show both product-level and variant-level fields
+- `backend/src/services/queue/queue-config.ts`: Implemented lazy Redis connection pattern
+
+**Consequences**:
+- **Positive**:
+  - All TypeScript compilation errors resolved (0 errors)
+  - Backend starts successfully with all systems operational
+  - Queue system fully functional with 3 workers
+  - Controllers properly handle Product/Variant hierarchy
+  - Clean separation between product and variant data
+- **Negative**:
+  - Requires more complex queries (must populate variants)
+  - Slightly increased query complexity in controllers
+- **Lessons Learned**:
+  - Always check database connectivity first when experiencing ECONNRESET errors
+  - Lazy initialization prevents premature service connections
+  - Migration requires updating all code that accessed migrated fields
+
+**Status as of 2025-11-02 20:40**: ✅ Fully operational
 
 ---
 
@@ -108,304 +852,43 @@ Implemented Thoughtful Dev plugin's documentation structure:
 
 ---
 
-## [Pre-2025-10-29] Strapi 5 as Backend Framework
+## [Pre-2025-10-29] Foundational Technology Decisions
 
 **Status**: Accepted
 
-**Context**:
-Needed headless CMS for PIM system with:
-- Product catalog management (1000+ products)
-- Admin panel for content management
-- REST API for frontend integration
-- Media storage integration (Cloudflare R2)
-- Extensibility for custom sync logic (Promidata integration)
+**Summary of Core Stack Decisions**:
 
-**Decision**:
-Chose Strapi 5.17.0 as backend framework.
+1. **Strapi 5** as Backend Framework
+   - Headless CMS with admin panel, REST API, lifecycle hooks
+   - Chosen for rapid development and flexible content modeling
+   - PostgreSQL support with JSON fields for multilingual content
 
-**Rationale**:
-- Out-of-box admin panel (no custom UI needed)
-- Content-type builder reduces boilerplate
-- Rich plugin ecosystem (R2 storage, users-permissions)
-- Lifecycle hooks for custom logic (AutoRAG sync)
-- Built-in REST API with filtering, pagination, population
-- PostgreSQL support with JSON fields (multilingual content)
-- Strong TypeScript support
+2. **React + Vite** for Frontend (Not Next.js)
+   - Simple SPA (no SSR needed), fast dev experience, static build deployment
+   - Trade-off: No SEO optimization, but not critical for internal PIM tool
 
-**Consequences**:
-- **Positive**:
-  - Rapid development (admin panel, API, permissions out-of-box)
-  - Flexible content modeling (products, categories, suppliers)
-  - Easy media management with R2 integration
-  - Lifecycle hooks enable real-time AutoRAG sync
-- **Negative**:
-  - Strapi upgrade path sometimes requires migration (4.x → 5.x was significant)
-  - Admin panel is large (~15MB)
-  - Some Strapi 5 patterns still evolving (`entityService` vs `documents()`)
-- **Alternatives Considered**:
-  - **Custom Node.js + Express**: More control but significantly more development time
-  - **Directus**: Similar CMS but less mature plugin ecosystem
-  - **KeystoneJS**: Good alternative but smaller community
+3. **CSS Modules** (Not Tailwind or styled-components)
+   - Zero runtime overhead, familiar CSS syntax, scoped styles
+   - Works out-of-box with Vite
 
----
+4. **Hash-Based Incremental Sync**
+   - 89% efficiency using SHA-1 hashes from Promidata Import.txt
+   - Skip unchanged products, process only changed ones
+   - Periodic full sync needed for consistency
 
-## [Pre-2025-10-29] React + Vite for Frontend (Not Next.js)
+5. **Multilingual Data as JSON Fields**
+   - Simpler schema (no translation tables), atomic updates
+   - Trade-off: Cannot index JSON efficiently, need generated columns for search
 
-**Status**: Accepted
+6. **Cloudflare R2** for Image Storage
+   - Zero egress fees vs. S3, S3-compatible API
+   - Cost: R2 = $0.15 vs S3 = $9.23 (for 10GB + 100GB egress)
 
-**Context**:
-Needed frontend for displaying product catalog with:
-- Product listing with filtering
-- Product detail pages
-- Image galleries
-- Multilingual support
-- Responsive design
+7. **PostgreSQL via Neon** (Serverless)
+   - Auto-scaling, built-in connection pooling, instant branches
+   - Trade-off: Vendor lock-in, cold start latency
 
-**Decision**:
-Chose React 18 + Vite 5 instead of Next.js.
-
-**Rationale**:
-- **Simple SPA requirements**: No SSR needed (public catalog)
-- **Faster dev experience**: Vite HMR is faster than Next.js
-- **Simpler deployment**: Static build (no Node.js server)
-- **Backend already exists**: Strapi handles API, no need for Next.js API routes
-- **Lower complexity**: React + Vite is simpler stack for this use case
-
-**Consequences**:
-- **Positive**:
-  - Very fast dev server startup (<1 second)
-  - Simple deployment to Vercel (static files)
-  - No server-side concerns (backend = Strapi)
-  - Lighter bundle size than Next.js
-- **Negative**:
-  - No SEO optimization (client-side rendering only)
-  - No server-side data fetching (all API calls from browser)
-  - If SEO needed later, migration to Next.js required
-- **Trade-off Accepted**: SEO not critical for internal PIM tool
-
----
-
-## [Pre-2025-10-29] CSS Modules (Not Tailwind or styled-components)
-
-**Status**: Accepted
-
-**Context**:
-Needed styling solution for frontend components.
-
-**Decision**:
-Use CSS Modules with plain CSS (no CSS-in-JS framework).
-
-**Rationale**:
-- **Zero runtime overhead**: CSS modules compile to static CSS
-- **Familiar syntax**: Plain CSS, no learning curve
-- **Scoped styles**: Prevents class name collisions
-- **No dependencies**: No additional packages needed
-- **Simple debugging**: Standard CSS in DevTools
-
-**Consequences**:
-- **Positive**:
-  - Fastest runtime performance (no JS for styling)
-  - Easy to maintain for developers familiar with CSS
-  - Smaller bundle size (no CSS-in-JS library)
-  - Works out-of-box with Vite
-- **Negative**:
-  - More verbose than utility-first (Tailwind)
-  - No design system constraints (developers write custom CSS)
-  - Responsive design requires media queries (not utility classes)
-- **Alternatives Considered**:
-  - **Tailwind CSS**: Faster prototyping but larger HTML, utility class learning curve
-  - **styled-components**: Better TypeScript integration but runtime overhead
-  - **Plain CSS**: No scoping, class name collisions
-
----
-
-## [Pre-2025-10-29] Hash-Based Incremental Sync
-
-**Status**: Accepted
-
-**Context**:
-Promidata API provides product data for 56 suppliers with 1000+ products. Full sync takes hours and hammers the API. Most products don't change between syncs.
-
-**Decision**:
-Implement hash-based incremental sync using SHA-1 hashes from Promidata's Import.txt.
-
-**Approach**:
-1. Fetch Import.txt with product URLs and SHA-1 hashes
-2. Compare hashes against stored `promidata_hash` field
-3. Skip products with matching hash (unchanged)
-4. Download and process only changed products
-5. Track efficiency metrics (skipped vs processed)
-
-**Consequences**:
-- **Positive**:
-  - 89% efficiency achieved (98/110 products skipped in test)
-  - Faster sync times (minutes vs hours)
-  - Reduced API load on Promidata
-  - Lower bandwidth usage
-  - Fewer R2 uploads
-- **Negative**:
-  - If Promidata changes product but keeps same hash, update is missed (very rare)
-  - No timestamp-based fallback
-  - Requires periodic full sync to ensure consistency
-- **Mitigation**:
-  - Run full sync periodically (monthly)
-  - SQL command to clear hashes: `UPDATE products SET promidata_hash = NULL;`
-
----
-
-## [Pre-2025-10-29] Multilingual Data as JSON Fields
-
-**Status**: Accepted
-
-**Context**:
-Products have multilingual names, descriptions, colors, materials (NL, DE, EN, FR). Need to store and query translations efficiently.
-
-**Decision**:
-Store multilingual fields as JSON in PostgreSQL (not separate translation tables).
-
-**Structure**:
-```json
-{
-  "name": {
-    "en": "Product Name",
-    "de": "Produktname",
-    "fr": "Nom du produit",
-    "es": "Nombre del producto"
-  }
-}
-```
-
-**Rationale**:
-- **Simpler schema**: No translation tables, no joins
-- **Atomic updates**: Update all translations in single query
-- **JSON support**: PostgreSQL has excellent JSON operators
-- **Strapi support**: JSON fields work natively in Strapi 5
-
-**Consequences**:
-- **Positive**:
-  - Simpler queries (no joins)
-  - Atomic updates (all languages together)
-  - Easy to add new languages
-  - Strapi content-type builder supports JSON
-- **Negative**:
-  - Cannot index JSON fields efficiently
-  - Full-text search requires extracting text
-  - Searching by name requires full table scan
-- **Mitigation**:
-  - Add generated columns for searchable languages
-  - Use PostgreSQL full-text search (`tsvector`)
-  - Limit page size to reduce result sets
-
----
-
-## [Pre-2025-10-29] Cloudflare R2 for Image Storage
-
-**Status**: Accepted
-
-**Context**:
-Need object storage for product images (1000+ products, multiple images per product).
-
-**Decision**:
-Use Cloudflare R2 instead of AWS S3 or local storage.
-
-**Rationale**:
-- **Zero egress fees**: R2 doesn't charge for data transfer (S3 does)
-- **S3-compatible API**: Easy migration path, familiar API
-- **Global CDN**: Built-in edge caching
-- **Cost-effective**: Lower cost than S3 for image-heavy PIM
-- **Strapi integration**: R2 provider available (`strapi-provider-cloudflare-r2`)
-
-**Consequences**:
-- **Positive**:
-  - Significantly lower costs than S3 (no egress fees)
-  - Fast global delivery via Cloudflare edge
-  - Simple integration with Strapi
-  - No vendor lock-in (S3-compatible API)
-- **Negative**:
-  - Less mature than S3 (newer service)
-  - Fewer features than S3 (e.g., lifecycle policies)
-  - Cloudflare ecosystem dependency
-- **Cost Comparison**:
-  - R2: ~$0.015/GB storage, $0 egress
-  - S3: ~$0.023/GB storage, ~$0.09/GB egress
-  - For 10GB images + 100GB monthly egress: R2 = $0.15, S3 = $9.23
-
----
-
-## [Pre-2025-10-29] PostgreSQL via Neon (Not Local)
-
-**Status**: Accepted
-
-**Context**:
-Need reliable PostgreSQL database for production and development.
-
-**Decision**:
-Use Neon serverless PostgreSQL instead of self-hosted or RDS.
-
-**Rationale**:
-- **Serverless scaling**: Automatically scales with load
-- **Connection pooling**: Built-in pooling via Hyperdrive
-- **Instant branches**: Easy to create dev/staging branches
-- **Automatic backups**: Point-in-time recovery
-- **Developer-friendly**: Great DX, easy setup
-
-**Consequences**:
-- **Positive**:
-  - No database management overhead
-  - Scales automatically with traffic
-  - Built-in backups and recovery
-  - Connection pooling prevents pool exhaustion
-  - Fast provisioning (seconds)
-- **Negative**:
-  - Vendor lock-in (Neon-specific)
-  - Cold start latency (~1s for inactive databases)
-  - Less control than self-hosted
-  - Cost can increase with scale
-- **Alternatives Considered**:
-  - **AWS RDS**: More control but more management overhead
-  - **Self-hosted**: Full control but high maintenance burden
-  - **Supabase**: Good alternative but less PostgreSQL-focused
-
----
-
-## [Pre-2025-10-29] Real-Time AutoRAG Sync via Lifecycle Hooks
-
-**Status**: Accepted (with caveats)
-
-**Context**:
-Need to sync products to AutoRAG vector database for AI-powered search. Options:
-1. Manual sync after product changes
-2. Batch sync on schedule
-3. Real-time sync via lifecycle hooks
-
-**Decision**:
-Implement real-time sync using Strapi lifecycle hooks (`afterCreate`, `afterUpdate`, `afterDelete`).
-
-**Consequences**:
-- **Positive**:
-  - Products immediately available in AutoRAG
-  - No manual sync needed
-  - Always in sync (no drift)
-  - Simple implementation
-- **Negative**:
-  - Product save blocked if AutoRAG fails
-  - No retry mechanism for failures
-  - External service dependency in critical path
-- **Known Issue**: See GOTCHAS.md "AutoRAG Lifecycle Hook Failures"
-- **Recommendation**: Add try-catch and queue failed syncs for retry
-
----
-
-## Future Decisions to Document
-
-As the project evolves, document decisions on:
-- Adding test framework (Vitest vs Jest)
-- Adding E2E testing (Playwright implementation)
-- Implementing caching strategy (Redis?)
-- Adding full-text search (PostgreSQL tsvector vs Elasticsearch)
-- Internationalization (i18n framework)
-- Authentication for frontend (if needed)
-- Monitoring and logging (Sentry, Datadog)
+**Details**: See STACK.md for versions and rationale. These decisions remain valid and are not frequently revisited.
 
 ---
 

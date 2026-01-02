@@ -10,6 +10,7 @@ import { ProductVariantData } from '../transformers/variant-transformer';
  */
 export interface VariantSyncResult {
   variantId: number | string;
+  documentId?: string;  // Strapi 5 document ID
   isNew: boolean;
   updated: boolean;
 }
@@ -25,7 +26,7 @@ class VariantSyncService {
     try {
       const variant = await strapi.db.query('api::product-variant.product-variant').findOne({
         where: { sku },
-        select: ['id', 'sku', 'product', 'color', 'size', 'is_primary_for_color'],
+        select: ['id', 'sku', 'color', 'size', 'is_primary_for_color'],
       });
 
       return variant;
@@ -48,6 +49,7 @@ class VariantSyncService {
 
       return {
         variantId: created.id,
+        documentId: created.documentId,
         isNew: true,
         updated: false,
       };
@@ -67,12 +69,13 @@ class VariantSyncService {
     try {
       strapi.log.info(`[VariantSync] Updating variant ${variantId}`);
 
-      await strapi.entityService.update('api::product-variant.product-variant' as any, variantId, {
+      const updated = await strapi.entityService.update('api::product-variant.product-variant' as any, variantId, {
         data: variantData as any,
       });
 
       return {
         variantId,
+        documentId: updated.documentId,
         isNew: false,
         updated: true,
       };

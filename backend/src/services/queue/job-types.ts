@@ -69,7 +69,10 @@ export interface ImageUploadJobData {
   entityType: 'product' | 'product-variant';
   entityId: number;
   fieldName: 'main_image' | 'gallery_images' | 'primary_image' | 'model_image';
+  index?: number; // Gallery image index (for ordering)
   productFamilyJobId?: string; // Optional: link back to parent job
+  updateParentProduct?: boolean; // If true, also set this image as parent Product's main_image
+  parentProductId?: number; // Parent Product ID (when updateParentProduct is true)
 }
 
 export interface ImageUploadJobResult {
@@ -78,6 +81,46 @@ export interface ImageUploadJobResult {
   url?: string;
   fileName: string;
   error?: string;
+}
+
+/**
+ * Meilisearch Sync Job
+ * Indexes/updates/deletes product or variant document in Meilisearch
+ */
+export interface MeilisearchSyncJobData {
+  operation: 'add' | 'update' | 'delete';
+  entityType: 'product' | 'product-variant';
+  entityId: number;        // Numeric Strapi ID
+  documentId: string;      // Strapi documentId (string)
+  priority?: number;       // Higher = more important (user-initiated changes)
+}
+
+export interface MeilisearchSyncJobResult {
+  success: boolean;
+  operation: 'add' | 'update' | 'delete';
+  documentId: string;
+  taskUid?: number;        // Meilisearch task UID
+  error?: string;
+}
+
+/**
+ * Gemini File Search Sync Job
+ * Syncs product to Google Gemini File Search for AI-powered RAG
+ * Reads FROM Meilisearch (not Strapi) - Meilisearch is source of truth
+ */
+export interface GeminiSyncJobData {
+  operation: 'add' | 'update' | 'delete';
+  documentId: string;      // Strapi documentId (string)
+  priority?: number;       // Higher = more important (user-initiated changes)
+  delay?: number;          // Optional delay before processing (milliseconds)
+}
+
+export interface GeminiSyncJobResult {
+  success: boolean;
+  operation: 'add' | 'update' | 'delete';
+  documentId: string;
+  error?: string;
+  skipped?: boolean;       // True if skipped because product not in Meilisearch
 }
 
 /**
@@ -102,6 +145,8 @@ export const QUEUE_NAMES = {
   SUPPLIER_SYNC: 'supplier-sync',
   PRODUCT_FAMILY: 'product-family',
   IMAGE_UPLOAD: 'image-upload',
+  MEILISEARCH_SYNC: 'meilisearch-sync',
+  GEMINI_SYNC: 'gemini-sync',
 } as const;
 
 /**
@@ -112,4 +157,6 @@ export const JOB_PREFIXES = {
   SUPPLIER_SYNC: 'sup-sync',
   PRODUCT_FAMILY: 'prod-fam',
   IMAGE_UPLOAD: 'img-up',
+  MEILISEARCH_SYNC: 'meili-sync',
+  GEMINI_SYNC: 'gemini-sync',
 } as const;

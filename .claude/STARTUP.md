@@ -1,8 +1,23 @@
 # Startup Guide
 
-*Last updated: 2025-10-29 19:40*
+*Last updated: 2025-11-09 22:30*
 
 Complete setup guide and troubleshooting for PromoAtlas PIM.
+
+## Current Status ✅
+
+**System is operational as of 2025-11-02 20:40:**
+- ✅ Backend running on http://localhost:1337
+- ✅ Frontend running on http://localhost:3001
+- ✅ Database: PostgreSQL (Neon) connected successfully
+- ✅ Queue System: BullMQ with 3 workers active
+  - supplier-sync (concurrency: 1)
+  - product-family (concurrency: 3)
+  - image-upload (concurrency: 10)
+- ✅ Redis: Upstash connected
+- ✅ Storage: Cloudflare R2 (data-vault bucket)
+- ✅ All TypeScript compilation errors resolved
+- ✅ Product → ProductVariant hierarchy fully implemented
 
 ## Prerequisites
 
@@ -407,7 +422,51 @@ vercel --prod
 
 ### Backend Issues
 
-**Issue: Database connection failed**
+**Issue: Database connection failed (ECONNRESET)**
+```
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:218:20)
+```
+**Cause**: SSL certificate validation issue with Neon PostgreSQL
+
+**Solution:**
+1. **First, verify credentials and connectivity:**
+   ```bash
+   # Test with psql
+   PGPASSWORD="your_password" psql -h your-host.neon.tech -U neondb_owner -d neondb -c "SELECT 1;"
+
+   # Test port reachability
+   timeout 5 bash -c 'cat < /dev/null > /dev/tcp/your-host.neon.tech/5432'
+   ```
+
+2. **If both work but Node.js fails → SSL certificate issue**
+
+   The problem is `rejectUnauthorized: true` in `backend/config/database.ts`.
+
+   **Fix**: Update `backend/config/database.ts` line 29:
+   ```typescript
+   postgres: {
+     connection: {
+       connectionString: env('DATABASE_URL'),
+       ssl: env.bool('DATABASE_SSL', true) ? {
+         rejectUnauthorized: false, // IMPORTANT: Required for Neon
+       } : false,
+     },
+     // ...
+   }
+   ```
+
+3. **Restart backend:**
+   ```bash
+   cd backend
+   npm run develop
+   ```
+
+**See Also**: GOTCHAS.md "Neon PostgreSQL SSL Connection Reset" for detailed explanation
+
+---
+
+**Issue: Database connection refused**
 ```
 Error: connect ECONNREFUSED 127.0.0.1:5432
 ```
@@ -637,14 +696,50 @@ npm run develop
 - Filter by "Fetch/XHR" to see API requests
 - Check response status codes and payloads
 
+### Queue Monitoring
+
+**Bull Board Dashboard** (Recommended for monitoring):
+- **Access**: Strapi Admin → Click "Queue Dashboard" in sidebar
+- **URL**: http://localhost:1337/admin/queue-dashboard
+- **Features**:
+  - Real-time queue statistics for all 3 queues
+  - Job counts (waiting, active, completed, failed)
+  - Visual queue health overview
+  - Retry failed jobs
+  - View job logs and error stack traces
+  - Clean old completed jobs
+- **Authentication**: Automatic (uses Strapi admin session cookie)
+- **Best for**: Quick overview, real-time monitoring, visual inspection
+
+**Job Manager** (Detailed job management):
+- **Access**: Strapi Admin → Click "Job Manager" in sidebar
+- **URL**: http://localhost:1337/admin/queue-management
+- **Features**:
+  - Search and filter jobs by ID, status, queue name
+  - View detailed job data and results
+  - Pause/resume individual queues
+  - Retry or delete specific jobs
+  - Export job information
+- **Best for**: Debugging specific jobs, detailed investigation
+
+**API Access** (Programmatic):
+```bash
+# Get all queue stats
+curl http://localhost:1337/api/queue-manager/stats
+
+# Get jobs for a specific queue
+curl http://localhost:1337/api/queue-manager/jobs/supplier-sync/active
+```
+
 ## Next Steps After Setup
 
 1. **Create Admin Account**: Visit http://localhost:1337/admin
 2. **Bootstrap Suppliers**: Suppliers auto-created on first run
 3. **Run First Sync**: Start Promidata sync via admin panel
-4. **Test Frontend**: Visit http://localhost:3001 to see products
-5. **Explore Admin Panel**: Familiarize yourself with content types
-6. **Check Documentation**: Read `.claude/ARCHITECTURE.md` and `.claude/PATTERNS.md`
+4. **Monitor Queues**: Click "Queue Dashboard" in sidebar to see real-time queue status
+5. **Test Frontend**: Visit http://localhost:3001 to see products
+6. **Explore Admin Panel**: Familiarize yourself with content types
+7. **Check Documentation**: Read `.claude/ARCHITECTURE.md` and `.claude/PATTERNS.md`
 
 ---
 

@@ -1,6 +1,7 @@
 /**
- * Quick Win #3: Health Check Routes
- * Public endpoints for monitoring system health
+ * Health Check Routes
+ *
+ * Public route for health monitoring
  */
 
 export default {
@@ -8,29 +9,10 @@ export default {
     {
       method: 'GET',
       path: '/health',
-      handler: 'health.check',
-      config: {
-        auth: false, // Public endpoint - no authentication required
-        policies: []
-      }
-    },
-    {
-      method: 'GET',
-      path: '/health/alive',
-      handler: 'health.alive',
+      handler: 'health.index',
       config: {
         auth: false,
-        policies: []
-      }
+      },
     },
-    {
-      method: 'GET',
-      path: '/health/ready',
-      handler: 'health.ready',
-      config: {
-        auth: false,
-        policies: []
-      }
-    }
-  ]
+  ],
 };

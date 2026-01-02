@@ -25,11 +25,19 @@ export default ({ env }) => {
     postgres: {
       connection: {
         connectionString: env('DATABASE_URL'),
-        ssl: {
+        ssl: env.bool('DATABASE_SSL', true) ? {
+          // IMPORTANT: Must be false for Neon PostgreSQL
+          // Setting to true causes ECONNRESET errors
+          // See: .claude/GOTCHAS.md "Neon PostgreSQL SSL Connection Reset"
           rejectUnauthorized: false,
-        },
+        } : false,
       },
-      pool: { min: env.int('DATABASE_POOL_MIN', 2), max: env.int('DATABASE_POOL_MAX', 10) },
+      pool: {
+        min: env.int('DATABASE_POOL_MIN', 2),
+        max: env.int('DATABASE_POOL_MAX', 10),
+        acquireTimeoutMillis: 30000,
+        idleTimeoutMillis: 30000,
+      },
       autoMigration: true,
     },
     sqlite: {

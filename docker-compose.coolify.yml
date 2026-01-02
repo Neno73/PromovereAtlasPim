@@ -1,0 +1,137 @@
+version: '3.8'
+
+# Coolify Docker Compose Configuration for PromoAtlas PIM
+# This file deploys both the Strapi backend and BullMQ workers
+#
+# Deployment:
+# 1. Set all environment variables in Coolify dashboard
+# 2. Coolify will inject them into the containers
+# 3. Both services use the same codebase with different targets
+#
+# Services:
+# - strapi: Main API server (port 1337)
+# - workers: BullMQ workers for background jobs
+
+services:
+  # ============================================
+  # Strapi Backend API
+  # ============================================
+  strapi:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.fixed
+      target: production
+
+    container_name: promoatlas-backend
+    restart: unless-stopped
+
+    # Custom domain configuration
+    # Staging: strapistaging.solslab.dev
+    # Production: strapi.solslab.dev
+    labels:
+      - "coolify.managed=true"
+      # Traefik routing configuration
+      - "traefik.enable=true"
+      # HTTP router (redirects to HTTPS)
+      - "traefik.http.routers.strapi-http.rule=Host(`strapistaging.solslab.dev`)"
+      - "traefik.http.routers.strapi-http.entrypoints=http"
+      - "traefik.http.routers.strapi-http.middlewares=redirect-to-https"
+      # HTTPS router with Let's Encrypt
+      - "traefik.http.routers.strapi-https.rule=Host(`strapistaging.solslab.dev`)"
+      - "traefik.http.routers.strapi-https.entrypoints=https"
+      - "traefik.http.routers.strapi-https.tls=true"
+      - "traefik.http.routers.strapi-https.tls.certresolver=letsencrypt"
+      # Service configuration
+      - "traefik.http.services.strapi.loadbalancer.server.port=1337"
+      # Middleware for HTTPS redirect
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+
+    # Expose Strapi on port 1337
+    # Note: Coolify handles port exposure automatically
+    expose:
+      - "1337"
+
+    # Health check for Strapi (waits 90s for full startup)
+    # Using 127.0.0.1 to avoid IPv6 issues, any HTTP response means server is up
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget --quiet --tries=1 --spider --server-response http://127.0.0.1:1337/ 2>&1 | grep -q 'HTTP/'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - promoatlas
+
+  # ============================================
+  # BullMQ Workers - INTEGRATED INTO STRAPI
+  # ============================================
+  # Workers run automatically inside the Strapi container via src/index.ts bootstrap
+  # No separate workers service needed - this prevents "strapi is not defined" errors
+  # Workers start when Strapi boots and have full access to Strapi context
+  #
+  # Worker configuration via environment variables (set in strapi service above):
+  # - BULLMQ_CONCURRENCY_FAMILIES: 3 (product family worker parallelism)
+  # - BULLMQ_CONCURRENCY_IMAGES: 10 (image upload worker parallelism)
+  # - BULLMQ_JOB_TIMEOUT_SUPPLIER: 1800000ms (30 min for supplier sync)
+  # - BULLMQ_JOB_TIMEOUT_FAMILY: 300000ms (5 min for product families)
+  # - BULLMQ_JOB_TIMEOUT_IMAGE: 120000ms (2 min for image uploads)
+  #
+  # To scale workers: Increase Coolify replicas - each Strapi instance runs its own workers
+  # BullMQ automatically distributes jobs across all worker instances
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  promoatlas:
+    external: true
+    name: coolify  # Use Coolify's network for reverse proxy routing
+
+# ============================================
+# Notes:
+# ============================================
+#
+# Deployment in Coolify:
+# 1. Application Settings:
+#    - Build Pack: Docker Compose
+#    - Docker Compose File: docker-compose.coolify.yml
+#    - Base Directory: . (root)
+#
+# 2. Environment Variables:
+#    Stored in persistent file: /data/coolify/env-files/hcww0ks0gc08s4c80oggc00s.env
+#    This file survives Coolify redeployments (not regenerated)
+#    To update: scp .env.coolify root@46.62.239.73:/data/coolify/env-files/hcww0ks0gc08s4c80oggc00s.env
+#
+# 3. Staging vs Production:
+#    Create two separate Coolify applications:
+#    - "PromoAtlas Staging" (branch: develop)
+#    - "PromoAtlas Production" (branch: main)
+#
+#    Each with different environment variables:
+#    - Staging: DATABASE_URL pointing to staging DB
+#    - Production: DATABASE_URL pointing to production DB
+#
+# 4. Monitoring:
+#    - Strapi + Worker logs: docker logs promoatlas-backend
+#    - Workers start automatically with message: "Started 3 workers: supplier-sync, product-family, image-upload"
+#    - Health check: Strapi responds on root endpoint (/)
+#
+# 5. Scaling:
+#    - Increase replicas in Coolify dashboard to scale both API and workers
+#    - Each replica runs its own worker set (BullMQ distributes jobs automatically)
+#    - Monitor queue performance: Check Redis for job counts and processing times
+#
+# 6. Troubleshooting:
+#    - Check Coolify logs if build fails
+#    - Verify all environment variables are set
+#    - Ensure Redis is accessible from containers (workers need Redis for BullMQ)
+#    - Check logs for worker startup: grep "Started 3 workers" in container logs
+#    - If workers don't start: Check REDIS_URL and BullMQ config variables

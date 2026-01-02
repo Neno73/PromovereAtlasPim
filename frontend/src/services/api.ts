@@ -1,10 +1,5 @@
 import { Product, Category, Supplier, ApiResponse } from '../types';
 
-interface BrandProduct {
-  id: number;
-  brand?: string;
-}
-
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:1337/api';
 
 class ApiService {
@@ -39,13 +34,16 @@ class ApiService {
     if (params?.sort) searchParams.append('sort', params.sort);
     
     const populate = params?.populate || [
-      'main_image', 
-      'gallery_images', 
-      'model_image', 
-      'categories', 
-      'supplier', 
-      'dimensions', 
-      'price_tiers'
+      'main_image',
+      'gallery_images',
+      'model_image',
+      'categories',
+      'supplier',
+      'dimensions',
+      'price_tiers',
+      'variants',
+      'variants.primary_image',
+      'variants.gallery_images'
     ];
     populate.forEach(field => {
       searchParams.append('populate', field);
@@ -86,7 +84,22 @@ class ApiService {
   }
 
   async getProduct(documentId: string): Promise<ApiResponse<Product>> {
-    return this.fetch<ApiResponse<Product>>(`/products/${documentId}?populate=*`);
+    const populate = [
+      'main_image',
+      'gallery_images',
+      'model_image',
+      'categories',
+      'supplier',
+      'dimensions',
+      'price_tiers',
+      'variants',
+      'variants.primary_image',
+      'variants.gallery_images'
+    ];
+    const searchParams = new URLSearchParams();
+    populate.forEach(field => searchParams.append('populate', field));
+
+    return this.fetch<ApiResponse<Product>>(`/products/${documentId}?${searchParams.toString()}`);
   }
 
   // Categories
@@ -99,23 +112,83 @@ class ApiService {
     return this.fetch<ApiResponse<Supplier[]>>('/suppliers?pagination[pageSize]=100');
   }
 
-  // Get unique brands
+  // Get unique brands from efficient backend endpoint
   async getBrands(): Promise<string[]> {
     try {
-      const response = await this.fetch<ApiResponse<BrandProduct[]>>('/products?fields[0]=brand&pagination[pageSize]=1000');
-      if (!response.data || !Array.isArray(response.data)) {
-        return [];
-      }
-      const brands = response.data
-        .map(product => product.brand)
-        .filter((brand): brand is string => brand !== undefined && brand !== null && brand.trim() !== '')
-        .filter((brand, index, array) => array.indexOf(brand) === index)
-        .sort();
-      return brands;
+      const response = await this.fetch<{ data: string[]; meta: { total: number } }>('/products/brands');
+      return response.data || [];
     } catch (error) {
       console.error('Failed to fetch brands:', error);
       return [];
     }
+  }
+
+  // Meilisearch search endpoint
+  async searchProducts(params?: {
+    query?: string;
+    page?: number;
+    pageSize?: number;
+    sort?: string[];
+    facets?: string[];
+    filters?: {
+      supplier_code?: string;
+      brand?: string;
+      category?: string;
+      price_min?: number;
+      price_max?: number;
+      is_active?: boolean;
+    };
+  }): Promise<ApiResponse<Product[]>> {
+    const searchParams = new URLSearchParams();
+
+    // Search query
+    if (params?.query) {
+      searchParams.append('q', params.query);
+    }
+
+    // Pagination (convert page to offset)
+    const pageSize = params?.pageSize || 20;
+    const page = params?.page || 1;
+    const offset = (page - 1) * pageSize;
+    searchParams.append('limit', pageSize.toString());
+    searchParams.append('offset', offset.toString());
+
+    // Facets (request facet distribution)
+    if (params?.facets && params.facets.length > 0) {
+      searchParams.append('facets', params.facets.join(','));
+    }
+
+    // Sort
+    if (params?.sort && params.sort.length > 0) {
+      searchParams.append('sort', params.sort.join(','));
+    }
+
+    // Filters
+    if (params?.filters) {
+      if (params.filters.supplier_code) {
+        searchParams.append('supplier_code', params.filters.supplier_code);
+      }
+      if (params.filters.brand) {
+        searchParams.append('brand', params.filters.brand);
+      }
+      if (params.filters.category) {
+        searchParams.append('category', params.filters.category);
+      }
+      if (params.filters.price_min !== undefined) {
+        searchParams.append('price_min', params.filters.price_min.toString());
+      }
+      if (params.filters.price_max !== undefined) {
+        searchParams.append('price_max', params.filters.price_max.toString());
+      }
+      if (params.filters.is_active !== undefined) {
+        searchParams.append('is_active', params.filters.is_active.toString());
+      }
+    }
+
+    const queryString = searchParams.toString();
+    const endpoint = `/products/search${queryString ? `?${queryString}` : ''}`;
+
+    return this.fetch<ApiResponse<Product[]>>(endpoint);
   }
 }
 

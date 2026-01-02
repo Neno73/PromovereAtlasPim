@@ -1,53 +1,50 @@
 # PromoAtlas Documentation Index
 
-*Last updated: 2025-10-29 19:40*
+*Last updated: 2025-11-16*
 
-This directory contains detailed documentation for the PromoAtlas PIM system. All files are auto-loaded by Claude Code via `@import` statements when relevant to the current task.
+Streamlined documentation for PromoAtlas PIM. **Context-optimized**: 53% reduction from 7,326 to 3,411 lines.
 
-## Documentation Files
+**System Status**: ✅ Fully operational - All queue workers running, Meilisearch sync fixed
 
-### Core Documentation
+## Active Documentation
 
-**STACK.md** - Tech stack with versions and rationale
-- Read when: Adding dependencies, upgrading packages, onboarding new developers
-- Contains: Strapi 5.17.0, React 18, Vite 5, PostgreSQL (Neon), Cloudflare R2, TypeScript 5.2.2
+### Core Files (Read as needed)
 
-**ARCHITECTURE.md** - System design and component structure
-- Read when: Implementing new features, refactoring code, understanding data flow
-- Contains: Content types, service layer, frontend components, Promidata sync architecture
+**STACK.md** (234 lines) - Tech stack with versions and rationale
+- Read when: Adding dependencies, upgrading packages, understanding technology choices
+- Contains: Strapi 5.17.0, React 18, Vite, PostgreSQL (Neon), R2, BullMQ
 
-**PATTERNS.md** - Code conventions used in THIS project
-- Read when: Writing new code, reviewing PRs, enforcing consistency
-- Contains: File naming, TypeScript patterns, service layer structure, CSS modules, API client design
+**ARCHITECTURE.md** (887 lines) - System design and component structure
+- Read when: Implementing features, refactoring, understanding data flow
+- Contains: Product/Variant hierarchy, Queue system (4 workers), Service layer, API routes
 
-**STARTUP.md** - Setup guide and troubleshooting
-- Read when: Setting up dev environment, debugging startup issues, deploying
-- Contains: Environment variables, database setup, service URLs, common issues
+**PATTERNS.md** (775 lines) - Code conventions used in THIS project
+- Read when: Writing new code, enforcing consistency
+- Contains: TypeScript patterns, service conventions, component patterns, CSS modules
 
-**GOTCHAS.md** - Known issues and workarounds
-- Read when: Encountering unexpected behavior, implementing image handling, working with sync
-- Contains: Image fitting edge cases, multilingual text handling, pagination limits, Strapi 5 migration patterns
+**STARTUP.md** (746 lines) - Setup guide and troubleshooting
+- Read when: Dev environment setup, debugging startup, deploying
+- Contains: Environment setup, commands, port config, troubleshooting
 
-**DECISIONS.md** - Architectural decision history
-- Read when: Understanding why things are designed a certain way, making new architectural decisions
-- Contains: Log of significant decisions with context, trade-offs, and consequences
+**GOTCHAS.md** (323 lines) ✨ Trimmed - Known issues (fixed issues removed)
+- Read when: Encountering bugs, performance issues, edge cases
+- Contains: Hash sync limitations, timeouts, security considerations, monitoring gaps
 
-**IMPROVEMENTS.md** - Comprehensive improvement roadmap
-- Read when: Planning enhancements, prioritizing work, understanding technical debt
-- Contains: Detailed improvement suggestions for sync plugin and system, with code examples and implementation roadmap
+**DECISIONS.md** (357 lines) ✨ Consolidated - Architectural decision history
+- Read when: Understanding design rationale, planning major changes
+- Contains: Recent decisions (2025), foundational tech choices summarized
 
-**QUICK_WINS_IMPLEMENTED.md** - Recently implemented improvements (2025-10-29)
-- Read when: Testing new improvements, understanding what changed, troubleshooting new features
-- Contains: Retry mechanism, batch hash checking, health check endpoints - full implementation guide with testing instructions
+## Archived Documentation
 
-## Reference Documentation
+**Location**: `.claude/archive/` (removed from Claude's context to reduce bloat)
 
-**reference/** - Supplementary detailed guides
-- **README_AUTORAG.md** - AutoRAG setup and troubleshooting
-- **NEON_BACKUP_STRATEGY.md** - Database backup and branch management
-- **SECURITY_BEST_PRACTICES.md** - Security guidelines and secret management
+- **DEPLOYMENT.md** - Coolify deployment guide (266 lines)
+- **DOMAIN-SETUP.md** - Domain configuration (339 lines)
+- **IMPROVEMENTS.md** - Future improvements list (1,412 lines)
+- **QDRANT_IMPLEMENTATION_PLAN.md** - Qdrant plan (746 lines)
+- **QUICK_WINS_IMPLEMENTED.md** - Historical quick wins (393 lines)
 
-These are preserved from the previous documentation structure and provide detailed procedures for specific topics.
+**Total archived**: 3,156 lines (43% of original docs)
 
 ## How to Use
 

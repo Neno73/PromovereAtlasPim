@@ -413,10 +413,79 @@ export interface ApiCategoryCategory extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface ApiProductVariantProductVariant
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'product_variants';
+  info: {
+    description: 'Size and color variations of products';
+    displayName: 'Product Variant';
+    pluralName: 'product-variants';
+    singularName: 'product-variant';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    color: Schema.Attribute.String;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    dimensions_depth: Schema.Attribute.Decimal;
+    dimensions_diameter: Schema.Attribute.Decimal;
+    dimensions_height: Schema.Attribute.Decimal;
+    dimensions_length: Schema.Attribute.Decimal;
+    dimensions_width: Schema.Attribute.Decimal;
+    embroidery_sizes: Schema.Attribute.JSON;
+    fragile: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    gallery_images: Schema.Attribute.Media<'images', true>;
+    hex_color: Schema.Attribute.String;
+    imprint_required: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    information_files: Schema.Attribute.Media<
+      'images' | 'files' | 'videos' | 'audios',
+      true
+    >;
+    is_active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    is_primary_for_color: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    is_service_base: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::product-variant.product-variant'
+    > &
+      Schema.Attribute.Private;
+    meta_description: Schema.Attribute.Text;
+    meta_keywords: Schema.Attribute.Text;
+    meta_name: Schema.Attribute.String;
+    name: Schema.Attribute.String;
+    primary_image: Schema.Attribute.Media<'images'>;
+    product: Schema.Attribute.Relation<'manyToOne', 'api::product.product'>;
+    publishedAt: Schema.Attribute.DateTime;
+    size: Schema.Attribute.String;
+    sizes: Schema.Attribute.JSON;
+    sku: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique;
+    supplier_color_code: Schema.Attribute.String;
+    supplier_main_category: Schema.Attribute.String;
+    supplier_search_color: Schema.Attribute.String;
+    tron_logo_enabled: Schema.Attribute.Boolean &
+      Schema.Attribute.DefaultTo<false>;
+    tron_logo_reference: Schema.Attribute.String;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    usb_item: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    weight: Schema.Attribute.Decimal;
+  };
+}
+
 export interface ApiProductProduct extends Struct.CollectionTypeSchema {
   collectionName: 'products';
   info: {
-    description: 'Products from Promidata suppliers';
+    description: 'Main product/family with variants';
     displayName: 'Product';
     pluralName: 'products';
     singularName: 'product';
@@ -425,29 +494,16 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     draftAndPublish: false;
   };
   attributes: {
-    additional_categories: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 500;
-      }>;
-    article_number: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 100;
-      }>;
+    a_number: Schema.Attribute.String & Schema.Attribute.Required;
+    available_colors: Schema.Attribute.JSON;
     available_sizes: Schema.Attribute.JSON;
-    battery_information: Schema.Attribute.JSON;
-    brand: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 100;
-      }>;
+    battery_information: Schema.Attribute.String;
+    brand: Schema.Attribute.String;
     categories: Schema.Attribute.Relation<
       'manyToMany',
       'api::category.category'
     >;
-    color_code: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 20;
-      }>;
-    color_name: Schema.Attribute.JSON;
+    category: Schema.Attribute.String;
     country_of_origin: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 100;
@@ -460,37 +516,18 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 20;
       }>;
+    default_products: Schema.Attribute.String;
     delivery_time: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 50;
       }>;
-    delivery_time_days: Schema.Attribute.Integer &
-      Schema.Attribute.SetMinMax<
-        {
-          min: 0;
-        },
-        number
-      >;
     description: Schema.Attribute.JSON;
-    dimension: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 200;
-      }>;
     dimensions: Schema.Attribute.Component<'product.dimensions', false>;
-    ean: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 20;
-      }>;
-    filter_codes: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 500;
-      }>;
     gallery_images: Schema.Attribute.Media<'images', true>;
-    hex_color: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 7;
-      }>;
-    imprint_positions: Schema.Attribute.Component<
+    gemini_file_uri: Schema.Attribute.String & Schema.Attribute.Private;
+    gemini_synced_hash: Schema.Attribute.String & Schema.Attribute.Private;
+    hex_colors: Schema.Attribute.JSON;
+    imprint_position: Schema.Attribute.Component<
       'product.imprint-position',
       true
     >;
@@ -502,77 +539,48 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
       'api::product.product'
     > &
       Schema.Attribute.Private;
-    main_category: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 100;
-      }>;
     main_image: Schema.Attribute.Media<'images'>;
     material: Schema.Attribute.JSON;
     maxcolors: Schema.Attribute.Integer;
-    meta_keyword: Schema.Attribute.Text;
-    model: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 100;
-      }>;
     model_image: Schema.Attribute.Media<'images'>;
     model_name: Schema.Attribute.JSON;
     must_have_imprint: Schema.Attribute.Boolean &
       Schema.Attribute.DefaultTo<false>;
     name: Schema.Attribute.JSON & Schema.Attribute.Required;
-    pms_color: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 20;
-      }>;
+    price_max: Schema.Attribute.Decimal;
+    price_min: Schema.Attribute.Decimal;
     price_tiers: Schema.Attribute.Component<'product.price-tier', true>;
     print_option_group: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 100;
       }>;
     product_filters: Schema.Attribute.JSON;
-    promidata_hash: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 64;
-      }>;
+    promidata_hash: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
+    rag_metadata: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<{}>;
     refining: Schema.Attribute.JSON;
     refining_dimensions: Schema.Attribute.JSON;
     refining_location: Schema.Attribute.JSON;
-    required_certificates: Schema.Attribute.Text;
-    search_color: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 50;
-      }>;
+    required_certificates: Schema.Attribute.String;
     short_description: Schema.Attribute.JSON;
-    size: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 50;
-      }>;
-    size_skus: Schema.Attribute.JSON;
     sku: Schema.Attribute.String &
       Schema.Attribute.Required &
-      Schema.Attribute.Unique &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 100;
-        minLength: 1;
-      }>;
-    sku_supplier: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 100;
-      }>;
+      Schema.Attribute.Unique;
     supplier: Schema.Attribute.Relation<'manyToOne', 'api::supplier.supplier'>;
-    supplier_color_code: Schema.Attribute.String &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 50;
-      }>;
+    supplier_name: Schema.Attribute.String;
+    supplier_sku: Schema.Attribute.String;
     tax: Schema.Attribute.Enumeration<['H', 'L']> &
       Schema.Attribute.DefaultTo<'H'>;
+    total_variants_count: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<0>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
-    variant_type: Schema.Attribute.Enumeration<['single', 'multi_size']> &
-      Schema.Attribute.DefaultTo<'single'>;
+    variants: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::product-variant.product-variant'
+    >;
     web_shop_info: Schema.Attribute.JSON;
-    weight: Schema.Attribute.Decimal;
   };
 }
 
@@ -612,61 +620,28 @@ export interface ApiPromidataSyncPromidataSync extends Struct.SingleTypeSchema {
   };
 }
 
-export interface ApiSupplierAutoragConfigSupplierAutoragConfig
-  extends Struct.CollectionTypeSchema {
-  collectionName: 'supplier_autorag_configs';
+export interface ApiQueueManagerQueueManager extends Struct.SingleTypeSchema {
+  collectionName: 'queue_manager';
   info: {
-    description: 'Configuration for CloudFlare AutoRAG instances per supplier';
-    displayName: 'Supplier AutoRAG Configuration';
-    pluralName: 'supplier-autorag-configs';
-    singularName: 'supplier-autorag-config';
+    description: 'Queue management and monitoring service';
+    displayName: 'Queue Manager';
+    pluralName: 'queue-managers';
+    singularName: 'queue-manager';
   };
   options: {
     draftAndPublish: false;
   };
   attributes: {
-    api_endpoint: Schema.Attribute.String & Schema.Attribute.Required;
-    autorag_id: Schema.Attribute.String &
-      Schema.Attribute.Required &
-      Schema.Attribute.Unique &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 100;
-        minLength: 1;
-      }>;
-    cloudflare_account_id: Schema.Attribute.String &
-      Schema.Attribute.Required &
-      Schema.Attribute.SetMinMaxLength<{
-        maxLength: 32;
-        minLength: 32;
-      }>;
-    company_context: Schema.Attribute.Text;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
-    last_sync_date: Schema.Attribute.DateTime;
-    last_sync_message: Schema.Attribute.Text;
-    last_sync_status: Schema.Attribute.Enumeration<
-      ['never', 'running', 'completed', 'failed']
-    > &
-      Schema.Attribute.DefaultTo<'never'>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
       'oneToMany',
-      'api::supplier-autorag-config.supplier-autorag-config'
+      'api::queue-manager.queue-manager'
     > &
       Schema.Attribute.Private;
-    products_in_autorag: Schema.Attribute.Integer &
-      Schema.Attribute.DefaultTo<0>;
     publishedAt: Schema.Attribute.DateTime;
-    status: Schema.Attribute.Enumeration<
-      ['active', 'inactive', 'error', 'initializing']
-    > &
-      Schema.Attribute.DefaultTo<'inactive'>;
-    supplier: Schema.Attribute.Relation<'oneToOne', 'api::supplier.supplier'>;
-    sync_frequency: Schema.Attribute.Enumeration<
-      ['real-time', 'daily', 'manual']
-    > &
-      Schema.Attribute.DefaultTo<'real-time'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -686,10 +661,6 @@ export interface ApiSupplierSupplier extends Struct.CollectionTypeSchema {
   };
   attributes: {
     auto_import: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
-    autorag_config: Schema.Attribute.Relation<
-      'oneToOne',
-      'api::supplier-autorag-config.supplier-autorag-config'
-    >;
     code: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.Unique &
@@ -1286,9 +1257,10 @@ declare module '@strapi/strapi' {
       'admin::transfer-token-permission': AdminTransferTokenPermission;
       'admin::user': AdminUser;
       'api::category.category': ApiCategoryCategory;
+      'api::product-variant.product-variant': ApiProductVariantProductVariant;
       'api::product.product': ApiProductProduct;
       'api::promidata-sync.promidata-sync': ApiPromidataSyncPromidataSync;
-      'api::supplier-autorag-config.supplier-autorag-config': ApiSupplierAutoragConfigSupplierAutoragConfig;
+      'api::queue-manager.queue-manager': ApiQueueManagerQueueManager;
       'api::supplier.supplier': ApiSupplierSupplier;
       'api::sync-configuration.sync-configuration': ApiSyncConfigurationSyncConfiguration;
       'plugin::content-releases.release': PluginContentReleasesRelease;

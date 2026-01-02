@@ -1,8 +1,10 @@
 # Architecture
 
-*Last updated: 2025-10-29 19:40*
+*Last updated: 2025-12-05 15:00*
 
 System design and component structure for PromoAtlas PIM.
+
+**Note**: Product → ProductVariant hierarchy fully implemented and operational as of 2025-11-02.
 
 ## System Overview
 
@@ -96,6 +98,12 @@ backend/
     "brand": { "type": "string" },
     "category": { "type": "string" },
     "total_variants_count": { "type": "integer", "default": 0 },
+    "available_colors": { "type": "json" },      // Unique color names from all variants
+    "available_sizes": { "type": "json" },       // Unique sizes from all variants
+    "hex_colors": { "type": "json" },            // Unique hex color codes
+    "price_min": { "type": "decimal" },          // Lowest price across all tiers
+    "price_max": { "type": "decimal" },          // Highest price across all tiers
+    "rag_metadata": { "type": "json", "default": {} },  // AI/RAG context metadata
     "name": { "type": "json" },          // { en: "", de: "", fr: "", es: "" }
     "description": { "type": "json" },   // Multilingual JSON
     "model_name": { "type": "json" },
@@ -145,7 +153,9 @@ backend/
 }
 ```
 
-**Purpose**: Represents main product family (e.g., "Classic T-Shirt"). Stores shared information like pricing, main images, and descriptions.
+**Purpose**: Represents main product family (e.g., "Classic T-Shirt"). Stores shared information like pricing, main images, descriptions, and aggregated variant data.
+
+**Schema Consolidation (2025-11-16)**: Added aggregation fields (available_colors, available_sizes, hex_colors, price_min, price_max, rag_metadata) calculated during sync for better performance and RAG preparation. Product is the single source of truth for product-level data (description, material, country_of_origin).
 
 #### Product Variant (Size/Color Variations)
 
@@ -158,13 +168,11 @@ backend/
   "attributes": {
     "sku": { "type": "string", "required": true, "unique": true },
     "name": { "type": "string" },
-    "description": { "type": "richtext" },
     "color": { "type": "string" },
     "size": { "type": "string" },
     "sizes": { "type": "json" },                // Available sizes array
     "hex_color": { "type": "string" },
     "supplier_color_code": { "type": "string" },
-    "material": { "type": "string" },
     "dimensions_length": { "type": "decimal" },  // Flattened for performance
     "dimensions_width": { "type": "decimal" },
     "dimensions_height": { "type": "decimal" },
@@ -185,6 +193,8 @@ backend/
 ```
 
 **Purpose**: Specific size/color combination (e.g., "Classic T-Shirt - Black - Large"). Stores variant-specific data like dimensions, color codes, and variant images.
+
+**Schema Consolidation (2025-11-16)**: Removed duplicate fields (description, short_description, material, country_of_origin, production_time). Use Product fields instead for product-level data.
 
 **Key Pattern**: `is_primary_for_color` flag marks one variant per color for product listings.
 
@@ -320,11 +330,95 @@ const promidataConfig = {
 };
 ```
 
-#### AutoRAG Service
+#### Gemini FileSearchStore Service (RAG)
+
+**Location**: `backend/src/api/gemini-sync/services/gemini-file-search.ts`
+
+**Purpose**: Sync products to Google Gemini FileSearchStore for AI-powered semantic search and chat-based product discovery.
+
+**Architecture Overview**:
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
+│  Strapi Product │────▶│ gemini-file-     │────▶│ Gemini FileSearch   │
+│  (Source Truth) │     │ search.ts        │     │ Store (Embeddings)  │
+└─────────────────┘     └──────────────────┘     └─────────────────────┘
+        │                       │                         │
+        │                       │                         ▼
+        │                       │                 ┌─────────────────────┐
+        └───────────────────────┴────────────────▶│   atlasv2 Chat UI   │
+                gemini_file_uri tracking          │ (Semantic Search)   │
+                                                  └─────────────────────┘
+```
+
+**Key Concepts**:
+
+1. **FileSearchStore vs Files API**: Two separate namespaces in Gemini
+   - `ai.files.list()` → Default Files API (NOT where we upload)
+   - `ai.fileSearchStores.*` → FileSearchStore API (WHERE files live)
+   - Files uploaded to FileSearchStore are NOT visible via `files.list()`
+
+2. **Store Discovery**: Service finds store by `displayName = 'PromoAtlas Product Catalog'`
+   - Store ID: `fileSearchStores/promoatlas-product-catalog-xfex8hxfyifx`
+   - Created once, reused for all uploads
+
+3. **Correct API Format** (CRITICAL):
+   ```typescript
+   // ✅ CORRECT - Used in atlasv2 chat UI
+   config: {
+     tools: [{
+       fileSearch: {
+         fileSearchStoreNames: [storeId]  // Note: Names, not Ids
+       }
+     }]
+   }
+
+   // ❌ WRONG - Will not find files
+   tools: [{
+     fileSearch: {
+       fileSearchStoreIds: [storeId]
+     }
+   }]
+   ```
+
+**Key Methods**:
+
+```typescript
+class GeminiFileSearchService {
+  // Upload product to FileSearchStore
+  async syncDocument(product: Product): Promise<SyncResult>
+
+  // Get sync statistics (counts synced products in Strapi)
+  async getStats(): Promise<{ syncedProducts, totalProducts, ... }>
+
+  // Clear sync status (FileSearchStore doesn't support individual deletion)
+  async deleteDocument(documentId: string): Promise<{ success: boolean }>
+
+  // Verify FileSearchStore access
+  async healthCheck(): Promise<boolean>
+
+  // Get or create store by displayName
+  private async getOrCreateStore(): Promise<string>
+}
+```
+
+**Sync Status Tracking**:
+- `gemini_file_uri` field on Product tracks sync status
+- Set to operation name after successful upload
+- Set to `null` when cleared via `deleteDocument()`
+- `getStats()` counts products where `gemini_file_uri IS NOT NULL`
+
+**Important Limitation**: FileSearchStore does NOT support individual file deletion. Only the entire store can be deleted. Files accumulate but semantic search still returns relevant results.
+
+**Integration Points**:
+- Called from Promidata sync after product update
+- Manual sync via `/api/gemini-sync/*` endpoints
+- Chat UI queries via atlasv2 Vercel app
+
+#### AutoRAG Service (Legacy)
 
 **Location**: `backend/src/services/autorag.ts`
 
-**Purpose**: Real-time sync of products to AutoRAG vector database for AI-powered search
+**Purpose**: Legacy real-time sync of products to AutoRAG vector database
 
 **Key Methods**:
 - `syncProduct(product)` - Send product to AutoRAG
@@ -332,6 +426,142 @@ const promidataConfig = {
 - `transformProductForAutoRAG(product)` - Convert Strapi product to AutoRAG format
 
 **Integration**: Called from product lifecycle hooks
+
+**Note**: Being superseded by Gemini FileSearchStore for semantic search
+
+#### Queue Service (BullMQ)
+
+**Location**: `backend/src/services/queue/`
+
+**Purpose**: Background job processing for long-running sync operations, preventing request timeouts and enabling parallel processing
+
+**Architecture**:
+```
+queue/
+├── queue-config.ts       # Redis connection and queue configuration (lazy init)
+├── queue-service.ts      # Queue management service (add jobs, monitor status)
+├── worker-manager.ts     # Worker lifecycle management
+├── job-types.ts          # TypeScript job type definitions
+└── workers/
+    ├── supplier-sync-worker.ts      # Processes supplier sync jobs
+    ├── product-family-worker.ts     # Creates product families
+    └── image-upload-worker.ts       # Uploads images to R2
+```
+
+**Queue Configuration** (`queue-config.ts`):
+- **Lazy Redis Connection**: Uses Proxy pattern to prevent connection attempts during module load
+- **Upstash Redis**: Serverless Redis provider (no persistent connection needed)
+- **Connection String**: `rediss://` (SSL enabled)
+- **Default Job Options**: Retry 3 times, keep completed jobs for 24h, failed for 7 days
+
+**Queue Service** (`queue-service.ts`):
+```typescript
+// Add job to queue
+await queueService.addSupplierSyncJob({ supplierId, options });
+await queueService.addProductFamilyJob({ aNumber, products });
+await queueService.addImageUploadJob({ productId, imageUrl });
+
+// Monitor queue status
+const stats = await queueService.getQueueStats();
+// Returns: { waiting, active, completed, failed, delayed }
+```
+
+**Workers** (3 active):
+
+1. **Supplier Sync Worker** (`supplier-sync-worker.ts`)
+   - **Concurrency**: 1 (sequential processing)
+   - **Timeout**: 30 minutes per job
+   - **Purpose**: Full supplier sync (thousands of products)
+   - **Error Handling**: Retries on failure, logs errors
+
+2. **Product Family Worker** (`product-family-worker.ts`)
+   - **Concurrency**: 3 (parallel processing)
+   - **Timeout**: 5 minutes per job
+   - **Purpose**: Group products by a_number, create Product + Variants
+   - **Error Handling**: Individual product failures don't stop batch
+
+3. **Image Upload Worker** (`image-upload-worker.ts`)
+   - **Concurrency**: 10 (high parallelism)
+   - **Timeout**: 2 minutes per job
+   - **Purpose**: Download from Promidata, upload to Cloudflare R2
+   - **Error Handling**: Retry failed uploads, skip invalid URLs
+
+**Integration Points**:
+- **Promidata Sync Service**: Enqueues supplier sync jobs
+- **Product Service**: Enqueues family and image jobs
+- **Bootstrap** (`src/index.ts`): Initializes workers on startup
+
+#### Sync Lock Service (Concurrency Control)
+
+**Location**: `backend/src/services/sync-lock-service.ts`
+
+**Purpose**: Prevents duplicate sync operations and provides graceful stop mechanism using Redis-based distributed locking.
+
+**Key Features**:
+- **Distributed Locking**: Redis NX SET with TTL prevents concurrent syncs
+- **Stop Signal**: Workers check for stop signals between batches
+- **Auto-Cleanup**: 1 hour TTL auto-releases orphaned locks, 5 minute TTL for stop signals
+
+**Architecture**:
+```typescript
+// Lock key patterns
+PROMIDATA_LOCK_PREFIX = 'sync:promidata:lock:'     // e.g., sync:promidata:lock:abc123
+GEMINI_LOCK_PREFIX = 'sync:gemini:lock:'           // e.g., sync:gemini:lock:A109
+PROMIDATA_STOP_PREFIX = 'sync:promidata:stop:'     // Stop signal keys
+GEMINI_STOP_PREFIX = 'sync:gemini:stop:'
+```
+
+**Key Methods**:
+```typescript
+// Promidata sync
+acquirePromidataLock(supplierId): Promise<string | null>  // Returns syncId or null if locked
+releasePromidataLock(supplierId): Promise<void>
+requestPromidataStop(supplierId): Promise<boolean>
+isPromidataStopRequested(supplierId): Promise<boolean>
+
+// Gemini sync
+acquireGeminiLock(supplierCode): Promise<string | null>
+releaseGeminiLock(supplierCode): Promise<void>
+requestGeminiStop(supplierCode): Promise<boolean>
+isGeminiStopRequested(supplierCode): Promise<boolean>
+
+// Utilities
+getAllActiveSyncs(): Promise<{ promidata: [], gemini: [] }>
+forceReleaseAllLocks(): Promise<void>  // Emergency reset
+```
+
+**API Endpoints** (Added 2025-11-27):
+- `GET /api/promidata-sync/active` - List active Promidata syncs
+- `POST /api/promidata-sync/stop/:supplierId` - Request stop for supplier sync
+- `GET /api/promidata-sync/status/:supplierId` - Get sync status for supplier
+- `GET /api/gemini-sync/active` - List active Gemini syncs
+- `POST /api/gemini-sync/stop/:supplierCode` - Request stop for Gemini sync
+- `GET /api/gemini-sync/status/:supplierCode` - Get Gemini sync status
+
+**Worker Integration**:
+- Workers check `isPromidataStopRequested()` or `isGeminiStopRequested()` between processing batches
+- On stop signal: Complete current batch, then exit gracefully
+- Lock released in `completed` and `failed` event handlers
+
+**Admin UI** (`src/admin/pages/supplier-sync.tsx`):
+- Sync button toggles to "Stop" while sync is running
+- Polls `/api/promidata-sync/active` every 5 seconds
+- Shows active sync count badge
+
+**Monitoring**:
+- **Bull Board Dashboard**: Professional queue monitoring UI at `/admin/queues`
+  - Real-time queue statistics and job counts
+  - Job details, logs, and error stack traces
+  - Retry failed jobs, clean old jobs
+  - Industry-standard tool with rich features
+  - Authentication: Cookie-based (Strapi admin JWT)
+- **Custom Job Manager**: Detailed job management at `/admin/queue-management`
+  - Search and filter jobs by ID, status, queue
+  - View job data and results
+  - Pause/resume queues
+  - Advanced job operations
+- **API Access**: `await workerManager.getWorkerStats()`
+- **Job Progress**: `job.updateProgress(percentage)`
 
 ### API Routes & Controllers
 

@@ -38,3 +38,4 @@ build/
 
 # Archived documentation
 .archive/
+.env.coolify

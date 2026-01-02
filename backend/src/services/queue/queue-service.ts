@@ -1,315 +1,570 @@
 /**
  * Queue Service
- * Manages BullMQ queues for the Promidata sync system
+ * Central service for managing all BullMQ queues
+ *
+ * Responsibilities:
+ * 1. Create and manage Queue instances
+ * 2. Provide methods to enqueue jobs
+ * 3. Expose queue statistics and monitoring
+ * 4. Handle queue cleanup and lifecycle
  */
 
 import { Queue, Job, JobsOptions } from 'bullmq';
-import {
-  QUEUE_NAMES,
-  JOB_PREFIXES,
-  SupplierSyncJobData,
-  SupplierSyncJobResult,
-  ProductFamilyJobData,
-  ProductFamilyJobResult,
-  ImageUploadJobData,
-  ImageUploadJobResult,
-} from './job-types';
 import {
   defaultQueueOptions,
   supplierSyncJobOptions,
   productFamilyJobOptions,
   imageUploadJobOptions,
-  generateJobId,
+  meilisearchSyncJobOptions,
+  geminiSyncJobOptions,
+  generateJobId
 } from './queue-config';
+
+import type { SupplierSyncJobData } from './workers/supplier-sync-worker';
+import type { ProductFamilyJobData } from './workers/product-family-worker';
+import type { ImageUploadJobData } from './workers/image-upload-worker';
+import type { MeilisearchSyncJobData, GeminiSyncJobData } from './job-types';
 
 /**
  * Queue Service Class
- * Singleton service for managing all BullMQ queues
  */
 class QueueService {
-  private static instance: QueueService;
-
-  // Queue instances
-  public supplierSyncQueue!: Queue<SupplierSyncJobData, SupplierSyncJobResult>;
-  public productFamilyQueue!: Queue<ProductFamilyJobData, ProductFamilyJobResult>;
-  public imageUploadQueue!: Queue<ImageUploadJobData, ImageUploadJobResult>;
-
-  private initialized = false;
+  private supplierSyncQueue: Queue<SupplierSyncJobData> | null = null;
+  private productFamilyQueue: Queue<ProductFamilyJobData> | null = null;
+  private imageUploadQueue: Queue<ImageUploadJobData> | null = null;
+  private meilisearchSyncQueue: Queue<MeilisearchSyncJobData> | null = null;
+  private geminiSyncQueue: Queue<GeminiSyncJobData> | null = null;
+  private initialized: boolean = false;
 
   /**
-   * Private constructor (singleton pattern)
+   * Check if queue service is initialized
    */
-  private constructor() {}
+  public get isInitialized(): boolean {
+    return this.initialized;
+  }
 
   /**
-   * Get singleton instance
+   * Get queue instances for Bull Board monitoring
+   * @returns Array of Queue instances for Bull Board
    */
-  public static getInstance(): QueueService {
-    if (!QueueService.instance) {
-      QueueService.instance = new QueueService();
+  public getQueuesForBullBoard(): Queue[] {
+    this.ensureInitialized();
+
+    const queues = [
+      this.supplierSyncQueue,
+      this.productFamilyQueue,
+      this.imageUploadQueue,
+      this.meilisearchSyncQueue,
+      this.geminiSyncQueue
+    ];
+
+    return queues.filter(q => q !== null) as Queue[];
+  }
+
+  /**
+   * Ensure queue service is initialized
+   * @throws Error if not initialized
+   */
+  private ensureInitialized(): void {
+    if (!this.initialized) {
+      throw new Error(
+        'Queue service not initialized. Please ensure workers are started during bootstrap. ' +
+        'Check Redis connection and initialization logs.'
+      );
     }
-    return QueueService.instance;
   }
 
   /**
    * Initialize all queues
-   * Called once during Strapi bootstrap
    */
   public async initialize(): Promise<void> {
     if (this.initialized) {
-      console.log('⚠️  Queue service already initialized');
+      strapi.log.warn('Queue service already initialized, skipping...');
       return;
     }
 
+    strapi.log.info('🚀 Initializing queue service...');
+
+    this.supplierSyncQueue = new Queue<SupplierSyncJobData>(
+      'supplier-sync',
+      defaultQueueOptions
+    );
+
+    this.productFamilyQueue = new Queue<ProductFamilyJobData>(
+      'product-family',
+      defaultQueueOptions
+    );
+
+    this.imageUploadQueue = new Queue<ImageUploadJobData>(
+      'image-upload',
+      defaultQueueOptions
+    );
+
+    this.meilisearchSyncQueue = new Queue<MeilisearchSyncJobData>(
+      'meilisearch-sync',
+      defaultQueueOptions
+    );
+
+    this.geminiSyncQueue = new Queue<GeminiSyncJobData>(
+      'gemini-sync',
+      defaultQueueOptions
+    );
+
+    this.initialized = true;
+    strapi.log.info('✅ Queue service initialized (5 queues)');
+  }
+
+  /**
+   * Enqueue supplier sync job
+   */
+  public async enqueueSupplierSync(
+    supplierId: string,
+    supplierCode: string,
+    supplierNumericId: number,
+    manual: boolean = true
+  ): Promise<Job<SupplierSyncJobData>> {
+    this.ensureInitialized();
+
+    const jobId = generateJobId('supplier-sync', supplierCode);
+    const jobData: SupplierSyncJobData = {
+      supplierId,
+      supplierCode,
+      supplierNumericId,
+      manual
+    };
+
+    const job = await this.supplierSyncQueue.add(
+      jobId,
+      jobData,
+      supplierSyncJobOptions as JobsOptions
+    );
+
+    strapi.log.info(`📋 Enqueued supplier sync job: ${job.id} (${supplierCode})`);
+    return job;
+  }
+
+  /**
+   * Enqueue Meilisearch sync job
+   */
+  public async enqueueMeilisearchSync(
+    operation: 'add' | 'update' | 'delete',
+    entityType: 'product' | 'product-variant',
+    entityId: number,
+    documentId: string,
+    priority?: number,
+    delay?: number // Delay in milliseconds
+  ): Promise<Job<MeilisearchSyncJobData>> {
+    this.ensureInitialized();
+
+    const jobId = generateJobId('meili-sync', entityType, documentId);
+    const jobData: MeilisearchSyncJobData = {
+      operation,
+      entityType,
+      entityId,
+      documentId,
+      priority
+    };
+
+    const job = await this.meilisearchSyncQueue!.add(
+      jobId,
+      jobData,
+      {
+        ...meilisearchSyncJobOptions,
+        priority: priority || 0, // Higher = more important
+        delay: delay || 0 // Delay in milliseconds (0 = immediate)
+      } as JobsOptions
+    );
+
+    const delayMsg = delay ? ` (delayed ${delay}ms)` : '';
+    strapi.log.debug(`🔍 Enqueued Meilisearch ${operation} job: ${documentId}${delayMsg}`);
+    return job;
+  }
+
+  /**
+   * Enqueue Gemini File Search sync job
+   * Syncs product to Google Gemini for AI-powered RAG
+   * Reads FROM Meilisearch (not Strapi) - Meilisearch is source of truth
+   */
+  public async enqueueGeminiSync(
+    operation: 'add' | 'update' | 'delete',
+    documentId: string,
+    priority?: number,
+    delay?: number // Delay in milliseconds
+  ): Promise<Job<GeminiSyncJobData>> {
+    this.ensureInitialized();
+
+    const jobId = generateJobId('gemini-sync', documentId);
+    const jobData: GeminiSyncJobData = {
+      operation,
+      documentId,
+      priority,
+      delay
+    };
+
+    const job = await this.geminiSyncQueue!.add(
+      jobId,
+      jobData,
+      {
+        ...geminiSyncJobOptions,
+        priority: priority || 0, // Higher = more important
+        delay: delay || 0 // Delay in milliseconds (0 = immediate)
+      } as JobsOptions
+    );
+
+    const delayMsg = delay ? ` (delayed ${delay}ms)` : '';
+    strapi.log.debug(`🤖 Enqueued Gemini ${operation} job: ${documentId}${delayMsg}`);
+    return job;
+  }
+
+  /**
+   * Enqueue multiple Gemini File Search sync jobs (Batch)
+   */
+  public async enqueueGeminiSyncBatch(
+    jobs: Array<{
+      operation: 'add' | 'update' | 'delete';
+      documentId: string;
+      priority?: number;
+      delay?: number;
+    }>
+  ): Promise<Job<GeminiSyncJobData>[]> {
+    this.ensureInitialized();
+
+    const bulkJobs = jobs.map(job => {
+      const jobId = generateJobId('gemini-sync', job.documentId);
+      return {
+        name: jobId,
+        data: {
+          operation: job.operation,
+          documentId: job.documentId,
+          priority: job.priority,
+          delay: job.delay
+        },
+        opts: {
+          ...geminiSyncJobOptions,
+          priority: job.priority || 0,
+          delay: job.delay || 0
+        }
+      };
+    });
+
+    // DEBUG: Log queue connection state before adding jobs
+    strapi.log.info(`🔍 [Queue Debug] gemini-sync queue ready: checking connection...`);
+
     try {
-      console.log('🚀 Initializing BullMQ queue service...');
+      // Verify queue is connected by getting counts
+      const waitingBefore = await this.geminiSyncQueue!.getWaitingCount();
+      strapi.log.info(`🔍 [Queue Debug] Waiting count before addBulk: ${waitingBefore}`);
 
-      // Initialize Supplier Sync Queue
-      this.supplierSyncQueue = new Queue<SupplierSyncJobData, SupplierSyncJobResult>(
-        QUEUE_NAMES.SUPPLIER_SYNC,
-        defaultQueueOptions
-      );
+      const createdJobs = await this.geminiSyncQueue!.addBulk(bulkJobs);
+      strapi.log.info(`🤖 Enqueued batch of ${createdJobs.length} Gemini sync jobs`);
 
-      // Initialize Product Family Queue
-      this.productFamilyQueue = new Queue<ProductFamilyJobData, ProductFamilyJobResult>(
-        QUEUE_NAMES.PRODUCT_FAMILY,
-        defaultQueueOptions
-      );
+      // Log the actual job IDs returned
+      strapi.log.info(`🔍 [Queue Debug] Job IDs: ${createdJobs.slice(0, 5).map(j => j.id).join(', ')}${createdJobs.length > 5 ? '...' : ''}`);
 
-      // Initialize Image Upload Queue
-      this.imageUploadQueue = new Queue<ImageUploadJobData, ImageUploadJobResult>(
-        QUEUE_NAMES.IMAGE_UPLOAD,
-        defaultQueueOptions
-      );
+      // Verify jobs were actually added
+      const waitingAfter = await this.geminiSyncQueue!.getWaitingCount();
+      strapi.log.info(`🔍 [Queue Debug] Waiting count after addBulk: ${waitingAfter}`);
 
-      // Test Redis connection
-      await this.testConnection();
+      if (waitingAfter === waitingBefore) {
+        strapi.log.error(`🚨 [Queue Debug] Jobs NOT added to Redis! waitingBefore=${waitingBefore}, waitingAfter=${waitingAfter}`);
+      }
 
-      this.initialized = true;
-      console.log('✅ Queue service initialized successfully');
-      console.log(`   - Supplier Sync Queue: ${QUEUE_NAMES.SUPPLIER_SYNC}`);
-      console.log(`   - Product Family Queue: ${QUEUE_NAMES.PRODUCT_FAMILY}`);
-      console.log(`   - Image Upload Queue: ${QUEUE_NAMES.IMAGE_UPLOAD}`);
+      return createdJobs;
     } catch (error) {
-      console.error('❌ Failed to initialize queue service:', error);
+      strapi.log.error(`🚨 [Queue Debug] addBulk failed:`, error);
       throw error;
     }
   }
 
   /**
-   * Test Redis connection
+   * Get job by ID
    */
-  private async testConnection(): Promise<void> {
+  public async getJob(
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync',
+    jobId: string
+  ): Promise<Job | undefined> {
+    this.ensureInitialized();
+    const queue = this.getQueue(queueName);
+    return await queue.getJob(jobId);
+  }
+
+  /**
+   * Get queue statistics
+   */
+  public async getQueueStats(queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync') {
+    this.ensureInitialized();
+    const queue = this.getQueue(queueName);
+
+    const [waiting, active, completed, failed, delayed] = await Promise.all([
+      queue.getWaitingCount(),
+      queue.getActiveCount(),
+      queue.getCompletedCount(),
+      queue.getFailedCount(),
+      queue.getDelayedCount()
+    ]);
+
+    return {
+      queueName,
+      waiting,
+      active,
+      completed,
+      failed,
+      delayed,
+      total: waiting + active + completed + failed + delayed
+    };
+  }
+
+  /**
+   * Get detailed image upload statistics including deduplication
+   */
+  public async getImageUploadDetailedStats() {
+    this.ensureInitialized();
+    const queue = this.getQueue('image-upload');
+
+    // Get basic counts
+    const [waiting, active, completed, failed, delayed] = await Promise.all([
+      queue.getWaitingCount(),
+      queue.getActiveCount(),
+      queue.getCompletedCount(),
+      queue.getFailedCount(),
+      queue.getDelayedCount()
+    ]);
+
+    // Sample completed jobs to calculate deduplication rate
+    // We'll check up to 1000 most recent completed jobs
+    let actualUploads = 0;
+    let deduplicated = 0;
+    let sampledJobs = 0;
+
     try {
-      // BullMQ doesn't expose client directly, so we test by checking queue
-      const count = await this.supplierSyncQueue.count();
-      console.log(`✓ Redis connection successful (${count} jobs in supplier queue)`);
+      const completedJobs = await queue.getJobs(['completed'], 0, 999, false);
+      sampledJobs = completedJobs.length;
+
+      for (const job of completedJobs) {
+        if (job.returnvalue) {
+          if (job.returnvalue.wasDedup === true) {
+            deduplicated++;
+          } else if (job.returnvalue.wasDedup === false || job.returnvalue.mediaId) {
+            // wasDedup: false means actual upload, or if mediaId exists the job completed successfully
+            actualUploads++;
+          }
+        }
+      }
     } catch (error) {
-      console.error('✗ Redis connection failed:', error);
-      throw new Error('Failed to connect to Redis. Check REDIS_URL in .env');
+      strapi.log.error('Error sampling completed jobs for dedup stats:', error);
+    }
+
+    // Calculate estimated deduplication rate
+    const sampledTotal = actualUploads + deduplicated;
+    const dedupRate = sampledTotal > 0 ? (deduplicated / sampledTotal) * 100 : 0;
+
+    return {
+      queueName: 'image-upload',
+      waiting,
+      active,
+      completed, // Total completed (includes both uploads and dedups)
+      failed,
+      delayed,
+      total: waiting + active + completed + failed + delayed,
+      // Detailed stats based on sampled jobs
+      sampledJobs,
+      actualUploads, // Jobs that actually uploaded
+      deduplicated, // Jobs that were deduplicated (skipped)
+      dedupRate: Math.round(dedupRate * 10) / 10, // Round to 1 decimal
+      // Estimated totals (extrapolated if sample size < completed count)
+      estimatedActualUploads: sampledTotal > 0 ? Math.round((actualUploads / sampledTotal) * completed) : 0,
+      estimatedDeduplicated: sampledTotal > 0 ? Math.round((deduplicated / sampledTotal) * completed) : 0
+    };
+  }
+
+  /**
+   * Get all queue statistics
+   */
+  public async getAllStats() {
+    this.ensureInitialized();
+    const [supplierSync, productFamily, imageUploadBasic, meilisearchSync, geminiSync] = await Promise.all([
+      this.getQueueStats('supplier-sync'),
+      this.getQueueStats('product-family'),
+      this.getQueueStats('image-upload'),
+      this.getQueueStats('meilisearch-sync'),
+      this.getQueueStats('gemini-sync')
+    ]);
+
+    // Get detailed image upload stats with deduplication
+    const imageUpload = await this.getImageUploadDetailedStats();
+
+    return {
+      supplierSync,
+      productFamily,
+      imageUpload,
+      meilisearchSync,
+      geminiSync
+    };
+  }
+
+  /**
+   * Clean old completed jobs from a queue
+   * @param queueName - Queue to clean
+   * @param olderThanMs - Clean jobs older than this (in milliseconds). Default: 24 hours
+   * @param limit - Maximum number of jobs to clean per call. Default: 1000
+   */
+  public async cleanCompletedJobs(
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync',
+    olderThanMs: number = 24 * 60 * 60 * 1000, // 24 hours default
+    limit: number = 1000
+  ): Promise<{ deletedCount: number }> {
+    this.ensureInitialized();
+    const queue = this.getQueue(queueName);
+
+    try {
+      // BullMQ's clean method removes jobs older than grace period
+      // Returns array of deleted job IDs
+      const deletedJobs = await queue.clean(olderThanMs, limit, 'completed');
+      const deletedCount = deletedJobs.length;
+
+      strapi.log.info(
+        `🧹 Cleaned ${deletedCount} completed jobs from ${queueName} queue (older than ${olderThanMs}ms)`
+      );
+
+      return { deletedCount };
+    } catch (error) {
+      strapi.log.error(`Error cleaning ${queueName} queue:`, error);
+      throw error;
     }
   }
 
   /**
-   * Add Supplier Sync Job
+   * Clean old failed jobs from a queue
+   * @param queueName - Queue to clean
+   * @param olderThanMs - Clean jobs older than this (in milliseconds). Default: 7 days
+   * @param limit - Maximum number of jobs to clean per call. Default: 1000
    */
-  public async addSupplierSyncJob(
-    data: SupplierSyncJobData,
-    options?: Partial<JobsOptions>
-  ): Promise<Job<SupplierSyncJobData, SupplierSyncJobResult>> {
-    const jobId = generateJobId(JOB_PREFIXES.SUPPLIER_SYNC, data.supplierCode);
+  public async cleanFailedJobs(
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync',
+    olderThanMs: number = 7 * 24 * 60 * 60 * 1000, // 7 days default
+    limit: number = 1000
+  ): Promise<{ deletedCount: number }> {
+    this.ensureInitialized();
+    const queue = this.getQueue(queueName);
 
-    const job = await this.supplierSyncQueue.add(
-      'sync-supplier',
-      data,
-      {
-        ...supplierSyncJobOptions,
-        ...options,
-        jobId,
-      }
-    );
+    try {
+      const deletedJobs = await queue.clean(olderThanMs, limit, 'failed');
+      const deletedCount = deletedJobs.length;
 
-    console.log(`📦 Queued supplier sync job: ${jobId} (Supplier: ${data.supplierCode})`);
-    return job;
+      strapi.log.info(
+        `🧹 Cleaned ${deletedCount} failed jobs from ${queueName} queue (older than ${olderThanMs}ms)`
+      );
+
+      return { deletedCount };
+    } catch (error) {
+      strapi.log.error(`Error cleaning failed jobs from ${queueName} queue:`, error);
+      throw error;
+    }
   }
 
   /**
-   * Add Product Family Job
+   * Clean all old jobs from all queues
+   * @param completedOlderThanMs - Clean completed jobs older than this. Default: 24 hours
+   * @param failedOlderThanMs - Clean failed jobs older than this. Default: 7 days
    */
-  public async addProductFamilyJob(
-    data: ProductFamilyJobData,
-    options?: Partial<JobsOptions>
-  ): Promise<Job<ProductFamilyJobData, ProductFamilyJobResult>> {
-    const jobId = generateJobId(
-      JOB_PREFIXES.PRODUCT_FAMILY,
-      data.aNumber,
-      data.supplierCode
-    );
+  public async cleanAllQueues(
+    completedOlderThanMs: number = 24 * 60 * 60 * 1000,
+    failedOlderThanMs: number = 7 * 24 * 60 * 60 * 1000
+  ): Promise<{ totalDeleted: number; details: Record<string, { completed: number; failed: number }> }> {
+    this.ensureInitialized();
 
-    const job = await this.productFamilyQueue.add(
-      'process-family',
-      data,
-      {
-        ...productFamilyJobOptions,
-        ...options,
-        jobId,
-      }
-    );
+    const queueNames: Array<'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync'> = [
+      'supplier-sync',
+      'product-family',
+      'image-upload',
+      'meilisearch-sync',
+      'gemini-sync'
+    ];
 
-    return job;
-  }
+    const results: Record<string, { completed: number; failed: number }> = {};
+    let totalDeleted = 0;
 
-  /**
-   * Add Image Upload Job
-   */
-  public async addImageUploadJob(
-    data: ImageUploadJobData,
-    options?: Partial<JobsOptions>
-  ): Promise<Job<ImageUploadJobData, ImageUploadJobResult>> {
-    const jobId = generateJobId(
-      JOB_PREFIXES.IMAGE_UPLOAD,
-      data.entityType,
-      data.entityId,
-      data.fileName.substring(0, 10)
-    );
+    for (const queueName of queueNames) {
+      const completedResult = await this.cleanCompletedJobs(queueName, completedOlderThanMs);
+      const failedResult = await this.cleanFailedJobs(queueName, failedOlderThanMs);
 
-    const job = await this.imageUploadQueue.add(
-      'upload-image',
-      data,
-      {
-        ...imageUploadJobOptions,
-        ...options,
-        jobId,
-      }
-    );
-
-    return job;
-  }
-
-  /**
-   * Get Job by ID
-   * Searches across all queues
-   */
-  public async getJob(jobId: string): Promise<Job<any, any> | null> {
-    // Try each queue
-    const supplierJob = await this.supplierSyncQueue.getJob(jobId);
-    if (supplierJob) return supplierJob;
-
-    const familyJob = await this.productFamilyQueue.getJob(jobId);
-    if (familyJob) return familyJob;
-
-    const imageJob = await this.imageUploadQueue.getJob(jobId);
-    if (imageJob) return imageJob;
-
-    return null;
-  }
-
-  /**
-   * Get Job Status
-   * Returns detailed status including progress
-   */
-  public async getJobStatus(jobId: string) {
-    const job = await this.getJob(jobId);
-
-    if (!job) {
-      return {
-        found: false,
-        jobId,
+      results[queueName] = {
+        completed: completedResult.deletedCount,
+        failed: failedResult.deletedCount
       };
+
+      totalDeleted += completedResult.deletedCount + failedResult.deletedCount;
     }
 
-    const state = await job.getState();
-    const progress = job.progress as any;
+    strapi.log.info(`🧹 Total cleanup: ${totalDeleted} jobs deleted across all queues`);
 
-    return {
-      found: true,
-      jobId: job.id,
-      name: job.name,
-      state,
-      progress,
-      data: job.data,
-      returnvalue: job.returnvalue,
-      failedReason: job.failedReason,
-      attemptsMade: job.attemptsMade,
-      timestamp: job.timestamp,
-      processedOn: job.processedOn,
-      finishedOn: job.finishedOn,
-    };
+    return { totalDeleted, details: results };
   }
 
   /**
-   * Cancel Job
+   * Close all queues
    */
-  public async cancelJob(jobId: string): Promise<boolean> {
-    const job = await this.getJob(jobId);
-
-    if (!job) {
-      return false;
+  public async close(): Promise<void> {
+    if (!this.initialized) {
+      strapi.log.warn('Queue service not initialized, nothing to close');
+      return;
     }
 
-    try {
-      await job.remove();
-      console.log(`🗑️  Cancelled job: ${jobId}`);
-      return true;
-    } catch (error) {
-      console.error(`Failed to cancel job ${jobId}:`, error);
-      return false;
-    }
-  }
+    strapi.log.info('🛑 Closing all queues...');
 
-  /**
-   * Get Recent Jobs
-   * Returns jobs from all queues, sorted by timestamp
-   */
-  public async getRecentJobs(limit: number = 20) {
-    const [supplierJobs, familyJobs, imageJobs] = await Promise.all([
-      this.supplierSyncQueue.getJobs(['completed', 'failed', 'active', 'waiting'], 0, limit),
-      this.productFamilyQueue.getJobs(['completed', 'failed', 'active', 'waiting'], 0, limit),
-      this.imageUploadQueue.getJobs(['completed', 'failed', 'active', 'waiting'], 0, limit),
-    ]);
+    const queues = [
+      this.supplierSyncQueue,
+      this.productFamilyQueue,
+      this.imageUploadQueue,
+      this.meilisearchSyncQueue,
+      this.geminiSyncQueue
+    ];
 
-    const allJobs = [...supplierJobs, ...familyJobs, ...imageJobs];
+    await Promise.all(
+      queues.filter(q => q !== null).map(q => q!.close())
+    );
 
-    // Sort by timestamp (newest first)
-    allJobs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-    return allJobs.slice(0, limit);
-  }
-
-  /**
-   * Get Queue Statistics
-   */
-  public async getQueueStats() {
-    const [supplierCounts, familyCounts, imageCounts] = await Promise.all([
-      this.supplierSyncQueue.getJobCounts(),
-      this.productFamilyQueue.getJobCounts(),
-      this.imageUploadQueue.getJobCounts(),
-    ]);
-
-    return {
-      supplierSync: supplierCounts,
-      productFamily: familyCounts,
-      imageUpload: imageCounts,
-    };
-  }
-
-  /**
-   * Shutdown
-   * Gracefully close all queue connections
-   */
-  public async shutdown(): Promise<void> {
-    console.log('🛑 Shutting down queue service...');
-
-    await Promise.all([
-      this.supplierSyncQueue?.close(),
-      this.productFamilyQueue?.close(),
-      this.imageUploadQueue?.close(),
-    ]);
-
+    this.supplierSyncQueue = null;
+    this.productFamilyQueue = null;
+    this.imageUploadQueue = null;
+    this.meilisearchSyncQueue = null;
+    this.geminiSyncQueue = null;
     this.initialized = false;
-    console.log('✅ Queue service shut down');
+
+    strapi.log.info('✅ All queues closed');
+  }
+
+  /**
+   * Get queue instance (internal helper)
+   */
+  private getQueue(queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync'): Queue {
+    let queue: Queue | null = null;
+
+    switch (queueName) {
+      case 'supplier-sync':
+        queue = this.supplierSyncQueue;
+        break;
+      case 'product-family':
+        queue = this.productFamilyQueue;
+        break;
+      case 'image-upload':
+        queue = this.imageUploadQueue;
+        break;
+      case 'meilisearch-sync':
+        queue = this.meilisearchSyncQueue;
+        break;
+      case 'gemini-sync':
+        queue = this.geminiSyncQueue;
+        break;
+    }
+
+    if (!queue) {
+      throw new Error(`Queue "${queueName}" not initialized`);
+    }
+
+    return queue;
   }
 }
 
 // Export singleton instance
-export default QueueService.getInstance();
+export default new QueueService();

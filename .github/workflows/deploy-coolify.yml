@@ -1,0 +1,267 @@
+name: Deploy to Coolify
+
+# Trigger deployment on push to main or develop branches
+on:
+  push:
+    branches:
+      - main      # Production deployment
+      - develop   # Staging deployment
+    paths:
+      - 'backend/**'
+      - 'docker-compose.coolify.yml'
+      - '.github/workflows/deploy-coolify.yml'
+
+  # Allow manual trigger from Actions tab
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+# Prevent concurrent deployments
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ============================================
+  # Determine Environment
+  # ============================================
+  setup:
+    name: Setup Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      app_uuid: ${{ steps.env.outputs.app_uuid }}
+      health_url: ${{ steps.env.outputs.health_url }}
+
+    steps:
+      - name: Determine environment
+        id: env
+        run: |
+          # Check if manual workflow dispatch
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          # Otherwise determine from branch
+          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            ENV="production"
+          elif [ "${{ github.ref }}" == "refs/heads/develop" ]; then
+            ENV="staging"
+          else
+            echo "::error::Unknown branch: ${{ github.ref }}"
+            exit 1
+          fi
+
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+
+          # Set environment-specific variables
+          if [ "$ENV" == "production" ]; then
+            echo "app_uuid=${{ secrets.COOLIFY_PRODUCTION_APP_UUID }}" >> $GITHUB_OUTPUT
+            echo "health_url=${{ secrets.PRODUCTION_HEALTH_URL }}" >> $GITHUB_OUTPUT
+          else
+            echo "app_uuid=${{ secrets.COOLIFY_STAGING_APP_UUID }}" >> $GITHUB_OUTPUT
+            echo "health_url=${{ secrets.STAGING_HEALTH_URL }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Show deployment info
+        run: |
+          echo "🚀 Deploying to: ${{ steps.env.outputs.environment }}"
+          echo "📦 Branch: ${{ github.ref_name }}"
+          echo "📝 Commit: ${{ github.sha }}"
+          echo "👤 Author: ${{ github.actor }}"
+
+  # ============================================
+  # Deploy to Coolify
+  # ============================================
+  deploy:
+    name: Deploy to ${{ needs.setup.outputs.environment }}
+    runs-on: ubuntu-latest
+    needs: setup
+    environment:
+      name: ${{ needs.setup.outputs.environment }}
+      url: ${{ needs.setup.outputs.health_url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Coolify deployment
+        env:
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          APP_UUID: ${{ needs.setup.outputs.app_uuid }}
+        run: |
+          echo "🚀 Triggering deployment to Coolify..."
+
+          # Trigger deployment via Coolify API
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "$COOLIFY_URL/api/v1/deploy/$APP_UUID" \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H "Content-Type: application/json")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+
+          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ] || [ "$HTTP_CODE" -eq 202 ]; then
+            echo "✅ Deployment triggered successfully"
+            echo "$BODY"
+          else
+            echo "❌ Deployment failed with status: $HTTP_CODE"
+            echo "$BODY"
+            exit 1
+          fi
+
+      - name: Wait for deployment
+        run: |
+          echo "⏳ Waiting for deployment to complete..."
+          echo "This may take 5-10 minutes..."
+          sleep 120  # Wait 2 minutes for build to start
+
+      - name: Health check
+        env:
+          HEALTH_URL: ${{ needs.setup.outputs.health_url }}
+        run: |
+          echo "🏥 Performing health check..."
+          echo "Health URL: $HEALTH_URL"
+
+          MAX_RETRIES=20
+          RETRY_INTERVAL=15
+          RETRY=0
+
+          while [ $RETRY -lt $MAX_RETRIES ]; do
+            # Try health check
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" || echo "000")
+
+            if [ "$HTTP_CODE" == "200" ]; then
+              echo "✅ Health check passed!"
+              echo "Response code: $HTTP_CODE"
+
+              # Fetch and display health response
+              HEALTH_RESPONSE=$(curl -s "$HEALTH_URL")
+              echo "Health response: $HEALTH_RESPONSE"
+
+              exit 0
+            fi
+
+            RETRY=$((RETRY + 1))
+            echo "⏳ Health check failed (attempt $RETRY/$MAX_RETRIES), status: $HTTP_CODE"
+
+            if [ $RETRY -lt $MAX_RETRIES ]; then
+              echo "Retrying in ${RETRY_INTERVAL}s..."
+              sleep $RETRY_INTERVAL
+            fi
+          done
+
+          echo "❌ Health check failed after $MAX_RETRIES attempts!"
+          exit 1
+
+      - name: Deployment summary
+        if: success()
+        run: |
+          echo ""
+          echo "========================================"
+          echo "✅ Deployment successful! 🎉"
+          echo "========================================"
+          echo ""
+          echo "Environment: ${{ needs.setup.outputs.environment }}"
+          echo "Health URL: ${{ needs.setup.outputs.health_url }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+          echo ""
+
+  # ============================================
+  # Notification on Failure
+  # ============================================
+  notify-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [setup, deploy]
+    if: failure()
+
+    steps:
+      - name: Send failure notification
+        run: |
+          echo "❌ Deployment to ${{ needs.setup.outputs.environment }} failed!"
+          echo ""
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+          echo ""
+          echo "Check the Actions tab for details:"
+          echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      # Optional: Send notification to Slack, Discord, email, etc.
+      # Uncomment and configure as needed:
+
+      # - name: Send Slack notification
+      #   uses: slackapi/slack-github-action@v1
+      #   with:
+      #     webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+      #     payload: |
+      #       {
+      #         "text": "❌ PromoAtlas deployment to ${{ needs.setup.outputs.environment }} failed!",
+      #         "blocks": [
+      #           {
+      #             "type": "section",
+      #             "text": {
+      #               "type": "mrkdwn",
+      #               "text": "*Deployment Failed*\n\nEnvironment: ${{ needs.setup.outputs.environment }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nAuthor: ${{ github.actor }}"
+      #             }
+      #           }
+      #         ]
+      #       }
+
+# ============================================
+# Required GitHub Secrets
+# ============================================
+#
+# Add these secrets in GitHub repository settings:
+# (Settings → Secrets and variables → Actions → New repository secret)
+#
+# COOLIFY_API_TOKEN:
+#   - Get from: Coolify Dashboard → Security → API Tokens
+#   - Description: API token for Coolify authentication
+#
+# COOLIFY_URL:
+#   - Example: https://coolify.example.com
+#   - Description: Your Coolify instance URL (no trailing slash)
+#
+# COOLIFY_STAGING_APP_UUID:
+#   - Get from: Coolify Dashboard → Application → Settings
+#   - Description: UUID of staging application
+#
+# COOLIFY_PRODUCTION_APP_UUID:
+#   - Get from: Coolify Dashboard → Application → Settings
+#   - Description: UUID of production application
+#
+# STAGING_HEALTH_URL:
+#   - Example: https://staging.promoatlas.com/_health
+#   - Description: Health check URL for staging environment
+#
+# PRODUCTION_HEALTH_URL:
+#   - Example: https://api.promoatlas.com/_health
+#   - Description: Health check URL for production environment
+#
+# ============================================
+# Optional: Environment Protection Rules
+# ============================================
+#
+# Configure in GitHub repository settings:
+# (Settings → Environments → New environment)
+#
+# Staging Environment:
+#   - Name: staging
+#   - Protection rules: None (auto-deploy)
+#
+# Production Environment:
+#   - Name: production
+#   - Protection rules:
+#     ✓ Required reviewers (1-2 people)
+#     ✓ Wait timer (optional: 5 minutes)
+#     ✓ Deployment branches: main only
+#
+# ============================================

@@ -13,17 +13,18 @@ export interface ProductVariantData {
   sku: string;
   product?: number; // Product ID (will be set during sync)
   name: string;
-  description?: string;
+  // NOTE: description, short_description removed - use Product.description instead
 
   // Variant attributes
   color?: string;
   hex_color?: string;
   supplier_color_code?: string;
   supplier_search_color?: string;
+  supplier_main_category?: string;
   size?: string;
   sizes?: string[]; // Available sizes for this variant
-  material?: string;
-  country_of_origin?: string;
+  // NOTE: material, country_of_origin removed - use Product.material, Product.country_of_origin instead
+  // NOTE: production_time removed - use Product.delivery_time instead
 
   // Flattened dimensions
   dimensions_length?: number;
@@ -74,15 +75,15 @@ class VariantTransformer {
       sku: this.extractSku(variantData),
       product: productId,
       name: this.buildVariantName(productName, colorName, sizeName),
-      description: this.extractDescription(variantData),
+      // description, short_description removed - use Product fields
       color: colorName,
       hex_color: this.extractHexColor(variantData),
       supplier_color_code: this.extractColorCode(variantData),
       supplier_search_color: this.extractSearchColor(variantData),
+      supplier_main_category: this.extractSupplierMainCategory(variantData),
       size: sizeName,
       sizes: this.extractAvailableSizes(variantData),
-      material: this.extractMaterial(variantData),
-      country_of_origin: this.extractCountryOfOrigin(variantData),
+      // material, country_of_origin, production_time removed - use Product fields
       dimensions_length: this.extractDimension(variantData, 'length'),
       dimensions_width: this.extractDimension(variantData, 'width'),
       dimensions_height: this.extractDimension(variantData, 'height'),
@@ -110,8 +111,35 @@ class VariantTransformer {
 
   /**
    * Extract color name (handles multilingual)
+   * NEW: Promidata stores color in NonLanguageDependedProductDetails.SearchColor
+   * or in ProductDetails[lang].ConfigurationFields[{ConfigurationName: "Color"}]
    */
   private extractColorName(data: RawProductData): string | undefined {
+    // Try NonLanguageDependedProductDetails.SearchColor first (Promidata structure)
+    const nonLangDetails = data.NonLanguageDependedProductDetails as any;
+    if (nonLangDetails?.SearchColor && nonLangDetails.SearchColor !== 'Undefined') {
+      return nonLangDetails.SearchColor;
+    }
+
+    // Try ConfigurationFields (Promidata variant structure)
+    if (data.ProductDetails) {
+      const productDetails = data.ProductDetails as any;
+      // Try each language
+      for (const lang of ['nl', 'de', 'en', 'fr', 'es']) {
+        const configFields = productDetails[lang]?.ConfigurationFields;
+        if (Array.isArray(configFields)) {
+          const colorConfig = configFields.find((field: any) =>
+            field.ConfigurationName === 'Color' ||
+            field.ConfigurationNameTranslated === 'Kleur'
+          );
+          if (colorConfig?.ConfigurationValue) {
+            return colorConfig.ConfigurationValue;
+          }
+        }
+      }
+    }
+
+    // Fallback to direct fields (legacy support)
     const colorName = data.color_name || data.ColorName || data.colorName;
 
     if (!colorName) {
@@ -133,8 +161,18 @@ class VariantTransformer {
 
   /**
    * Extract hex color
+   * NEW: Promidata stores in NonLanguageDependedProductDetails.HexColor
    */
   private extractHexColor(data: RawProductData): string | undefined {
+    // Try NonLanguageDependedProductDetails.HexColor first (Promidata structure)
+    const nonLangDetails = (data as any).NonLanguageDependedProductDetails;
+    const hex = nonLangDetails?.HexColor;
+
+    if (hex && hex !== 'null') {
+      return hex;
+    }
+
+    // FALLBACK: Try legacy direct fields
     return data.hex_color || data.HexColor || data.hexColor || data.color_hex;
   }
 
@@ -147,15 +185,44 @@ class VariantTransformer {
 
   /**
    * Extract search color
+   * NEW: Promidata stores in NonLanguageDependedProductDetails.SearchColor
    */
   private extractSearchColor(data: RawProductData): string | undefined {
+    // Try NonLanguageDependedProductDetails first (Promidata structure)
+    const nonLangDetails = data.NonLanguageDependedProductDetails as any;
+    if (nonLangDetails?.SearchColor && nonLangDetails.SearchColor !== 'Undefined') {
+      return nonLangDetails.SearchColor;
+    }
+
+    // Fallback to direct fields (legacy support)
     return data.search_color || data.SearchColor || data.searchColor;
   }
 
   /**
    * Extract size
+   * NEW: Promidata stores size in ProductDetails[lang].ConfigurationFields[{ConfigurationName: "Size"}]
    */
   private extractSize(data: RawProductData): string | undefined {
+    // Try ConfigurationFields (Promidata variant structure)
+    if (data.ProductDetails) {
+      const productDetails = data.ProductDetails as any;
+      // Try each language
+      for (const lang of ['nl', 'de', 'en', 'fr', 'es']) {
+        const configFields = productDetails[lang]?.ConfigurationFields;
+        if (Array.isArray(configFields)) {
+          const sizeConfig = configFields.find((field: any) =>
+            field.ConfigurationName === 'Size' ||
+            field.ConfigurationNameTranslated === 'Afmeting' ||
+            field.ConfigurationNameTranslated === 'Größe'
+          );
+          if (sizeConfig?.ConfigurationValue) {
+            return sizeConfig.ConfigurationValue;
+          }
+        }
+      }
+    }
+
+    // Fallback to direct fields (legacy support)
     return data.size || data.Size || data.SIZE;
   }
 
@@ -175,47 +242,52 @@ class VariantTransformer {
   }
 
   /**
-   * Extract material (handles multilingual)
+   * [REMOVED] Extract material
+   * REASON: Duplicate field - use Product.material instead (schema consolidation 2025-01-16)
+   * Material is the same for all variants of a product, stored at Product level as multilingual JSON
    */
-  private extractMaterial(data: RawProductData): string | undefined {
-    const material = data.material || data.Material || data.MATERIAL;
-
-    if (!material) {
-      return undefined;
-    }
-
-    // If multilingual object, get English version
-    if (typeof material === 'object' && material.en) {
-      return material.en;
-    }
-
-    // If string, return as-is
-    if (typeof material === 'string') {
-      return material;
-    }
-
-    return undefined;
-  }
+  // private extractMaterial(data: RawProductData): string | undefined {
+  //   // Method removed - use Product.material instead
+  // }
 
   /**
-   * Extract country of origin
+   * [REMOVED] Extract country of origin
+   * REASON: Duplicate field - use Product.country_of_origin instead (schema consolidation 2025-01-16)
+   * All variants have the same country of origin, stored at Product level
    */
-  private extractCountryOfOrigin(data: RawProductData): string | undefined {
-    return (
-      data.country_of_origin ||
-      data.CountryOfOrigin ||
-      data.countryOfOrigin ||
-      data.origin_country
-    );
-  }
+  // private extractCountryOfOrigin(data: RawProductData): string | undefined {
+  //   // Method removed - use Product.country_of_origin instead
+  // }
 
   /**
    * Extract dimension value
+   * NEW: Promidata stores dimensions in NonLanguageDependedProductDetails.Dimensions*
    */
   private extractDimension(
     data: RawProductData,
     dimension: 'length' | 'width' | 'height' | 'diameter' | 'depth'
   ): number | undefined {
+    // Try NonLanguageDependedProductDetails first (Promidata structure)
+    const nonLangDetails = data.NonLanguageDependedProductDetails as any;
+    if (nonLangDetails) {
+      const dimensionMap: Record<string, string> = {
+        length: 'DimensionsLength',
+        width: 'DimensionsWidth',
+        height: 'DimensionsHeight',
+        diameter: 'DimensionsDiameter',
+        depth: 'DimensionsDepth',
+      };
+
+      const promidataKey = dimensionMap[dimension];
+      if (nonLangDetails[promidataKey] !== undefined && nonLangDetails[promidataKey] !== null) {
+        const parsed = parseFloat(nonLangDetails[promidataKey]);
+        if (!isNaN(parsed)) {
+          return parsed;
+        }
+      }
+    }
+
+    // Fallback to direct fields (legacy support)
     const capitalize = dimension.charAt(0).toUpperCase() + dimension.slice(1);
     const upper = dimension.toUpperCase();
 
@@ -231,8 +303,19 @@ class VariantTransformer {
 
   /**
    * Extract weight
+   * NEW: Promidata stores weight in NonLanguageDependedProductDetails.Weight
    */
   private extractWeight(data: RawProductData): number | undefined {
+    // Try NonLanguageDependedProductDetails first (Promidata structure)
+    const nonLangDetails = data.NonLanguageDependedProductDetails as any;
+    if (nonLangDetails?.Weight !== undefined && nonLangDetails.Weight !== null) {
+      const parsed = parseFloat(nonLangDetails.Weight);
+      if (!isNaN(parsed)) {
+        return parsed;
+      }
+    }
+
+    // Fallback to direct fields (legacy support)
     const weight = data.weight || data.Weight || data.WEIGHT;
 
     if (weight === undefined || weight === null) {
@@ -275,27 +358,13 @@ class VariantTransformer {
   }
 
   /**
-   * Extract description
+   * [REMOVED] Extract description
+   * REASON: Duplicate field - use Product.description instead (schema consolidation 2025-01-16)
+   * Description is the same for all variants, stored at Product level as multilingual JSON
    */
-  private extractDescription(data: RawProductData): string | undefined {
-    const description = data.Description || data.description || data.DESC;
-
-    if (!description) {
-      return undefined;
-    }
-
-    // If multilingual object, get English version
-    if (typeof description === 'object' && description.en) {
-      return description.en;
-    }
-
-    // If string, return as-is
-    if (typeof description === 'string') {
-      return description;
-    }
-
-    return undefined;
-  }
+  // private extractDescription(data: RawProductData): string | undefined {
+  //   // Method removed - use Product.description instead
+  // }
 
   /**
    * Build variant name
@@ -381,6 +450,7 @@ class VariantTransformer {
 
   /**
    * Extract image URLs (for later upload)
+   * NEW: Promidata stores in ProductDetails[lang].Image.Url and MediaGalleryImages
    */
   public extractImageUrls(data: RawProductData): {
     primaryImage?: string;
@@ -390,12 +460,40 @@ class VariantTransformer {
       galleryImages: [],
     };
 
-    // Primary image (variant-specific)
+    // Try Promidata ProductDetails structure first
+    if (data.ProductDetails) {
+      const productDetails = data.ProductDetails as any;
+
+      // Try each language for primary image
+      for (const lang of ['nl', 'de', 'en', 'fr', 'es']) {
+        if (productDetails[lang]?.Image?.Url && !result.primaryImage) {
+          result.primaryImage = productDetails[lang].Image.Url;
+        }
+
+        // Extract gallery images from MediaGalleryImages
+        if (productDetails[lang]?.MediaGalleryImages) {
+          const mediaGallery = productDetails[lang].MediaGalleryImages;
+          if (Array.isArray(mediaGallery)) {
+            for (const mediaItem of mediaGallery) {
+              if (mediaItem?.Url && typeof mediaItem.Url === 'string') {
+                result.galleryImages.push(mediaItem.Url);
+              }
+            }
+          }
+        }
+      }
+
+      // If we found images, return them
+      if (result.primaryImage || result.galleryImages.length > 0) {
+        return result;
+      }
+    }
+
+    // FALLBACK: Try legacy direct fields
     if (data.primary_image || data.PrimaryImage || data.primaryImage || data.image) {
       result.primaryImage = data.primary_image || data.PrimaryImage || data.primaryImage || data.image;
     }
 
-    // Gallery images
     if (data.gallery_images || data.GalleryImages || data.Images || data.images) {
       const images = data.gallery_images || data.GalleryImages || data.Images || data.images;
       if (Array.isArray(images)) {
@@ -405,6 +503,56 @@ class VariantTransformer {
 
     return result;
   }
+
+  /**
+   * [REMOVED] Extract short description
+   * REASON: Duplicate field - use Product.short_description instead (schema consolidation 2025-01-16)
+   * Short description is the same for all variants of a product, stored at Product level as multilingual JSON
+   * This was extracted from ProductDetails[lang].ShortDescription which is product-level data, not variant-specific
+   */
+  // private extractShortDescription(data: RawProductData): string | undefined {
+  //   if (data.ProductDetails) {
+  //     const productDetails = data.ProductDetails as any;
+  //     // Try each language, prioritize English
+  //     for (const lang of ['en', 'nl', 'de', 'fr', 'es']) {
+  //       if (productDetails[lang]?.ShortDescription) {
+  //         return productDetails[lang].ShortDescription;
+  //       }
+  //     }
+  //   }
+  //   return undefined;
+  // }
+
+  /**
+   * Extract supplier main category from Promidata structure
+   */
+  private extractSupplierMainCategory(data: RawProductData): string | undefined {
+    return data.NonLanguageDependedProductDetails?.Category;
+  }
+
+  /**
+   * [REMOVED] Extract production time
+   * REASON: Duplicate/confusing field - use Product.delivery_time instead (schema consolidation 2025-01-16)
+   * Decision: Consolidate production_time and delivery_time to single Product.delivery_time field
+   * All variants of a product have the same delivery/production time, stored at Product level
+   * This was extracted from ProductDetails[lang].ProductionTime/DeliveryTime which is product-level data
+   */
+  // private extractProductionTime(data: RawProductData): string | undefined {
+  //   if (data.ProductDetails) {
+  //     const productDetails = data.ProductDetails as any;
+  //     // Try each language
+  //     for (const lang of ['en', 'nl', 'de', 'fr', 'es']) {
+  //       if (productDetails[lang]?.ProductionTime) {
+  //         return productDetails[lang].ProductionTime;
+  //       }
+  //       // Fallback to DeliveryTime
+  //       if (productDetails[lang]?.DeliveryTime) {
+  //         return productDetails[lang].DeliveryTime;
+  //       }
+  //     }
+  //   }
+  //   return undefined;
+  // }
 
   /**
    * Validate transformed variant data

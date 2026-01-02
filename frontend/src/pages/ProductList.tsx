@@ -4,6 +4,7 @@ import { Product, ApiResponse } from '../types';
 import { apiService } from '../services/api';
 import { ProductCard } from '../components/ProductCard';
 import { FilterBar } from '../components/FilterBar';
+import { LanguageSelector } from '../components/LanguageSelector';
 import './ProductList.css';
 
 export const ProductList: FC = () => {
@@ -20,18 +21,66 @@ export const ProductList: FC = () => {
   const [filters, setFilters] = useState<Record<string, any>>({ isActive: 'true' });
   const [sortBy, setSortBy] = useState('updatedAt:desc');
 
-  // Load products
+  // Load products using Meilisearch
   const loadProducts = async (page: number = 1, newFilters?: Record<string, any>) => {
     try {
       setLoading(true);
       setError(null);
 
-      const response: ApiResponse<Product[]> = await apiService.getProducts({
-        page,
-        pageSize: pagination.pageSize,
-        sort: sortBy,
-        filters: newFilters || filters,
-      });
+      const currentFilters = newFilters || filters;
+
+      // Extract search query
+      const searchQuery = currentFilters.search || '';
+
+      // Map filters to Meilisearch format
+      const meilisearchFilters: any = {};
+
+      if (currentFilters.supplier) {
+        meilisearchFilters.supplier_code = currentFilters.supplier;
+      }
+      if (currentFilters.brand) {
+        meilisearchFilters.brand = currentFilters.brand;
+      }
+      if (currentFilters.category) {
+        meilisearchFilters.category = currentFilters.category;
+      }
+      if (currentFilters.priceMin !== undefined && currentFilters.priceMin !== '') {
+        meilisearchFilters.price_min = parseFloat(currentFilters.priceMin);
+      }
+      if (currentFilters.priceMax !== undefined && currentFilters.priceMax !== '') {
+        meilisearchFilters.price_max = parseFloat(currentFilters.priceMax);
+      }
+      if (currentFilters.isActive !== undefined) {
+        meilisearchFilters.is_active = currentFilters.isActive === 'true' || currentFilters.isActive === true;
+      }
+
+      // Convert sort format (e.g., "updatedAt:desc" -> ["updatedAt:desc"])
+      const sortArray = sortBy ? [sortBy] : [];
+
+      // Request facets for filter dropdowns
+      const facets = ['supplier_code', 'brand', 'category', 'colors', 'sizes'];
+
+      // Try Meilisearch first, fallback to old API if not available
+      let response: ApiResponse<Product[]>;
+      try {
+        response = await apiService.searchProducts({
+          query: searchQuery,
+          page,
+          pageSize: pagination.pageSize,
+          sort: sortArray,
+          facets,
+          filters: meilisearchFilters,
+        });
+      } catch (searchError) {
+        console.warn('Meilisearch not available, falling back to old API:', searchError);
+        // Fallback to old API
+        response = await apiService.getProducts({
+          page,
+          pageSize: pagination.pageSize,
+          sort: sortBy,
+          filters: currentFilters,
+        });
+      }
 
       setProducts(response.data);
       if (response.meta.pagination) {
@@ -81,6 +130,7 @@ export const ProductList: FC = () => {
       <div className="page-header">
         <h1>Products</h1>
         <div className="page-actions">
+          <LanguageSelector />
           <div className="sort-section">
             <label htmlFor="sort">Sort by:</label>
             <select
@@ -91,11 +141,12 @@ export const ProductList: FC = () => {
             >
               <option value="updatedAt:desc">Recently Updated</option>
               <option value="createdAt:desc">Recently Added</option>
-              <option value="name:asc">Name A-Z</option>
-              <option value="name:desc">Name Z-A</option>
               <option value="sku:asc">SKU A-Z</option>
               <option value="sku:desc">SKU Z-A</option>
               <option value="brand:asc">Brand A-Z</option>
+              <option value="brand:desc">Brand Z-A</option>
+              <option value="price_min:asc">Price Low to High</option>
+              <option value="price_min:desc">Price High to Low</option>
             </select>
           </div>
         </div>
@@ -135,12 +186,13 @@ export const ProductList: FC = () => {
                 <>
                   <div className="products-grid">
                     {products.map((product) => {
-                      console.log('Rendering product:', product);
+                      // Meilisearch returns 'id', Strapi API returns 'documentId'
+                      const productId = product.id || (product as any).documentId;
                       return (
                         <ProductCard
-                          key={product.id}
+                          key={productId}
                           product={product}
-                          onClick={() => handleProductClick(product.documentId)}
+                          onClick={() => handleProductClick(productId)}
                         />
                       );
                     })}

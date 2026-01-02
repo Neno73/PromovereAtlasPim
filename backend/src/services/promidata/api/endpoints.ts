@@ -7,7 +7,7 @@
  * Base URL from environment or default
  */
 export const getBaseUrl = (): string => {
-  return process.env.PROMIDATA_BASE_URL || 'https://promi-dl.de/Profiles/Live/849c892e-b443-4f49-be3a-61a351cbdd23';
+  return process.env.PROMIDATA_BASE_URL || 'https://promidatabase.s3.eu-central-1.amazonaws.com/Profiles/Live/849c892e-b443-4f49-be3a-61a351cbdd23';
 };
 
 /**
@@ -27,7 +27,7 @@ export const endpoints = {
    * Format: code;name;parent_code
    */
   categories: (): string => {
-    return `${getBaseUrl()}/Import/CAT.csv`;
+    return `${getBaseUrl()}/CAT.csv`;
   },
 
   /**

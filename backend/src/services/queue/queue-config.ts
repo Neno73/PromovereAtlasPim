@@ -37,36 +37,28 @@ const getEnvNumber = (key: string, defaultValue: number): number => {
 
 /**
  * Redis Connection Configuration
- * Parses REDIS_URL and returns ioredis ConnectionOptions
- *
- * IMPORTANT: Parses the rediss:// URL into proper ioredis connection options
- * This ensures TLS is enabled for Upstash and other managed Redis providers
+ * Shared across all queues and workers
  */
-export const getRedisConnection = () => {
+const createRedisConnection = () => {
+  // Validate environment variables before creating connection
   validateRedisEnvVars();
 
-  const redisUrl = process.env.REDIS_URL!;
-
-  // Parse Redis URL (format: rediss://user:password@host:port)
-  const url = new URL(redisUrl);
-
   return {
-    host: url.hostname,
-    port: parseInt(url.port) || 6379,
-    password: url.password || undefined,
-    username: url.username || undefined,
-    tls: url.protocol === 'rediss:' ? {} : undefined,
+    url: process.env.REDIS_URL,
     maxRetriesPerRequest: null, // Required for BullMQ
     enableReadyCheck: false,
+    // TLS is handled automatically by rediss:// protocol
   };
 };
+
+export const redisConnection = createRedisConnection();
 
 /**
  * Default Queue Options
  * Applied to all queues unless overridden
  */
 export const defaultQueueOptions: QueueOptions = {
-  connection: getRedisConnection(),
+  connection: redisConnection,
   defaultJobOptions: {
     removeOnComplete: {
       count: 100, // Keep last 100 completed jobs
@@ -84,7 +76,7 @@ export const defaultQueueOptions: QueueOptions = {
  * Process suppliers sequentially (concurrency: 1)
  */
 export const supplierSyncWorkerOptions: WorkerOptions = {
-  connection: getRedisConnection(),
+  connection: redisConnection,
   concurrency: 1, // One supplier at a time to avoid rate limiting
   limiter: {
     max: 1, // Max 1 job per...
@@ -115,7 +107,7 @@ export const supplierSyncJobOptions = {
  * Process multiple families concurrently
  */
 export const productFamilyWorkerOptions: WorkerOptions = {
-  connection: getRedisConnection(),
+  connection: redisConnection,
   concurrency: getEnvNumber('BULLMQ_CONCURRENCY_FAMILIES', 3), // 3 families at once
   limiter: {
     max: 5, // Max 5 jobs per...
@@ -146,7 +138,7 @@ export const productFamilyJobOptions = {
  * High concurrency for parallel uploads
  */
 export const imageUploadWorkerOptions: WorkerOptions = {
-  connection: getRedisConnection(),
+  connection: redisConnection,
   concurrency: getEnvNumber('BULLMQ_CONCURRENCY_IMAGES', 10), // 10 images at once
   limiter: {
     max: 20, // Max 20 jobs per...
@@ -170,68 +162,6 @@ export const imageUploadJobOptions = {
     delay: 30000, // 30 seconds fixed delay
   },
   timeout: getEnvNumber('BULLMQ_JOB_TIMEOUT_IMAGE', 120000), // 2 minutes default
-};
-
-/**
- * Meilisearch Sync Worker Configuration
- * Medium concurrency for search indexing
- */
-export const meilisearchSyncWorkerOptions: WorkerOptions = {
-  connection: getRedisConnection(),
-  concurrency: getEnvNumber('BULLMQ_CONCURRENCY_MEILISEARCH', 5), // 5 documents at once
-  limiter: {
-    max: 10, // Max 10 jobs per...
-    duration: 1000, // ...1 second
-  },
-  settings: {
-    backoffStrategy: (attemptsMade: number) => {
-      // Exponential backoff: 2^attempt * 5 seconds
-      return Math.pow(2, attemptsMade) * 5000;
-    },
-  },
-};
-
-/**
- * Meilisearch Sync Job Options
- */
-export const meilisearchSyncJobOptions = {
-  attempts: 3, // Retry up to 3 times
-  backoff: {
-    type: 'exponential' as const,
-    delay: 5000, // 5 seconds
-  },
-  timeout: getEnvNumber('BULLMQ_JOB_TIMEOUT_MEILISEARCH', 30000), // 30 seconds default
-};
-
-/**
- * Gemini File Search Sync Worker Configuration
- * Medium concurrency for Gemini RAG indexing
- */
-export const geminiSyncWorkerOptions: WorkerOptions = {
-  connection: getRedisConnection(),
-  concurrency: getEnvNumber('BULLMQ_CONCURRENCY_GEMINI', 5), // 5 documents at once
-  limiter: {
-    max: 10, // Max 10 jobs per...
-    duration: 1000, // ...1 second
-  },
-  settings: {
-    backoffStrategy: (attemptsMade: number) => {
-      // Exponential backoff: 2^attempt * 10 seconds
-      return Math.pow(2, attemptsMade) * 10000;
-    },
-  },
-};
-
-/**
- * Gemini Sync Job Options
- */
-export const geminiSyncJobOptions = {
-  attempts: 3, // Retry up to 3 times
-  backoff: {
-    type: 'exponential' as const,
-    delay: 10000, // 10 seconds
-  },
-  timeout: getEnvNumber('BULLMQ_JOB_TIMEOUT_GEMINI', 120000), // 2 minutes default
 };
 
 /**

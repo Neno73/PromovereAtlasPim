@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-*Last updated: 2025-12-05*
+*Last updated: 2025-12-25*
 
 This log tracks significant architectural decisions made during the development of PromoAtlas PIM.
 
@@ -12,6 +12,318 @@ When adding a decision, include:
 - **Decision**: What we decided to do
 - **Consequences**: Trade-offs and implications
 - **Status**: Proposed / Accepted / Deprecated / Superseded
+
+---
+
+## [2025-12-25] Gemini Sync Worker Investigation - Meilisearch ID Format Fix
+
+**Status**: In Progress
+
+**Context**:
+After triggering Gemini sync for supplier A109, jobs were completing with `success: true` but no products were actually being uploaded to Gemini FileSearchStore. Investigation revealed:
+1. Worker IS running and processing jobs
+2. Products being skipped with "Not found in Meilisearch" error
+3. Gemini document count remained unchanged despite "successful" syncs
+
+**Root Cause Identified**:
+The `gemini-file-search.ts` service was looking for Meilisearch documents with wrong ID format:
+```typescript
+// WRONG - Was using prefixed ID
+const meilisearchId = `product-${documentId}`;
+meilisearchDoc = await this.meilisearchService.index.getDocument(meilisearchId);
+
+// CORRECT - Meilisearch uses documentId directly
+meilisearchDoc = await this.meilisearchService.index.getDocument(documentId);
+```
+
+**Fix Applied**:
+- File: `backend/src/api/gemini-sync/services/gemini-file-search.ts`
+- Removed `product-` prefix, now uses `documentId` directly
+- Verified via curl that Meilisearch does use plain documentId as primary key
+
+**Remaining Investigation** (to continue):
+After the Meilisearch ID fix, a new issue emerged:
+- Jobs logged as "Enqueued batch of N Gemini sync jobs"
+- But Redis job ID counter (`bull:gemini-sync:id`) not incrementing
+- Queue shows 0 waiting, 0 active
+- Jobs may not actually be reaching Redis
+
+Possible causes to investigate:
+1. BullMQ `addBulk` silently failing
+2. Queue connection issue
+3. Job deduplication in BullMQ
+
+**Files Modified**:
+- `backend/src/api/gemini-sync/services/gemini-file-search.ts` - Fixed Meilisearch ID format
+
+**Next Steps**:
+- Debug `enqueueGeminiSyncBatch` to verify jobs reach Redis
+- Check if hash-based deduplication query is filtering all products
+- Verify worker is connected to same Redis as queue
+
+---
+
+## [2025-12-25] Gemini FileSearchStore Admin Dashboard Implementation
+
+**Status**: Accepted (Completed)
+
+**Context**:
+After implementing the Gemini FileSearchStore backend integration (2025-12-05), there was no way for admins to:
+- Monitor FileSearchStore health and statistics
+- Test semantic search functionality
+- View document counts and storage usage
+- Debug search queries and results
+- Manage FileSearchStores via UI
+
+All operations required backend API calls or scripts, making it difficult to validate the integration was working correctly.
+
+**Decision**:
+Implemented a comprehensive admin dashboard providing full visibility and testing capabilities for the Gemini FileSearchStore integration:
+
+### 1. Admin Dashboard UI (`src/admin/pages/gemini-dashboard.tsx`)
+**Features** (674 lines):
+- **Real-time Statistics Display**:
+  - System health monitoring (OPERATIONAL/ERROR status)
+  - Active documents count (1,982)
+  - Pending/Failed document tracking
+  - Synced products count and coverage percentage
+  - Document status distribution pie chart (Chart.js)
+
+- **Current Store Details Card**:
+  - Display name, Store ID, total documents, size (MB)
+  - Last updated timestamp
+  - Expandable JSON view of store metadata
+
+- **Semantic Search Testing Interface**:
+  - Natural language query input with placeholder examples
+  - Real-time search execution with loading spinner
+  - Detailed product results (SKU, name, description, brand, supplier, currency)
+  - Empty query validation with warning notifications
+  - Success/error notifications via Strapi design system
+  - Search history tracking (placeholder for future implementation)
+
+- **Refresh Functionality**:
+  - Manual dashboard data refresh button
+  - Fetches latest: stats, stores, active syncs, search history
+  - Loading states during refresh
+
+**Technical Stack**:
+- Strapi Design System components (Box, Typography, Button, Alert, etc.)
+- useFetchClient() hook for API calls
+- React hooks for state management
+- Chart.js for data visualization
+
+### 2. Backend API Endpoints (`controllers/gemini-sync.ts`, `routes/gemini-sync.ts`)
+**New Endpoints** (+191 lines in controller, +84 lines in routes):
+- `GET /api/gemini-sync/detailed-stats` - Document statistics with active/pending/failed counts
+- `GET /api/gemini-sync/stores` - List all FileSearchStores
+- `POST /api/gemini-sync/stores/create` - Create new FileSearchStore
+- `DELETE /api/gemini-sync/stores/:storeId` - Delete store with force option
+- `POST /api/gemini-sync/test-search` - Execute semantic search query
+- `GET /api/gemini-sync/search-history?limit=N` - Retrieve search history
+
+**Access Control**:
+- Stats/stores/search endpoints: Public (for admin UI polling)
+- Create/delete store: Admin only
+- All authenticated via Strapi JWT tokens
+
+### 3. Gemini Service Enhancements (`services/gemini-file-search.ts`)
+**Critical Bug Fix** (+253 lines):
+Fixed Google AI API 400 error by correcting model and API structure:
+
+```typescript
+// ❌ WRONG (caused 400 "tool_type must have one initialized field")
+const response = await ai.models.generateContent({
+  model: 'gemini-2.0-flash',  // Doesn't support FileSearch
+  contents: query,
+  tools: [{ fileSearch: { ... } }]  // Wrong location
+});
+
+// ✅ CORRECT (per official docs: https://ai.google.dev/gemini-api/docs/file-search)
+const response = await ai.models.generateContent({
+  model: 'gemini-2.5-flash',  // Required for FileSearch
+  contents: query,
+  config: {  // Tools MUST be inside config
+    tools: [{
+      fileSearch: {
+        fileSearchStoreNames: [storeId]  // Use Names not Ids
+      }
+    }]
+  }
+});
+```
+
+**New Methods**:
+- `getDetailedStats()` - Comprehensive statistics including coverage
+- `listAllStores()` - List all FileSearchStores in project
+- `createNewStore(displayName)` - Create FileSearchStore
+- `deleteStoreById(storeId, force)` - Delete store with safety checks
+- `testSemanticSearch(query)` - Execute search and return grounded results
+- `getSearchHistory(limit)` - Placeholder for future implementation
+
+**Request Handling**:
+- Controller accepts both `{ data: { query } }` (useFetchClient) and `{ query }` (direct API)
+- Proper error sanitization
+- Token usage tracking in responses
+
+### 4. Admin Menu Integration (`src/admin/app.tsx`)
+**Changes** (+13 lines):
+- Added "Gemini Dashboard" menu item with sparkles icon (✨)
+- Route: `/admin/gemini-dashboard`
+- Icon color: `#32324D` (Strapi dark gray for visibility)
+- Position: Below Gemini Sync in sidebar
+
+### 5. Dependencies
+**Added** (`package.json`):
+- `@google/genai` ^1.30.0 - Official Google Generative AI SDK for Node.js
+
+**Implementation**:
+
+Files Created:
+- `backend/src/admin/pages/gemini-dashboard.tsx` - Dashboard UI (674 lines)
+
+Files Modified:
+- `backend/src/api/gemini-sync/controllers/gemini-sync.ts` - Added 6 endpoints (+191 lines)
+- `backend/src/api/gemini-sync/routes/gemini-sync.ts` - Route configuration (+84 lines)
+- `backend/src/api/gemini-sync/services/gemini-file-search.ts` - API fix & new methods (+253 lines)
+- `backend/src/admin/app.tsx` - Menu integration (+13 lines)
+- `backend/package.json`, `backend/package-lock.json` - Added @google/genai dependency
+
+**Total**: +1,577 lines added
+
+**Testing Performed**:
+
+### ✅ Semantic Search Tests
+1. **Query with Results**: "show me chewing gum products"
+   - ✅ Returned 2 products: A407-2030 (Sportlife® chewing gum classic), A407-2031 (Sportlife® chewing gum with Flap)
+   - ✅ Full details: SKU, Product Name, Description, Brand (Sportlife), Supplier (Commercial Sweets), Currency (EUR)
+   - ✅ Network: POST /api/gemini-sync/test-search → 200 OK (~4.6 seconds)
+   - ✅ Grounding: 5 retrieved document chunks from FileSearchStore
+   - ✅ Token usage: 740 total (83 prompt + 322 response + 154 thoughts + 181 tool use)
+
+2. **Query without Results**: "promotional mugs with custom logo", "promotional pens and pencils"
+   - ✅ Correctly displays "No products found matching your query"
+   - ✅ Expected behavior (semantic search finds no relevant matches)
+   - ✅ No errors or crashes
+
+3. **Empty Query Validation**:
+   - ✅ Shows warning notification: "⚠️ Warning: Please enter a search query"
+   - ✅ Prevents unnecessary API calls
+   - ✅ Console log: "⚠️ Empty search query"
+
+### ✅ Dashboard Features
+- ✅ System Health: OPERATIONAL - "FileSearchStore is accessible and healthy"
+- ✅ Statistics: 1,982 active documents, 0 pending, 0 failed
+- ✅ Synced Products: 0 (tracking via gemini_file_uri field)
+- ✅ Coverage: 0%
+- ✅ Store Details: All fields displaying correctly
+- ✅ Refresh Button: Triggers multiple API calls (detailed-stats, stores, active, search-history)
+- ✅ Loading States: Spinner displays during operations
+
+### ✅ Debug Logging (All Emoji Logs Present)
+Console output verified:
+```
+🔍 handleTestSearch called with query: show me chewing gum products
+📤 Making POST request to /api/gemini-sync/test-search
+📦 Request payload: Object { data: { query: "..." } }
+📥 Response received: Object { success: true, data: {...} }
+✅ Search successful: Object
+🏁 setSearching(false)
+```
+
+### ✅ Network Monitoring
+- All requests: 200 OK status codes
+- Response times: 4-5 seconds (normal for AI processing with semantic search)
+- No errors or failed requests
+- Request/response payloads properly formatted
+
+**Consequences**:
+
+*Positive*:
+- **Visibility**: Full transparency into FileSearchStore health and usage
+- **Testing**: Easy semantic search testing without backend scripts
+- **Debugging**: Console logs with emojis and detailed request/response tracking
+- **Monitoring**: Real-time statistics for document counts and sync coverage
+- **UX**: Strapi design system provides familiar, polished admin UI
+- **Validation**: Immediate feedback on search queries and results
+- **Documentation**: Inline references to official Google docs prevent future API misuse
+
+*Negative*:
+- **Maintenance**: Another admin page to maintain alongside core Strapi admin
+- **Bundle Size**: +674 lines of dashboard code, +@google/genai dependency
+- **API Surface**: 6 new endpoints to secure and maintain
+
+*Trade-offs*:
+- Chose Chart.js for visualization (familiar, well-documented) vs. custom SVG (lighter weight)
+- Chose public stats endpoints (easier polling) vs. admin-only (more secure)
+- Chose console logging (helpful debugging) vs. silent operation (cleaner console)
+- Chose detailed error messages (better UX) vs. generic errors (more secure)
+
+**Issues Resolved**:
+
+### 1. Google AI API 400 Error
+**Issue**: `"required one_of 'tool_type' must have one initialized field"`
+
+**Root Cause**:
+- Used `gemini-2.0-flash` (doesn't support FileSearch feature)
+- Placed `tools` at root level instead of inside `config` object
+
+**Solution**:
+- Changed to `gemini-2.5-flash` model (required for FileSearch support)
+- Moved `tools` inside `config.tools` structure
+- Added code comment with official documentation reference
+
+**Documentation Reference**: https://ai.google.dev/gemini-api/docs/file-search
+
+### 2. Frontend JavaScript Caching
+**Issue**: Browser served old JavaScript despite code changes and rebuilds
+
+**Root Cause**: Vite cache persisting across Strapi restarts
+
+**Solution**:
+- Cleared all caches:
+  - `node_modules/.vite`
+  - `node_modules/.cache`
+  - `.strapi/dist`
+  - `.strapi/client`
+- Killed all Strapi processes
+- Restarted with fresh build
+
+**Verification**: All emoji debug logs appeared after cache clear, confirming new code loaded
+
+### 3. Request Format Compatibility
+**Issue**: Frontend sends `{ data: { query } }`, direct API calls send `{ query }`
+
+**Solution**: Controller handles both formats:
+```typescript
+const { query } = ctx.request.body.data || ctx.request.body;
+```
+
+**Performance**:
+- **Dashboard load time**: <1 second
+- **Search response time**: 4-5 seconds (includes AI processing with semantic retrieval)
+- **Refresh operation**: ~2 seconds (multiple parallel API calls)
+- **Token usage per search**: ~740 tokens
+- **Grounding chunks**: 5 document chunks retrieved per search
+
+**Future Enhancements**:
+- [ ] Implement search history persistence (database table for query logs)
+- [ ] Add search result pagination for large result sets
+- [ ] Export search results to CSV/JSON
+- [ ] Advanced search filters (SKU range, supplier filter, date range)
+- [ ] Search analytics dashboard (top queries, success rate, avg response time)
+- [ ] Bulk document operations (upload, delete, reindex)
+- [ ] FileSearchStore comparison (diff between stores)
+- [ ] Scheduled search tests (health monitoring cron jobs)
+
+**Related Documentation**:
+- Official Gemini FileSearch docs: https://ai.google.dev/gemini-api/docs/file-search
+- ARCHITECTURE.md: Updated with Admin Dashboard section
+- GOTCHAS.md: Added API format and caching issues
+- STARTUP.md: Added dashboard access instructions
+
+**Related PRs**:
+- PR #23: feat: Gemini FileSearchStore Dashboard with Semantic Search
 
 ---
 

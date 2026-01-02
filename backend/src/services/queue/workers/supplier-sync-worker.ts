@@ -266,20 +266,30 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
       strapi.log.error(`Failed to release lock for ${supplierCode}:`, lockError);
     }
 
-    // Update supplier last_sync_date
+    // Update supplier last_sync_date and products_count
     try {
       const statusMessage = wasStopped
         ? `Sync stopped by user`
         : `Enqueued ${job.returnvalue?.familiesEnqueued || 0} families, skipped ${job.returnvalue?.skipped || 0} unchanged`;
 
+      // Count actual products for this supplier
+      const productsCount = await strapi.entityService.count('api::product.product', {
+        filters: {
+          supplier: {
+            id: supplierNumericId
+          }
+        }
+      });
+
       await strapi.entityService.update('api::supplier.supplier', supplierNumericId, {
         data: {
           last_sync_date: new Date(),
           last_sync_status: wasStopped ? 'failed' : 'completed',
-          last_sync_message: statusMessage
+          last_sync_message: statusMessage,
+          products_count: productsCount
         }
       });
-      strapi.log.info(`✓ Updated last_sync_date for ${supplierCode}`);
+      strapi.log.info(`✓ Updated last_sync_date for ${supplierCode} (${productsCount} products)`);
     } catch (error) {
       strapi.log.error(`Failed to update supplier last_sync_date:`, error);
     }

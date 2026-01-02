@@ -1,36 +1,47 @@
 /**
  * Gemini Sync Worker
- * 
+ *
  * Processes Gemini File Search sync jobs from the gemini-sync queue.
- * 
+ *
  * ---
- * 
+ *
  * DATA FLOW (Meilisearch-based):
- * 
+ *
  *   1. Job received with { operation, documentId }
  *   2. Fetch product FROM Meilisearch (NOT Strapi DB)
  *   3. Transform Meilisearch document to Gemini JSON format
  *   4. Upload to Gemini File Search Store
- * 
+ *
  * ---
- * 
+ *
  * ARCHITECTURE PRINCIPLE: "Always repair Meilisearch before repairing Gemini"
- * 
+ *
  *   - If product not in Meilisearch → skip with warning (don't retry/fail)
  *   - This ensures Meilisearch is the single source of truth
  *   - Chat UI uses Gemini for semantic search, Meilisearch for display
  *   - This prevents AI hallucinations (display data always from Meilisearch)
- * 
+ *
  * ---
- * 
+ *
  * SERVICE USED:
  *   - api::gemini-sync.gemini-file-search (Meilisearch-based)
  *   - Accessed via strapi.service() at runtime (not imported as singleton)
- * 
+ *
  * ---
- * 
+ *
+ * NOTE: Environment variables are loaded by Strapi at startup.
+ * Since we use inline processors (not sandboxed), workers share the same
+ * process.env as Strapi - no need for separate dotenv.config() here.
+ *
+ * ---
+ *
  * @module GeminiSyncWorker
  */
+
+import type { Core } from '@strapi/strapi';
+
+// Declare global strapi instance (available at runtime via Strapi)
+declare const strapi: Core.Strapi;
 
 import { Worker, Job } from 'bullmq';
 import { geminiSyncWorkerOptions } from '../queue-config';
@@ -74,6 +85,13 @@ export function createGeminiSyncWorker(): Worker<
   const worker = new Worker<GeminiSyncJobData, GeminiSyncJobResult>(
     'gemini-sync',
     async (job: Job<GeminiSyncJobData>) => {
+      // DEBUG: Write to file to bypass all logging issues
+      const fs = require('fs');
+      const apiKeyExists = typeof process.env.GEMINI_API_KEY !== 'undefined' && process.env.GEMINI_API_KEY !== '';
+      const apiKeyLen = process.env.GEMINI_API_KEY?.length || 0;
+      const debugMsg = `[${new Date().toISOString()}] Job ${job.id} | GEMINI_API_KEY: ${apiKeyExists ? `yes (${apiKeyLen} chars)` : 'NO'} | strapi: ${typeof strapi}\n`;
+      fs.appendFileSync('/tmp/gemini-worker-debug.log', debugMsg);
+
       const { operation, documentId } = job.data;
 
       // Input validation
@@ -166,6 +184,15 @@ export function createGeminiSyncWorker(): Worker<
     },
     geminiSyncWorkerOptions
   );
+
+  // Worker connection event handlers - CRITICAL for debugging
+  worker.on('ready', () => {
+    strapi.log.info('🟢 [Gemini Worker] Connected to Redis and ready to process jobs');
+  });
+
+  worker.on('active', (job) => {
+    strapi.log.info(`📥 [Gemini] Job ${job.id} now active - processing ${job.data.operation} for ${job.data.documentId}`);
+  });
 
   // Worker event handlers
   worker.on('completed', (job, result) => {

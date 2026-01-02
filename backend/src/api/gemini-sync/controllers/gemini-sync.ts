@@ -258,6 +258,197 @@ export default {
         error: sanitizeError(error)
       };
     }
+  },
+
+  /**
+   * Get FileSearchStore information and details
+   * @route GET /api/gemini-sync/store-info
+   */
+  async getStoreInfo(ctx) {
+    try {
+      // @ts-ignore
+      const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
+
+      const storeInfo = await geminiService.getStoreInfo();
+
+      ctx.body = {
+        success: true,
+        data: storeInfo
+      };
+    } catch (error) {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        error: sanitizeError(error)
+      };
+    }
+  },
+
+  /**
+   * Test semantic search against FileSearchStore
+   * @route POST /api/gemini-sync/test-search
+   */
+  async testSearch(ctx) {
+    try {
+      // Frontend sends { data: { query: "..." } } via useFetchClient
+      const { query } = ctx.request.body.data || ctx.request.body;
+
+      if (!query) {
+        ctx.status = 400;
+        ctx.body = {
+          success: false,
+          error: 'query is required'
+        };
+        return;
+      }
+
+      // @ts-ignore
+      const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
+
+      const result = await geminiService.testSemanticSearch(query);
+
+      ctx.body = {
+        success: true,
+        data: result
+      };
+    } catch (error) {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        error: sanitizeError(error)
+      };
+    }
+  },
+
+  /**
+   * List all FileSearchStores
+   * @route GET /api/gemini-sync/stores
+   */
+  async listStores(ctx) {
+    try {
+      // @ts-ignore
+      const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
+      const stores = await geminiService.listAllStores();
+
+      ctx.body = {
+        success: true,
+        data: stores
+      };
+    } catch (error) {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        error: sanitizeError(error)
+      };
+    }
+  },
+
+  /**
+   * Create a new FileSearchStore
+   * @route POST /api/gemini-sync/stores/create
+   */
+  async createStore(ctx) {
+    try {
+      const { displayName } = ctx.request.body;
+
+      if (!displayName) {
+        ctx.status = 400;
+        ctx.body = {
+          success: false,
+          error: 'displayName is required'
+        };
+        return;
+      }
+
+      // @ts-ignore
+      const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
+      const result = await geminiService.createNewStore(displayName);
+
+      ctx.body = result;
+    } catch (error) {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        error: sanitizeError(error)
+      };
+    }
+  },
+
+  /**
+   * Delete a FileSearchStore
+   * @route DELETE /api/gemini-sync/stores/:storeId
+   */
+  async deleteStore(ctx) {
+    try {
+      const { storeId } = ctx.params;
+      const { force } = ctx.request.body || {};
+
+      if (!storeId) {
+        ctx.status = 400;
+        ctx.body = {
+          success: false,
+          error: 'storeId is required'
+        };
+        return;
+      }
+
+      // @ts-ignore
+      const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
+      const result = await geminiService.deleteStoreById(storeId, force);
+
+      ctx.body = result;
+    } catch (error) {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        error: sanitizeError(error)
+      };
+    }
+  },
+
+  /**
+   * Get detailed statistics including active/pending/failed document counts
+   * @route GET /api/gemini-sync/detailed-stats
+   */
+  async getDetailedStats(ctx) {
+    try {
+      // @ts-ignore
+      const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
+      const result = await geminiService.getDetailedStats();
+
+      ctx.body = result;
+    } catch (error) {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        error: sanitizeError(error)
+      };
+    }
+  },
+
+  /**
+   * Get search history
+   * @route GET /api/gemini-sync/search-history
+   */
+  async getSearchHistory(ctx) {
+    try {
+      const { limit } = ctx.query;
+
+      // @ts-ignore
+      const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
+      const history = await geminiService.getSearchHistory(limit ? parseInt(limit) : 10);
+
+      ctx.body = {
+        success: true,
+        data: history
+      };
+    } catch (error) {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        error: sanitizeError(error)
+      };
+    }
   }
 
 };
@@ -284,7 +475,21 @@ async function processFullSync(lockKey: string, syncId: string) {
 
       // IMPORTANT: Strapi 5 Document Service uses start/limit, NOT page/pageSize!
       // Using wrong format causes pagination to be ignored → infinite loop!
+      // HASH-BASED DEDUPLICATION: Only sync products that:
+      // 1. Have never been synced (gemini_synced_hash is null), OR
+      // 2. Have been updated since last sync (promidata_hash != gemini_synced_hash)
       const products = await strapi.documents('api::product.product').findMany({
+        filters: {
+          $or: [
+            { gemini_synced_hash: { $null: true } },  // Never synced to Gemini
+            {
+              $and: [
+                { promidata_hash: { $notNull: true } },
+                { $not: { promidata_hash: { $eq: '$gemini_synced_hash' } } }  // Hash changed
+              ]
+            }
+          ]
+        },
         start,
         limit: batchSize,
         // No need to populate relations for queue job, just need documentId
@@ -347,11 +552,23 @@ async function processSupplierSync(supplierCode: string, syncId: string) {
 
       // IMPORTANT: Strapi 5 Document Service uses start/limit, NOT page/pageSize!
       // Using wrong format causes pagination to be ignored → infinite loop!
+      // HASH-BASED DEDUPLICATION: Only sync products that:
+      // 1. Have never been synced (gemini_synced_hash is null), OR
+      // 2. Have been updated since last sync (promidata_hash != gemini_synced_hash)
       const products = await strapi.documents('api::product.product').findMany({
         filters: {
           supplier: {
             code: supplierCode
-          }
+          },
+          $or: [
+            { gemini_synced_hash: { $null: true } },  // Never synced to Gemini
+            {
+              $and: [
+                { promidata_hash: { $notNull: true } },
+                { $not: { promidata_hash: { $eq: '$gemini_synced_hash' } } }  // Hash changed
+              ]
+            }
+          ]
         },
         start,
         limit: batchSize,

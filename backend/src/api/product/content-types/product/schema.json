@@ -77,6 +77,10 @@
       "type": "string",
       "private": true
     },
+    "gemini_synced_hash": {
+      "type": "string",
+      "private": true
+    },
     "battery_information": {
       "type": "string"
     },

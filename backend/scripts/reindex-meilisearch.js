@@ -8,15 +8,14 @@
 
 require('dotenv').config();
 const { MeiliSearch } = require('meilisearch');
-const Strapi = require('@strapi/strapi');
+const { createStrapi } = require('@strapi/strapi');
 
 async function reindex() {
   console.log('🚀 Starting manual Meilisearch reindex...\n');
 
   // Initialize Strapi
   console.log('1. Initializing Strapi...');
-  const strapi = await Strapi();
-  await strapi.load();
+  const strapi = await createStrapi({ distDir: './dist' }).load();
 
   console.log('✅ Strapi loaded\n');
 

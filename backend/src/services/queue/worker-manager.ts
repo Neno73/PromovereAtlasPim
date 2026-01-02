@@ -52,6 +52,12 @@ class WorkerManager {
         geminiSyncWorker
       ];
 
+      // CRITICAL: Wait for all workers to be ready (connected to Redis)
+      // This ensures workers are actively listening for jobs before any jobs are enqueued
+      strapi.log.info('⏳ Waiting for workers to connect to Redis...');
+      await Promise.all(this.workers.map(w => w.waitUntilReady()));
+      strapi.log.info('✅ All workers connected to Redis and ready to process jobs');
+
       this.isRunning = true;
 
       // Start Queue Monitor

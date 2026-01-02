@@ -525,6 +525,7 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     dimensions: Schema.Attribute.Component<'product.dimensions', false>;
     gallery_images: Schema.Attribute.Media<'images', true>;
     gemini_file_uri: Schema.Attribute.String & Schema.Attribute.Private;
+    gemini_synced_hash: Schema.Attribute.String & Schema.Attribute.Private;
     hex_colors: Schema.Attribute.JSON;
     imprint_position: Schema.Attribute.Component<
       'product.imprint-position',

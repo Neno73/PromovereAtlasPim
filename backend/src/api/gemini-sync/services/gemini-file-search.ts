@@ -166,6 +166,17 @@ export class GeminiFileSearchService {
   constructor(strapi: any) {
     this.strapi = strapi;
 
+    // Enhanced logging for diagnostics
+    const apiKeyExists = typeof process.env.GEMINI_API_KEY !== 'undefined' && process.env.GEMINI_API_KEY !== '';
+    const apiKeyLength = process.env.GEMINI_API_KEY?.length || 0;
+    const projectExists = !!process.env.GOOGLE_CLOUD_PROJECT;
+
+    strapi.log.info(
+      `[GeminiFileSearch] Initializing service. ` +
+      `GEMINI_API_KEY: ${apiKeyExists ? `set (${apiKeyLength} chars)` : 'NOT SET'}, ` +
+      `GOOGLE_CLOUD_PROJECT: ${projectExists ? 'set' : 'NOT SET'}`
+    );
+
     // Load configuration from environment variables
     this.config = {
       apiKey: process.env.GEMINI_API_KEY || '',
@@ -176,6 +187,7 @@ export class GeminiFileSearchService {
 
     // Validate configuration
     if (!this.config.apiKey) {
+      strapi.log.error('[GeminiFileSearch] GEMINI_API_KEY is empty or not set!');
       throw new Error('GEMINI_API_KEY environment variable is required');
     }
     if (!this.config.projectId) {
@@ -189,7 +201,7 @@ export class GeminiFileSearchService {
     this.meilisearchService = null;
 
     strapi.log.info(
-      `Gemini File Search service initialized ` +
+      `✅ Gemini File Search service initialized ` +
       `(project: ${this.config.projectId}, data source: Meilisearch)`
     );
   }
@@ -409,12 +421,11 @@ export class GeminiFileSearchService {
       }
 
       // Fetch document FROM Meilisearch (not Strapi DB)
-      // NOTE: The Meilisearch Strapi plugin uses "product-{documentId}" as the primary key
+      // NOTE: Meilisearch uses the Strapi documentId directly as the primary key
       let meilisearchDoc: MeilisearchProductDocument;
       try {
-        const meilisearchId = `product-${documentId}`;
-        meilisearchDoc = await this.meilisearchService.index.getDocument(meilisearchId);
-        this.strapi.log.debug(`📥 [Gemini] Fetched ${documentId} from Meilisearch (ID: ${meilisearchId})`);
+        meilisearchDoc = await this.meilisearchService.index.getDocument(documentId);
+        this.strapi.log.debug(`📥 [Gemini] Fetched ${documentId} from Meilisearch`);
       } catch (error) {
         // Product not in Meilisearch → skip (architecture principle: fix Meilisearch first)
         this.strapi.log.warn(
@@ -459,14 +470,20 @@ export class GeminiFileSearchService {
       );
 
       // Save the Gemini file reference to Strapi for tracking
-      // This helps with stats and knowing which products are synced
+      // Also save the promidata_hash for hash-based deduplication
       try {
+        // Fetch product from Strapi to get promidata_hash
+        const product = await this.strapi.entityService.findOne('api::product.product', documentId, {
+          fields: ['promidata_hash']
+        });
+
         await this.strapi.entityService.update('api::product.product', documentId, {
           data: {
             gemini_file_uri: operation.name,
+            gemini_synced_hash: product?.promidata_hash || null,
           },
         });
-        this.strapi.log.debug(`📝 Saved gemini_file_uri for ${geminiDoc.sku}`);
+        this.strapi.log.debug(`📝 Saved gemini_file_uri and gemini_synced_hash for ${geminiDoc.sku}`);
       } catch (updateError) {
         // Non-fatal: file was uploaded, just couldn't update tracking field
         this.strapi.log.warn(`Could not update gemini_file_uri for ${documentId}:`, updateError);
@@ -497,13 +514,14 @@ export class GeminiFileSearchService {
   async deleteDocument(documentId: string): Promise<{ success: boolean; error?: string }> {
     try {
       // NOTE: FileSearchStore doesn't support individual file deletion.
-      // Files remain in the store but we can clear the tracking field.
+      // Files remain in the store but we can clear the tracking fields.
       // Next sync will upload a fresh copy (semantic search handles duplicates).
 
-      // Clear the gemini_file_uri to mark product as needing re-sync
+      // Clear both gemini_file_uri and gemini_synced_hash to mark product as needing re-sync
       await this.strapi.entityService.update('api::product.product', documentId, {
         data: {
           gemini_file_uri: null,
+          gemini_synced_hash: null,
         },
       });
 
@@ -679,6 +697,259 @@ export class GeminiFileSearchService {
       this.strapi.log.error('Gemini health check failed:', error);
       return false;
     }
+  }
+
+  /**
+   * Get detailed FileSearchStore information
+   */
+  async getStoreInfo(): Promise<any> {
+    try {
+      const storeId = await this.getOrCreateStore();
+
+      if (!storeId) {
+        return {
+          found: false,
+          error: 'FileSearchStore not found'
+        };
+      }
+
+      // Get store details using the FileSearchStore API
+      const store = await this.ai.fileSearchStores.get({ name: storeId });
+
+      return {
+        found: true,
+        storeId,
+        displayName: store.displayName,
+        name: store.name,
+        createTime: store.createTime,
+        updateTime: store.updateTime,
+        // Return the full store object for any additional properties
+        rawStore: store,
+      };
+    } catch (error) {
+      this.strapi.log.error('Failed to get store info:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Test semantic search against FileSearchStore
+   */
+  async testSemanticSearch(query: string): Promise<any> {
+    try {
+      const storeId = await this.getOrCreateStore();
+
+      if (!storeId) {
+        return {
+          success: false,
+          error: 'FileSearchStore not found'
+        };
+      }
+
+      this.strapi.log.info(`[GeminiTest] Testing semantic search: "${query}"`);
+
+      // Construct prompt that explicitly instructs Gemini to search the FileSearchStore
+      const searchPrompt = `Search the PromoAtlas product catalog in the FileSearchStore and find products matching: "${query}"
+
+Return ONLY products found in the catalog. For each product, include:
+- SKU (product code)
+- Product name
+- Description
+- Any other relevant details (price, color, size, etc.)
+
+If no products match, say "No products found matching your query."`;
+
+      // According to official docs: https://ai.google.dev/gemini-api/docs/file-search
+      // Tools MUST be inside config object, and use gemini-2.5-flash for FileSearch support
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: searchPrompt,
+        config: {
+          tools: [{
+            fileSearch: {
+              fileSearchStoreNames: [storeId]
+            }
+          }]
+        }
+      } as any);
+
+      // Extract response text and metadata
+      // Note: Response structure may vary, returning the full response for debugging
+      const responseText = response.text || '';
+
+      return {
+        success: true,
+        query,
+        responseText,
+        fullResponse: response,  // Include full response for dashboard display
+      };
+    } catch (error) {
+      this.strapi.log.error('Semantic search test failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * List all FileSearchStores for the project
+   * @returns Array of store information
+   */
+  async listAllStores(): Promise<any[]> {
+    try {
+      this.strapi.log.info('[GeminiFileSearch] Listing all FileSearchStores');
+
+      // @ts-ignore - API type definitions may be incomplete
+      const response: any = await this.ai.fileSearchStores.list({
+        pageSize: 100  // Max allowed per page
+      } as any);
+
+      const stores = Array.isArray(response) ? response : (response.fileSearchStores || response.items || []);
+
+      this.strapi.log.info(`[GeminiFileSearch] Found ${stores.length} stores`);
+
+      return stores.map((store: any) => ({
+        storeId: store.name,
+        displayName: store.displayName || 'Unnamed Store',
+        createTime: store.createTime,
+        updateTime: store.updateTime,
+        vectorDatabase: store.vectorDatabase || store.vectorDb || {},
+      }));
+    } catch (error) {
+      this.strapi.log.error('Failed to list FileSearchStores:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Create a new FileSearchStore
+   * @param displayName - Name for the new store
+   * @returns Store information or error
+   */
+  async createNewStore(displayName: string): Promise<{ success: boolean; storeId?: string; error?: string }> {
+    try {
+      this.strapi.log.info(`[GeminiFileSearch] Creating new store: ${displayName}`);
+
+      // @ts-ignore - API type definitions may be incomplete
+      const response: any = await this.ai.fileSearchStores.create({
+        displayName: displayName || `Store ${Date.now()}`
+      } as any);
+
+      this.strapi.log.info(`✅ Created store: ${response.name}`);
+
+      return {
+        success: true,
+        storeId: response.name
+      };
+    } catch (error) {
+      this.strapi.log.error('Failed to create FileSearchStore:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to create store'
+      };
+    }
+  }
+
+  /**
+   * Delete a FileSearchStore
+   * @param storeId - ID of store to delete
+   * @param force - Force delete even if contains files
+   * @returns Success status
+   */
+  async deleteStoreById(storeId: string, force: boolean = false): Promise<{ success: boolean; error?: string }> {
+    try {
+      this.strapi.log.info(`[GeminiFileSearch] Deleting store: ${storeId} (force: ${force})`);
+
+      // @ts-ignore - API type definitions may be incomplete
+      await this.ai.fileSearchStores.delete({
+        name: storeId,
+        force
+      } as any);
+
+      this.strapi.log.info(`✅ Deleted store: ${storeId}`);
+
+      return { success: true };
+    } catch (error) {
+      this.strapi.log.error('Failed to delete FileSearchStore:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to delete store'
+      };
+    }
+  }
+
+  /**
+   * Get detailed statistics including active/pending/failed document counts
+   * @returns Detailed statistics object
+   */
+  async getDetailedStats(): Promise<any> {
+    try {
+      const storeId = await this.getOrCreateStore();
+
+      if (!storeId) {
+        return {
+          success: false,
+          error: 'FileSearchStore not found'
+        };
+      }
+
+      // Get store details which include vector database stats
+      const storeResponse: any = await this.ai.fileSearchStores.get({ name: storeId });
+
+      // Extract document counts (returned as strings, need to parse)
+      const activeDocuments = parseInt(storeResponse.activeDocumentsCount || '0', 10);
+      const pendingDocuments = parseInt(storeResponse.pendingDocumentsCount || '0', 10);
+      const failedDocuments = parseInt(storeResponse.failedDocumentsCount || '0', 10);
+      const totalBytes = parseInt(storeResponse.sizeBytes || '0', 10);
+
+      // Count synced products from Strapi
+      const syncedProducts = await this.strapi.entityService.count('api::product.product', {
+        filters: { gemini_file_uri: { $notNull: true } }
+      });
+
+      const totalProducts = await this.strapi.entityService.count('api::product.product', {});
+
+      return {
+        success: true,
+        stats: {
+          // Document counts from FileSearchStore API (note: counts include all files, not just active)
+          activeDocuments,
+          pendingDocuments,
+          failedDocuments,
+          totalDocuments: activeDocuments + pendingDocuments + failedDocuments,
+
+          // Product sync counts from Strapi
+          syncedProducts,
+          totalProducts,
+          coverage: totalProducts > 0 ? Math.round((syncedProducts / totalProducts) * 100) : 0,
+
+          // Size information
+          totalBytes,
+
+          // Store metadata
+          storeId,
+          displayName: storeResponse.displayName,
+          createTime: storeResponse.createTime,
+          updateTime: storeResponse.updateTime,
+        }
+      };
+    } catch (error) {
+      this.strapi.log.error('Failed to get detailed stats:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to get detailed stats'
+      };
+    }
+  }
+
+  /**
+   * Get recent search history
+   * Note: This is a placeholder - actual implementation would require database storage
+   * @returns Array of recent searches
+   */
+  async getSearchHistory(limit: number = 10): Promise<any[]> {
+    // TODO: Implement search history tracking in database
+    // For now, return empty array
+    this.strapi.log.info('[GeminiFileSearch] Search history not yet implemented');
+    return [];
   }
 }
 

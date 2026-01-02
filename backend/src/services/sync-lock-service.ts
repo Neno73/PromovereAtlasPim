@@ -49,12 +49,8 @@ class SyncLockService {
   private getClient(): Redis {
     if (!this.redis) {
       const config = getRedisConnection();
-      this.redis = new Redis({
-        host: config.host,
-        port: config.port,
-        password: config.password,
-        username: config.username,
-        tls: config.tls,
+      // Use URL-based connection (config.url contains the full Redis URL)
+      this.redis = new Redis(config.url, {
         maxRetriesPerRequest: 3,
         lazyConnect: true,
       });

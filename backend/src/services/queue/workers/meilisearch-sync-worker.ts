@@ -7,14 +7,16 @@
  * 2. Transform to Meilisearch document format
  * 3. Send to Meilisearch (add/update/delete)
  * 4. Handle errors with retry
+ * 5. Track progress via sync session
  */
 
 import { Worker, Job } from 'bullmq';
-import { meilisearchSyncWorkerOptions } from '../queue-config';
+import { meilisearchSyncWorkerOptions, QUEUE_NAMES } from '../queue-config';
 import type {
   MeilisearchSyncJobData,
   MeilisearchSyncJobResult,
 } from '../job-types';
+import syncSessionTracker from '../../sync-session-tracker';
 
 /**
  * Create Meilisearch Sync Worker
@@ -24,9 +26,9 @@ export function createMeilisearchSyncWorker(): Worker<
   MeilisearchSyncJobResult
 > {
   const worker = new Worker<MeilisearchSyncJobData, MeilisearchSyncJobResult>(
-    'meilisearch-sync',
+    QUEUE_NAMES.MEILISEARCH_SYNC,
     async (job: Job<MeilisearchSyncJobData>) => {
-      const { operation, entityType, entityId, documentId } = job.data;
+      const { operation, entityType, entityId, documentId, sessionId } = job.data;
 
       // Input validation
       if (!operation || !['add', 'update', 'delete'].includes(operation)) {
@@ -135,6 +137,11 @@ export function createMeilisearchSyncWorker(): Worker<
 
           await job.updateProgress({ step: 'complete', percentage: 100 });
 
+          // Update session counter
+          if (sessionId) {
+            await syncSessionTracker.incrementCounter(sessionId, 'meilisearch_indexed');
+          }
+
           // NOTE: Gemini sync is now manual only (via admin UI "Gemini" button)
           // Removed automatic trigger to allow manual control over when/which suppliers sync to Gemini
           // See: backend/src/admin/pages/supplier-sync.tsx → handleGeminiSync()
@@ -144,10 +151,21 @@ export function createMeilisearchSyncWorker(): Worker<
             operation,
             documentId,
             taskUid: task.taskUid,
+            sessionId, // Include for event handlers
           };
         }
       } catch (error) {
         strapi.log.error(`❌ Failed to sync ${entityType} ${documentId} to Meilisearch:`, error);
+
+        // Update session failure counter
+        if (sessionId) {
+          await syncSessionTracker.incrementCounter(sessionId, 'meilisearch_failed');
+          await syncSessionTracker.addError(sessionId, 'meilisearch', error.message || 'Unknown error', {
+            documentId,
+            entityType,
+            operation
+          });
+        }
 
         // Return error result (will trigger retry)
         return {
@@ -155,6 +173,7 @@ export function createMeilisearchSyncWorker(): Worker<
           operation,
           documentId,
           error: error.message || 'Unknown error',
+          sessionId,
         };
       }
     },
@@ -162,18 +181,60 @@ export function createMeilisearchSyncWorker(): Worker<
   );
 
   // Worker event handlers
-  worker.on('completed', (job, result) => {
+  worker.on('completed', async (job, result) => {
     strapi.log.info(
       `✅ [Meilisearch] Completed ${result.operation} for ${result.documentId} (task: ${result.taskUid})`
     );
+
+    // Check if meilisearch stage is complete
+    const sessionId = result.sessionId || job.data.sessionId;
+    if (sessionId) {
+      try {
+        const stageStatus = await syncSessionTracker.isStageComplete(sessionId, 'meilisearch');
+        if (stageStatus.complete) {
+          await syncSessionTracker.completeStage(sessionId, 'meilisearch', {
+            meilisearch_total: stageStatus.total,
+            meilisearch_indexed: stageStatus.processed - (stageStatus.failed || 0),
+            meilisearch_failed: stageStatus.failed
+          });
+          strapi.log.info(`📋 Session ${sessionId}: Meilisearch stage complete (${stageStatus.processed}/${stageStatus.total})`);
+
+          // Start gemini stage
+          await syncSessionTracker.startStage(sessionId, 'gemini');
+          strapi.log.info(`📋 Session ${sessionId}: Starting gemini stage`);
+        }
+      } catch (sessionError) {
+        strapi.log.error(`Failed to check session ${sessionId}:`, sessionError);
+      }
+    }
   });
 
-  worker.on('failed', (job, error) => {
+  worker.on('failed', async (job, error) => {
     if (job) {
       strapi.log.error(
         `❌ [Meilisearch] Failed ${job.data.operation} for ${job.data.documentId} after ${job.attemptsMade} attempts:`,
         error
       );
+
+      // Check if meilisearch stage should complete (even with failures)
+      if (job.data.sessionId) {
+        try {
+          const stageStatus = await syncSessionTracker.isStageComplete(job.data.sessionId, 'meilisearch');
+          if (stageStatus.complete) {
+            await syncSessionTracker.completeStage(job.data.sessionId, 'meilisearch', {
+              meilisearch_total: stageStatus.total,
+              meilisearch_indexed: stageStatus.processed - (stageStatus.failed || 0),
+              meilisearch_failed: stageStatus.failed
+            });
+            strapi.log.info(`📋 Session ${job.data.sessionId}: Meilisearch stage complete with failures (${stageStatus.failed} failed)`);
+
+            // Continue to gemini stage despite failures
+            await syncSessionTracker.startStage(job.data.sessionId, 'gemini');
+          }
+        } catch (sessionError) {
+          strapi.log.error(`Failed to check session:`, sessionError);
+        }
+      }
     } else {
       strapi.log.error('❌ [Meilisearch] Job failed with no job data:', error);
     }

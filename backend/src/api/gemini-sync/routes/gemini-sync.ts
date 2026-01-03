@@ -170,5 +170,29 @@ export default {
         tags: ['Gemini Sync'],
       },
     },
+    {
+      method: 'POST',
+      path: '/gemini-sync/verify-product/:documentId',
+      handler: 'gemini-sync.verifyProduct',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
+        description: 'Verify if a product exists in Gemini FileSearchStore via semantic search',
+        tags: ['Gemini Sync'],
+      },
+    },
+    {
+      method: 'POST',
+      path: '/gemini-sync/reconcile',
+      handler: 'gemini-sync.reconcile',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
+        description: 'Run reconciliation: compare tracking vs actual FileSearchStore',
+        tags: ['Gemini Sync'],
+      },
+    },
   ],
 };

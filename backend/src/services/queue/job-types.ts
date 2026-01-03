@@ -12,6 +12,7 @@ export interface SupplierSyncJobData {
   supplierCode: string;
   triggerType: 'manual' | 'auto';
   triggeredBy?: string; // User ID or 'system'
+  sessionId?: string; // Sync session ID for tracking across pipeline
 }
 
 export interface SupplierSyncJobResult {
@@ -45,6 +46,7 @@ export interface ProductFamilyJobData {
   }>;
   productHash: string;
   supplierSyncJobId: string; // Parent job ID for progress tracking
+  sessionId?: string; // Sync session ID for tracking across pipeline
 }
 
 export interface ProductFamilyJobResult {
@@ -73,6 +75,7 @@ export interface ImageUploadJobData {
   productFamilyJobId?: string; // Optional: link back to parent job
   updateParentProduct?: boolean; // If true, also set this image as parent Product's main_image
   parentProductId?: number; // Parent Product ID (when updateParentProduct is true)
+  sessionId?: string; // Sync session ID for tracking across pipeline
 }
 
 export interface ImageUploadJobResult {
@@ -93,6 +96,7 @@ export interface MeilisearchSyncJobData {
   entityId: number;        // Numeric Strapi ID
   documentId: string;      // Strapi documentId (string)
   priority?: number;       // Higher = more important (user-initiated changes)
+  sessionId?: string; // Sync session ID for tracking across pipeline
 }
 
 export interface MeilisearchSyncJobResult {
@@ -101,6 +105,7 @@ export interface MeilisearchSyncJobResult {
   documentId: string;
   taskUid?: number;        // Meilisearch task UID
   error?: string;
+  sessionId?: string; // Sync session ID for tracking across pipeline
 }
 
 /**
@@ -113,6 +118,7 @@ export interface GeminiSyncJobData {
   documentId: string;      // Strapi documentId (string)
   priority?: number;       // Higher = more important (user-initiated changes)
   delay?: number;          // Optional delay before processing (milliseconds)
+  sessionId?: string; // Sync session ID for tracking across pipeline
 }
 
 export interface GeminiSyncJobResult {
@@ -121,6 +127,7 @@ export interface GeminiSyncJobResult {
   documentId: string;
   error?: string;
   skipped?: boolean;       // True if skipped because product not in Meilisearch
+  sessionId?: string; // Sync session ID for tracking across pipeline
 }
 
 /**

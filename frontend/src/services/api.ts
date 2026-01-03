@@ -1,4 +1,4 @@
-import { Product, Category, Supplier, ApiResponse } from '../types';
+import { Product, Category, Supplier, ApiResponse, VerificationStatus } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:1337/api';
 
@@ -121,6 +121,59 @@ class ApiService {
       console.error('Failed to fetch brands:', error);
       return [];
     }
+  }
+
+  // Verify Gemini chunks for a product
+  async verifyGeminiChunks(documentId: string): Promise<{
+    success: boolean;
+    data?: {
+      found: boolean;
+      chunks: number;
+      responseText: string; // The AI's synthesized response
+      groundingChunks: Array<{ text: string; source?: string }>; // Raw document chunks from FileSearchStore
+      product: { documentId: string; sku: string; name: any; a_number: string };
+      tracking: {
+        hasGeminiUri: boolean;
+        foundInStore: boolean; // Whether the product was found via semantic search
+        hashMatch: boolean;
+        promidataHash: string | null;
+        geminiSyncedHash: string | null;
+      };
+      searchQuery: string;
+    };
+    error?: string;
+  }> {
+    return this.fetch(`/gemini-sync/verify-product/${documentId}`, {
+      method: 'POST',
+    });
+  }
+
+  // Get verification status for multiple products (batch)
+  async getProductVerificationStatus(documentIds: string[]): Promise<{
+    success: boolean;
+    data: Record<string, VerificationStatus>;
+  }> {
+    return this.fetch('/products/verification-status', {
+      method: 'POST',
+      body: JSON.stringify({ documentIds }),
+    });
+  }
+
+  // Get queue statistics for sync dashboard
+  async getQueueStats(): Promise<{
+    success: boolean;
+    data: {
+      queues: Array<{
+        name: string;
+        waiting: number;
+        active: number;
+        completed: number;
+        failed: number;
+        delayed: number;
+      }>;
+    };
+  }> {
+    return this.fetch('/queue-manager/stats');
   }
 
   // Meilisearch search endpoint

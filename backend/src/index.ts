@@ -62,6 +62,15 @@ export default {
         'api::supplier.supplier.findOne',
         'api::gemini-sync.gemini-sync.stats',
         'api::gemini-sync.gemini-sync.triggerBySupplier',
+        // Sync session endpoints (read-only for monitoring)
+        'api::sync-session.sync-session.find',
+        'api::sync-session.sync-session.findOne',
+        'api::sync-session.sync-session.getActiveSessions',
+        'api::sync-session.sync-session.getSupplierHistory',
+        'api::sync-session.sync-session.getSessionDetails',
+        'api::sync-session.sync-session.getSummary',
+        'api::sync-session.sync-session.verifySession',
+        'api::sync-session.sync-session.getPipelineHealth',
       ];
 
       for (const action of permissionsToSet) {

@@ -196,3 +196,15 @@ export interface MeilisearchFields {
  * Combined product type that supports both Strapi and Meilisearch formats
  */
 export type ProductData = Product & MeilisearchFields;
+
+/**
+ * Verification status for a product
+ * Used in ProductList to show sync badges
+ */
+export interface VerificationStatus {
+  inMeilisearch: boolean;
+  inGemini: boolean;
+  hashMatches: boolean;
+  imageCount: number;
+  lastSynced: string | null;
+}

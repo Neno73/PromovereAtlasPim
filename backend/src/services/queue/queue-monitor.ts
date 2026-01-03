@@ -4,7 +4,7 @@
  */
 
 import { Queue } from 'bullmq';
-import { getRedisConnection } from './queue-config';
+import { getRedisConnection, QUEUE_NAMES } from './queue-config';
 
 export class QueueMonitor {
     private queues: Queue[] = [];
@@ -19,17 +19,11 @@ export class QueueMonitor {
     }
 
     /**
-     * Initialize queues for monitoring
+     * Initialize queues for monitoring (using prefixed names for environment isolation)
      */
     private initQueues() {
         const connection = getRedisConnection();
-        const queueNames = [
-            'supplier-sync',
-            'product-family',
-            'image-upload',
-            'meilisearch-sync',
-            'gemini-sync'
-        ];
+        const queueNames = Object.values(QUEUE_NAMES);
 
         this.queues = queueNames.map(name => new Queue(name, { connection }));
     }

@@ -449,6 +449,251 @@ export default {
         error: sanitizeError(error)
       };
     }
+  },
+
+  /**
+   * Run reconciliation: compare tracking vs actual FileSearchStore
+   * @route POST /api/gemini-sync/reconcile
+   * @description Samples products with gemini_file_uri and verifies via semantic search
+   * @returns {object} { total, sampled, verified, missing, products: [] }
+   */
+  async reconcile(ctx) {
+    try {
+      const { sampleSize = 50 } = ctx.request.body || {};
+
+      // Limit sample size to prevent abuse
+      const actualSampleSize = Math.min(Math.max(sampleSize, 10), 100);
+
+      strapi.log.info(`[Reconciliation] Starting reconciliation with sample size: ${actualSampleSize}`);
+
+      // Get products that claim to be synced (have gemini_file_uri)
+      const syncedProducts = await strapi.db.query('api::product.product').findMany({
+        where: {
+          gemini_file_uri: { $notNull: true }
+        },
+        select: ['id', 'documentId', 'sku', 'name', 'gemini_file_uri', 'promidata_hash', 'gemini_synced_hash'],
+        limit: actualSampleSize,
+        orderBy: { updatedAt: 'desc' }
+      });
+
+      // Get total count of synced products
+      const totalCount = await strapi.db.query('api::product.product').count({
+        where: {
+          gemini_file_uri: { $notNull: true }
+        }
+      });
+
+      // @ts-ignore
+      const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
+
+      const results = {
+        total: totalCount,
+        sampled: syncedProducts.length,
+        verified: 0,
+        missing: 0,
+        hashMismatch: 0,
+        products: [] as Array<{
+          documentId: string;
+          sku: string;
+          name: any;
+          gemini_file_uri: string;
+          found: boolean;
+          hashMatches: boolean;
+        }>
+      };
+
+      // Verify each sampled product
+      for (const product of syncedProducts) {
+        try {
+          // Use semantic search with product SKU
+          const searchQuery = `product SKU ${product.sku}`;
+          const searchResult = await geminiService.testSemanticSearch(searchQuery);
+
+          // Check if product was found in the response text
+          let found = false;
+          if (searchResult?.success && searchResult?.responseText) {
+            const responseText = searchResult.responseText.toLowerCase();
+            const skuLower = product.sku.toLowerCase();
+
+            if (responseText.includes(skuLower)) {
+              found = true;
+            }
+
+            // Also check for partial SKU match (without variant suffix)
+            if (!found) {
+              const skuBase = product.sku.split('-').slice(0, -1).join('-').toLowerCase();
+              if (skuBase && responseText.includes(skuBase)) {
+                found = true;
+              }
+            }
+          }
+
+          const hashMatches = product.promidata_hash === product.gemini_synced_hash;
+
+          if (found) {
+            results.verified++;
+          } else {
+            results.missing++;
+          }
+
+          if (!hashMatches) {
+            results.hashMismatch++;
+          }
+
+          results.products.push({
+            documentId: product.documentId,
+            sku: product.sku,
+            name: product.name,
+            gemini_file_uri: product.gemini_file_uri,
+            found,
+            hashMatches
+          });
+
+          // Add small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (err) {
+          strapi.log.warn(`[Reconciliation] Failed to verify product ${product.sku}:`, err.message);
+          results.products.push({
+            documentId: product.documentId,
+            sku: product.sku,
+            name: product.name,
+            gemini_file_uri: product.gemini_file_uri,
+            found: false,
+            hashMatches: false
+          });
+          results.missing++;
+        }
+      }
+
+      strapi.log.info(`[Reconciliation] Complete: ${results.verified}/${results.sampled} verified, ${results.missing} missing`);
+
+      ctx.body = {
+        success: true,
+        data: results
+      };
+    } catch (error) {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        error: sanitizeError(error)
+      };
+    }
+  },
+
+  /**
+   * Verify if a product exists in Gemini FileSearchStore
+   * @route POST /api/gemini-sync/verify-product/:documentId
+   * @description Uses semantic search to verify if product chunks exist in FileSearchStore
+   * @returns {object} { found: boolean, chunks: number, product: { sku, name } }
+   */
+  async verifyProduct(ctx) {
+    try {
+      const { documentId } = ctx.params;
+
+      if (!documentId) {
+        ctx.status = 400;
+        ctx.body = {
+          success: false,
+          error: 'documentId is required'
+        };
+        return;
+      }
+
+      // Get product from database
+      const product = await strapi.documents('api::product.product').findOne({
+        documentId,
+        fields: ['sku', 'name', 'a_number', 'promidata_hash', 'gemini_synced_hash', 'gemini_file_uri']
+      });
+
+      if (!product) {
+        ctx.status = 404;
+        ctx.body = {
+          success: false,
+          error: `Product with documentId ${documentId} not found`
+        };
+        return;
+      }
+
+      // @ts-ignore
+      const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
+
+      // Use semantic search with product SKU to verify existence
+      const searchQuery = `product SKU ${product.sku}`;
+      const searchResult = await geminiService.testSemanticSearch(searchQuery);
+
+      // Count chunks that mention this product's SKU
+      let chunksFound = 0;
+      let found = false;
+
+      // The testSemanticSearch returns { success, query, responseText, fullResponse }
+      // Check if the SKU appears in the AI's response text
+      if (searchResult?.success && searchResult?.responseText) {
+        // Check if SKU is mentioned in the response (case-insensitive)
+        const responseText = searchResult.responseText.toLowerCase();
+        const skuLower = product.sku.toLowerCase();
+
+        if (responseText.includes(skuLower)) {
+          found = true;
+          chunksFound = 1;
+        }
+
+        // Also check for partial SKU match (without variant suffix)
+        // e.g., "A109-HX-YL" might be mentioned even if full "A109-HX-YL-RED" isn't
+        const skuBase = product.sku.split('-').slice(0, -1).join('-').toLowerCase();
+        if (!found && skuBase && responseText.includes(skuBase)) {
+          found = true;
+          chunksFound = 1;
+        }
+      }
+
+      // Try to extract grounding chunks from fullResponse if available
+      // Gemini API may include grounding metadata
+      if (searchResult?.fullResponse) {
+        const fullResp = searchResult.fullResponse;
+        // Check various possible locations for grounding data
+        const groundingMeta = fullResp.candidates?.[0]?.groundingMetadata;
+        if (groundingMeta?.retrievalQueries?.length) {
+          chunksFound = Math.max(chunksFound, groundingMeta.retrievalQueries.length);
+        }
+        if (groundingMeta?.groundingChunks?.length) {
+          chunksFound = Math.max(chunksFound, groundingMeta.groundingChunks.length);
+        }
+      }
+
+      // Get tracking status from product fields
+      // If found in store, consider it synced even without tracking field
+      const trackingStatus = {
+        hasGeminiUri: !!product.gemini_file_uri,
+        foundInStore: found, // Add this for better status display
+        hashMatch: product.promidata_hash === product.gemini_synced_hash,
+        promidataHash: product.promidata_hash,
+        geminiSyncedHash: product.gemini_synced_hash
+      };
+
+      ctx.body = {
+        success: true,
+        data: {
+          found,
+          chunks: chunksFound,
+          responseText: searchResult?.responseText || '', // Include the AI response text
+          groundingChunks: searchResult?.groundingChunks || [], // Include raw document chunks
+          product: {
+            documentId,
+            sku: product.sku,
+            name: product.name,
+            a_number: product.a_number
+          },
+          tracking: trackingStatus,
+          searchQuery
+        }
+      };
+    } catch (error) {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        error: sanitizeError(error)
+      };
+    }
   }
 
 };

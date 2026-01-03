@@ -44,11 +44,12 @@ import type { Core } from '@strapi/strapi';
 declare const strapi: Core.Strapi;
 
 import { Worker, Job } from 'bullmq';
-import { geminiSyncWorkerOptions } from '../queue-config';
+import { geminiSyncWorkerOptions, QUEUE_NAMES } from '../queue-config';
 import type {
   GeminiSyncJobData,
   GeminiSyncJobResult,
 } from '../job-types';
+import syncSessionTracker from '../../sync-session-tracker';
 
 // Import the service type for type hints (not the actual service)
 import type { GeminiFileSearchService } from '../../../api/gemini-sync/services/gemini-file-search';
@@ -83,7 +84,7 @@ export function createGeminiSyncWorker(): Worker<
   GeminiSyncJobResult
 > {
   const worker = new Worker<GeminiSyncJobData, GeminiSyncJobResult>(
-    'gemini-sync',
+    QUEUE_NAMES.GEMINI_SYNC,
     async (job: Job<GeminiSyncJobData>) => {
       // DEBUG: Write to file to bypass all logging issues
       const fs = require('fs');
@@ -92,7 +93,7 @@ export function createGeminiSyncWorker(): Worker<
       const debugMsg = `[${new Date().toISOString()}] Job ${job.id} | GEMINI_API_KEY: ${apiKeyExists ? `yes (${apiKeyLen} chars)` : 'NO'} | strapi: ${typeof strapi}\n`;
       fs.appendFileSync('/tmp/gemini-worker-debug.log', debugMsg);
 
-      const { operation, documentId } = job.data;
+      const { operation, documentId, sessionId } = job.data;
 
       // Input validation
       if (!operation || !['add', 'update', 'delete'].includes(operation)) {
@@ -119,12 +120,23 @@ export function createGeminiSyncWorker(): Worker<
           if (!result.success) {
             // Deletion failed (file not found) - log warning but don't fail job
             strapi.log.warn(`⚠️  [Gemini] Delete failed for ${documentId}: ${result.error}`);
+
+            // Update session counter for skipped/failed deletes
+            if (sessionId) {
+              await syncSessionTracker.incrementCounter(sessionId, 'gemini_skipped');
+            }
+          } else {
+            // Update session counter for successful delete
+            if (sessionId) {
+              await syncSessionTracker.incrementCounter(sessionId, 'gemini_synced');
+            }
           }
 
           return {
             success: true, // Don't fail job if file not found
             operation,
             documentId,
+            sessionId,
           };
         } else {
           // Add or Update operation - reads FROM Meilisearch
@@ -151,12 +163,18 @@ export function createGeminiSyncWorker(): Worker<
                 `(Fix Meilisearch first, then re-trigger Gemini sync)`
               );
 
+              // Update session counter for skipped
+              if (sessionId) {
+                await syncSessionTracker.incrementCounter(sessionId, 'gemini_skipped');
+              }
+
               return {
                 success: true, // Mark as success to prevent retries
                 operation,
                 documentId,
                 error: result.error,
                 skipped: true,
+                sessionId,
               };
             }
 
@@ -164,14 +182,29 @@ export function createGeminiSyncWorker(): Worker<
             throw new Error(result.error || 'Unknown error');
           }
 
+          // Update session counter for successful sync
+          if (sessionId) {
+            await syncSessionTracker.incrementCounter(sessionId, 'gemini_synced');
+          }
+
           return {
             success: true,
             operation,
             documentId,
+            sessionId,
           };
         }
       } catch (error) {
         strapi.log.error(`❌ Failed to sync product ${documentId} to Gemini:`, error);
+
+        // Update session failure counter
+        if (sessionId) {
+          await syncSessionTracker.incrementCounter(sessionId, 'gemini_failed');
+          await syncSessionTracker.addError(sessionId, 'gemini', error.message || 'Unknown error', {
+            documentId,
+            operation
+          });
+        }
 
         // Return error result (will trigger retry based on job config)
         return {
@@ -179,6 +212,7 @@ export function createGeminiSyncWorker(): Worker<
           operation,
           documentId,
           error: error.message || 'Unknown error',
+          sessionId,
         };
       }
     },
@@ -195,7 +229,7 @@ export function createGeminiSyncWorker(): Worker<
   });
 
   // Worker event handlers
-  worker.on('completed', (job, result) => {
+  worker.on('completed', async (job, result) => {
     if (result.skipped) {
       strapi.log.info(
         `⏭️  [Gemini] Skipped ${result.operation} for ${result.documentId} (not in Meilisearch)`
@@ -205,14 +239,57 @@ export function createGeminiSyncWorker(): Worker<
         `✅ [Gemini] Completed ${result.operation} for ${result.documentId}`
       );
     }
+
+    // Check if gemini stage is complete (this is the FINAL stage)
+    const sessionId = result.sessionId || job.data.sessionId;
+    if (sessionId) {
+      try {
+        const stageStatus = await syncSessionTracker.isStageComplete(sessionId, 'gemini');
+        if (stageStatus.complete) {
+          await syncSessionTracker.completeStage(sessionId, 'gemini', {
+            gemini_total: stageStatus.total,
+            gemini_synced: stageStatus.processed - (stageStatus.failed || 0),
+            gemini_failed: stageStatus.failed
+          });
+          strapi.log.info(`📋 Session ${sessionId}: Gemini stage complete (${stageStatus.processed}/${stageStatus.total})`);
+
+          // Complete the entire sync session (gemini is the final stage)
+          await syncSessionTracker.completeSession(sessionId);
+          strapi.log.info(`🏁 Session ${sessionId}: SYNC COMPLETE - All stages finished`);
+        }
+      } catch (sessionError) {
+        strapi.log.error(`Failed to check session ${sessionId}:`, sessionError);
+      }
+    }
   });
 
-  worker.on('failed', (job, error) => {
+  worker.on('failed', async (job, error) => {
     if (job) {
       strapi.log.error(
         `❌ [Gemini] Failed ${job.data.operation} for ${job.data.documentId} after ${job.attemptsMade} attempts:`,
         error
       );
+
+      // Check if gemini stage should complete (even with failures)
+      if (job.data.sessionId) {
+        try {
+          const stageStatus = await syncSessionTracker.isStageComplete(job.data.sessionId, 'gemini');
+          if (stageStatus.complete) {
+            await syncSessionTracker.completeStage(job.data.sessionId, 'gemini', {
+              gemini_total: stageStatus.total,
+              gemini_synced: stageStatus.processed - (stageStatus.failed || 0),
+              gemini_failed: stageStatus.failed
+            });
+            strapi.log.info(`📋 Session ${job.data.sessionId}: Gemini stage complete with failures (${stageStatus.failed} failed)`);
+
+            // Complete the entire sync session (gemini is the final stage)
+            await syncSessionTracker.completeSession(job.data.sessionId);
+            strapi.log.info(`🏁 Session ${job.data.sessionId}: SYNC COMPLETE - All stages finished (with some failures)`);
+          }
+        } catch (sessionError) {
+          strapi.log.error(`Failed to check session:`, sessionError);
+        }
+      }
     } else {
       strapi.log.error('❌ [Gemini] Job failed with no job data:', error);
     }

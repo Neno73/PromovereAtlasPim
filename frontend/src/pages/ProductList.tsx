@@ -1,6 +1,6 @@
 import { useState, useEffect, FC } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Product, ApiResponse } from '../types';
+import { Product, ApiResponse, VerificationStatus } from '../types';
 import { apiService } from '../services/api';
 import { ProductCard } from '../components/ProductCard';
 import { FilterBar } from '../components/FilterBar';
@@ -20,6 +20,11 @@ export const ProductList: FC = () => {
   });
   const [filters, setFilters] = useState<Record<string, any>>({ isActive: 'true' });
   const [sortBy, setSortBy] = useState('updatedAt:desc');
+
+  // Verification status state
+  const [verificationStatus, setVerificationStatus] = useState<Record<string, VerificationStatus>>({});
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [showVerification, setShowVerification] = useState(false);
 
   // Load products using Meilisearch
   const loadProducts = async (page: number = 1, newFilters?: Record<string, any>) => {
@@ -99,10 +104,47 @@ export const ProductList: FC = () => {
     }
   };
 
+  // Fetch verification status for displayed products
+  const fetchVerificationStatus = async (productList: Product[]) => {
+    if (!showVerification || productList.length === 0) {
+      return;
+    }
+
+    try {
+      setVerificationLoading(true);
+
+      // Get document IDs from products
+      const documentIds = productList
+        .map(p => p.documentId || (p as any).id)
+        .filter(Boolean) as string[];
+
+      if (documentIds.length === 0) {
+        return;
+      }
+
+      const response = await apiService.getProductVerificationStatus(documentIds);
+
+      if (response.success) {
+        setVerificationStatus(response.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch verification status:', err);
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
   // Initial load
   useEffect(() => {
     loadProducts(1);
   }, [sortBy]);
+
+  // Fetch verification status when products or showVerification changes
+  useEffect(() => {
+    if (showVerification && products.length > 0) {
+      fetchVerificationStatus(products);
+    }
+  }, [products, showVerification]);
 
   // Handle filter changes
   const handleFiltersChange = (newFilters: Record<string, any>) => {
@@ -131,6 +173,13 @@ export const ProductList: FC = () => {
         <h1>Products</h1>
         <div className="page-actions">
           <LanguageSelector />
+          <button
+            className={`verification-toggle ${showVerification ? 'active' : ''}`}
+            onClick={() => setShowVerification(!showVerification)}
+            title={showVerification ? 'Hide sync status' : 'Show sync status'}
+          >
+            {showVerification ? 'Hide Status' : 'Show Status'}
+          </button>
           <div className="sort-section">
             <label htmlFor="sort">Sort by:</label>
             <select
@@ -187,12 +236,14 @@ export const ProductList: FC = () => {
                   <div className="products-grid">
                     {products.map((product) => {
                       // Meilisearch returns 'id', Strapi API returns 'documentId'
-                      const productId = product.id || (product as any).documentId;
+                      const productId = product.documentId || (product as any).id;
                       return (
                         <ProductCard
                           key={productId}
                           product={product}
                           onClick={() => handleProductClick(productId)}
+                          verificationStatus={showVerification ? verificationStatus[productId] : undefined}
+                          verificationLoading={showVerification && verificationLoading}
                         />
                       );
                     })}

@@ -59,5 +59,19 @@ export default {
       },
     });
 
+    // Add Sync Sessions Dashboard
+    app.addMenuLink({
+      to: "/sync-sessions",
+      icon: () => <DarkIcon><span className="icon-sessions">⏱</span></DarkIcon>,
+      intlLabel: {
+        id: "sync-sessions.plugin.name",
+        defaultMessage: "Sync Sessions",
+      },
+      Component: async () => {
+        const mod = await import("./pages/sync-sessions");
+        return mod.default;
+      },
+    });
+
   },
 };

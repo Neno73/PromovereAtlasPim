@@ -54,6 +54,34 @@
   box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
 }
 
+.verification-toggle {
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  color: #555;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.verification-toggle:hover {
+  border-color: #2196f3;
+  color: #2196f3;
+}
+
+.verification-toggle.active {
+  background: #2196f3;
+  border-color: #2196f3;
+  color: white;
+}
+
+.verification-toggle.active:hover {
+  background: #1976d2;
+  border-color: #1976d2;
+}
+
 .product-list-content {
   display: grid;
   grid-template-columns: 300px 1fr;

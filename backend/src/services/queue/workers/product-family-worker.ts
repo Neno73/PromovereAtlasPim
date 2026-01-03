@@ -7,13 +7,15 @@
  * 2. Create/update Product entity
  * 3. Transform and create/update ProductVariant entities
  * 4. Enqueue image upload jobs for variants
+ * 5. Track progress via sync session
  */
 
 import { Worker, Job, Queue } from 'bullmq';
 import {
   productFamilyWorkerOptions,
   imageUploadJobOptions,
-  getRedisConnection
+  getRedisConnection,
+  QUEUE_NAMES
 } from '../queue-config';
 
 // Import modular services
@@ -24,6 +26,7 @@ import productSyncService from '../../promidata/sync/product-sync-service';
 import variantSyncService from '../../promidata/sync/variant-sync-service';
 import deduplicationService from '../../promidata/media/deduplication';
 import queueService from '../queue-service';
+import syncSessionTracker from '../../sync-session-tracker';
 import type { ImageUploadJobData } from '../job-types';
 
 /**
@@ -35,6 +38,7 @@ export interface ProductFamilyJobData {
   supplierId: number;
   supplierCode: string;
   productHash: string;
+  sessionId?: string; // Sync session ID for tracking across pipeline
 }
 
 /**
@@ -42,9 +46,9 @@ export interface ProductFamilyJobData {
  */
 export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
   const worker = new Worker<ProductFamilyJobData>(
-    'product-family',
+    QUEUE_NAMES.PRODUCT_FAMILY,
     async (job: Job<ProductFamilyJobData>) => {
-      const { aNumber, variants, supplierId, supplierCode, productHash } = job.data;
+      const { aNumber, variants, supplierId, supplierCode, productHash, sessionId } = job.data;
 
       // Input validation
       if (!aNumber || typeof aNumber !== 'string') {
@@ -60,7 +64,7 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
         throw new Error('Invalid job data: supplierCode must be a non-empty string');
       }
 
-      strapi.log.info(`🔨 [Worker] Processing product family: ${aNumber}`);
+      strapi.log.info(`🔨 [Worker] Processing product family: ${aNumber}${sessionId ? ` (session: ${sessionId})` : ''}`);
 
       try {
         // Step 1: Group variants by color
@@ -81,8 +85,8 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
         const variantResults = [];
         const imageJobs = [];
 
-        // Get image upload queue
-        const imageUploadQueue = new Queue('image-upload', { connection: getRedisConnection() });
+        // Get image upload queue (using prefixed name for environment isolation)
+        const imageUploadQueue = new Queue(QUEUE_NAMES.IMAGE_UPLOAD, { connection: getRedisConnection() });
 
         let processed = 0;
         const totalVariants = variants.length;
@@ -140,7 +144,8 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
                   entityId: Number(variantResult.variantId),
                   fieldName: 'primary_image',
                   updateParentProduct: isFirstVariant, // Mark first variant to update Product
-                  parentProductId: isFirstVariant ? productId : undefined
+                  parentProductId: isFirstVariant ? productId : undefined,
+                  sessionId // Pass session ID to image jobs
                 };
 
                 const imageJob = await imageUploadQueue.add(
@@ -176,7 +181,8 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
                   entityType: 'product-variant',
                   entityId: Number(variantResult.variantId),
                   fieldName: 'gallery_images',
-                  index: idx
+                  index: idx,
+                  sessionId // Pass session ID to image jobs
                 };
 
                 const imageJob = await imageUploadQueue.add(
@@ -213,6 +219,7 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
 
         // Enqueue Meilisearch sync for each variant with 5-minute delay
         // This allows time for image uploads to complete before indexing
+        let meilisearchJobsEnqueued = 0;
         for (const variantResult of variantResults) {
           if (variantResult.documentId) {
             await queueService.enqueueMeilisearchSync(
@@ -221,26 +228,45 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
               Number(variantResult.variantId),
               variantResult.documentId,
               5, // Low priority since it's delayed anyway
-              300000 // 5 minutes delay (300,000 ms)
+              300000, // 5 minutes delay (300,000 ms)
+              sessionId // Pass session ID for tracking
             );
+            meilisearchJobsEnqueued++;
           } else {
             strapi.log.warn(`  ⚠️  Variant ${variantResult.variantId} missing documentId, skipping Meilisearch sync`);
           }
         }
 
-        const syncedCount = variantResults.filter(v => v.documentId).length;
-        strapi.log.info(`  └─ ${syncedCount} Meilisearch sync jobs enqueued (5-min delay)`);
+        strapi.log.info(`  └─ ${meilisearchJobsEnqueued} Meilisearch sync jobs enqueued (5-min delay)`);
+
+        // Update session counters
+        if (sessionId) {
+          // Increment families updated counter
+          await syncSessionTracker.incrementCounter(sessionId, 'promidata_families_updated');
+          // Add image jobs to session total
+          await syncSessionTracker.incrementCounter(sessionId, 'images_total', imageJobs.length);
+          // Add meilisearch jobs to session total
+          await syncSessionTracker.incrementCounter(sessionId, 'meilisearch_total', meilisearchJobsEnqueued);
+        }
 
         return {
           aNumber,
           productId,
           variantsCreated: variantResults.length,
           imagesEnqueued: imageJobs.length,
-          imageJobIds: imageJobs
+          imageJobIds: imageJobs,
+          sessionId
         };
 
       } catch (error) {
         strapi.log.error(`❌ Failed to process product family ${aNumber}:`, error);
+        // Record error in session
+        if (sessionId) {
+          await syncSessionTracker.addError(sessionId, 'promidata', error?.message || 'Unknown error', {
+            aNumber,
+            supplierCode
+          });
+        }
         throw error;
       }
     },
@@ -248,12 +274,60 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
   );
 
   // Event handlers
-  worker.on('completed', (job) => {
+  worker.on('completed', async (job) => {
+    const { sessionId, aNumber, imagesEnqueued } = job.returnvalue || {};
     strapi.log.info(`✅ [Worker] Product family job ${job.id} completed`);
+
+    // Check if this was the last family job in the session
+    // If so, start the images stage
+    if (sessionId) {
+      try {
+        // Check if all product family jobs for this session are complete
+        const session = await syncSessionTracker.getSession(sessionId);
+        if (session) {
+          const familiesCreated = session.promidata_families_created || 0;
+          const familiesUpdated = session.promidata_families_updated || 0;
+
+          // If all families have been processed, start images stage
+          if (familiesUpdated >= familiesCreated) {
+            const imagesTotal = session.images_total || 0;
+            if (imagesTotal > 0) {
+              await syncSessionTracker.startStage(sessionId, 'images');
+              strapi.log.info(`📋 Session ${sessionId}: All ${familiesCreated} families processed. Starting images stage (${imagesTotal} images)`);
+            } else {
+              // No images to process, skip to meilisearch
+              await syncSessionTracker.completeStage(sessionId, 'images', {
+                images_total: 0,
+                images_uploaded: 0,
+                images_deduplicated: session.images_deduplicated || 0,
+                images_failed: 0
+              });
+              await syncSessionTracker.startStage(sessionId, 'meilisearch');
+              strapi.log.info(`📋 Session ${sessionId}: No images to upload. Starting meilisearch stage.`);
+            }
+          }
+        }
+      } catch (sessionError) {
+        strapi.log.error(`Failed to update session ${sessionId}:`, sessionError);
+      }
+    }
   });
 
-  worker.on('failed', (job, error) => {
+  worker.on('failed', async (job, error) => {
     strapi.log.error(`❌ [Worker] Product family job ${job?.id} failed:`, error);
+
+    // Record error in session
+    if (job?.data?.sessionId) {
+      try {
+        await syncSessionTracker.addError(job.data.sessionId, 'promidata', error?.message || 'Unknown error', {
+          aNumber: job.data.aNumber,
+          supplierCode: job.data.supplierCode,
+          jobId: job.id
+        });
+      } catch (sessionError) {
+        strapi.log.error(`Failed to update session:`, sessionError);
+      }
+    }
   });
 
   worker.on('error', (error) => {

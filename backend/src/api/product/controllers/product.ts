@@ -170,4 +170,94 @@ export default factories.createCoreController('api::product.product', ({ strapi 
       ctx.badRequest('Reindex failed', { error: error.message });
     }
   },
+
+  /**
+   * Get verification status for multiple products
+   * Returns Meilisearch, Gemini, and hash status for batch verification
+   */
+  async getVerificationStatus(ctx) {
+    try {
+      const { documentIds } = ctx.request.body;
+
+      if (!documentIds || !Array.isArray(documentIds) || documentIds.length === 0) {
+        return ctx.badRequest('documentIds array is required');
+      }
+
+      // Limit to prevent abuse
+      if (documentIds.length > 100) {
+        return ctx.badRequest('Maximum 100 documentIds allowed per request');
+      }
+
+      // Get Meilisearch service
+      // @ts-ignore - Custom service not in Strapi types
+      const meilisearchService = strapi.service('api::product.meilisearch');
+
+      // Fetch products with needed fields
+      const products = await strapi.db.query('api::product.product').findMany({
+        where: {
+          documentId: { $in: documentIds },
+        },
+        select: [
+          'id',
+          'documentId',
+          'sku',
+          'promidata_hash',
+          'gemini_synced_hash',
+          'gemini_file_uri',
+          'last_synced',
+        ],
+        populate: ['main_image', 'gallery_images', 'variants'],
+      });
+
+      // Build status map
+      const statusMap: Record<string, {
+        inMeilisearch: boolean;
+        inGemini: boolean;
+        hashMatches: boolean;
+        imageCount: number;
+        lastSynced: string | null;
+      }> = {};
+
+      // Check Meilisearch status for each product
+      for (const product of products) {
+        let inMeilisearch = false;
+
+        try {
+          // Try to get the document from Meilisearch
+          const msDoc = await meilisearchService.index.getDocument(product.documentId);
+          inMeilisearch = !!msDoc;
+        } catch (error) {
+          // Document not found in Meilisearch
+          inMeilisearch = false;
+        }
+
+        // Count images from main_image, gallery_images, and variants
+        let imageCount = 0;
+        if (product.main_image) imageCount++;
+        if (product.gallery_images?.length) imageCount += product.gallery_images.length;
+        if (product.variants?.length) {
+          for (const variant of product.variants) {
+            if (variant.primary_image) imageCount++;
+            if (variant.gallery_images?.length) imageCount += variant.gallery_images.length;
+          }
+        }
+
+        statusMap[product.documentId] = {
+          inMeilisearch,
+          inGemini: !!product.gemini_file_uri,
+          hashMatches: product.promidata_hash === product.gemini_synced_hash,
+          imageCount,
+          lastSynced: product.last_synced || null,
+        };
+      }
+
+      ctx.send({
+        success: true,
+        data: statusMap,
+      });
+    } catch (error) {
+      strapi.log.error('Failed to get verification status:', error);
+      ctx.badRequest('Failed to get verification status', { error: error.message });
+    }
+  },
 }));

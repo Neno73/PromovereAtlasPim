@@ -301,9 +301,10 @@ class ProductTransformer {
 
   /**
    * Extract price tiers (8-tier structure)
+   * IMPORTANT: Returns empty array (not undefined) for Strapi 5 repeatable component compatibility
    */
-  private extractPriceTiers(data: RawProductData): any {
-    const priceTiers = [];
+  private extractPriceTiers(data: RawProductData): any[] {
+    const priceTiers: any[] = [];
 
     // Tier 1-8 fields
     for (let i = 1; i <= 8; i++) {
@@ -319,7 +320,8 @@ class ProductTransformer {
       }
     }
 
-    return priceTiers.length > 0 ? priceTiers : undefined;
+    // Always return array (empty if no tiers) - Strapi 5 repeatable components require arrays
+    return priceTiers;
   }
 
   /**

@@ -747,6 +747,104 @@ export interface ApiSyncConfigurationSyncConfiguration
   };
 }
 
+export interface ApiSyncSessionSyncSession extends Struct.CollectionTypeSchema {
+  collectionName: 'sync_sessions';
+  info: {
+    description: 'Tracks full sync pipeline: Promidata \u2192 Images \u2192 Meilisearch \u2192 Gemini';
+    displayName: 'Sync Session';
+    pluralName: 'sync-sessions';
+    singularName: 'sync-session';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    completed_at: Schema.Attribute.DateTime;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    duration_seconds: Schema.Attribute.Integer;
+    error_count: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    errors: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<[]>;
+    gemini_completed_at: Schema.Attribute.DateTime;
+    gemini_failed: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    gemini_skipped: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    gemini_started_at: Schema.Attribute.DateTime;
+    gemini_status: Schema.Attribute.Enumeration<
+      ['pending', 'running', 'completed', 'failed', 'skipped']
+    > &
+      Schema.Attribute.DefaultTo<'pending'>;
+    gemini_synced: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    gemini_total: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    images_completed_at: Schema.Attribute.DateTime;
+    images_deduplicated: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<0>;
+    images_failed: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    images_started_at: Schema.Attribute.DateTime;
+    images_status: Schema.Attribute.Enumeration<
+      ['pending', 'running', 'completed', 'failed', 'skipped']
+    > &
+      Schema.Attribute.DefaultTo<'pending'>;
+    images_total: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    images_uploaded: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    last_error: Schema.Attribute.Text;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::sync-session.sync-session'
+    > &
+      Schema.Attribute.Private;
+    meilisearch_completed_at: Schema.Attribute.DateTime;
+    meilisearch_failed: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<0>;
+    meilisearch_indexed: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<0>;
+    meilisearch_started_at: Schema.Attribute.DateTime;
+    meilisearch_status: Schema.Attribute.Enumeration<
+      ['pending', 'running', 'completed', 'failed', 'skipped']
+    > &
+      Schema.Attribute.DefaultTo<'pending'>;
+    meilisearch_total: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
+    notes: Schema.Attribute.Text;
+    promidata_completed_at: Schema.Attribute.DateTime;
+    promidata_families_created: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<0>;
+    promidata_families_updated: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<0>;
+    promidata_hash_efficiency: Schema.Attribute.Decimal;
+    promidata_products_found: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<0>;
+    promidata_skipped_unchanged: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<0>;
+    promidata_started_at: Schema.Attribute.DateTime;
+    promidata_status: Schema.Attribute.Enumeration<
+      ['pending', 'running', 'completed', 'failed', 'skipped']
+    > &
+      Schema.Attribute.DefaultTo<'pending'>;
+    publishedAt: Schema.Attribute.DateTime;
+    session_id: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique;
+    started_at: Schema.Attribute.DateTime;
+    status: Schema.Attribute.Enumeration<
+      ['pending', 'running', 'completed', 'failed', 'stopped']
+    > &
+      Schema.Attribute.DefaultTo<'pending'>;
+    supplier: Schema.Attribute.Relation<'manyToOne', 'api::supplier.supplier'>;
+    supplier_code: Schema.Attribute.String & Schema.Attribute.Required;
+    triggered_by: Schema.Attribute.Enumeration<['manual', 'scheduled', 'api']> &
+      Schema.Attribute.DefaultTo<'manual'>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    verification_details: Schema.Attribute.JSON;
+    verification_status: Schema.Attribute.Enumeration<
+      ['pending', 'verified', 'mismatch', 'error']
+    > &
+      Schema.Attribute.DefaultTo<'pending'>;
+  };
+}
+
 export interface PluginContentReleasesRelease
   extends Struct.CollectionTypeSchema {
   collectionName: 'strapi_releases';
@@ -1263,6 +1361,7 @@ declare module '@strapi/strapi' {
       'api::queue-manager.queue-manager': ApiQueueManagerQueueManager;
       'api::supplier.supplier': ApiSupplierSupplier;
       'api::sync-configuration.sync-configuration': ApiSyncConfigurationSyncConfiguration;
+      'api::sync-session.sync-session': ApiSyncSessionSyncSession;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;
       'plugin::i18n.locale': PluginI18NLocale;

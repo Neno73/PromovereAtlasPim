@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { LanguageProvider } from './contexts/LanguageContext';
 import { ProductList } from './pages/ProductList';
 import { ProductDetail } from './pages/ProductDetail';
+import { SyncDashboard } from './pages/SyncDashboard';
 import './App.css';
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
               <h1 className="logo">PromoAtlas</h1>
               <nav className="main-nav">
                 <a href="/products" className="nav-link">Products</a>
+                <a href="/sync-dashboard" className="nav-link">Sync Status</a>
               </nav>
             </div>
           </header>
@@ -23,6 +25,7 @@ function App() {
               <Route path="/" element={<Navigate to="/products" replace />} />
               <Route path="/products" element={<ProductList />} />
               <Route path="/products/:id" element={<ProductDetail />} />
+              <Route path="/sync-dashboard" element={<SyncDashboard />} />
             </Routes>
           </main>
 

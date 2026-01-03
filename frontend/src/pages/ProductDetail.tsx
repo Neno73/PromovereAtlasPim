@@ -14,6 +14,26 @@ interface ImageWithType {
   variantId?: number;
 }
 
+interface GroundingChunk {
+  text: string;
+  source?: string;
+}
+
+interface GeminiVerificationResult {
+  found: boolean;
+  chunks: number;
+  responseText: string; // The AI's synthesized response
+  groundingChunks: GroundingChunk[]; // Raw document chunks from FileSearchStore
+  tracking: {
+    hasGeminiUri: boolean;
+    foundInStore: boolean;
+    hashMatch: boolean;
+    promidataHash: string | null;
+    geminiSyncedHash: string | null;
+  };
+  searchQuery: string;
+}
+
 export const ProductDetail: FC = () => {
   const { id: documentId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -25,6 +45,11 @@ export const ProductDetail: FC = () => {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [mainImageFitStrategy, setMainImageFitStrategy] = useState<'cover' | 'contain'>('contain');
   const mainImageRef = useRef<HTMLImageElement>(null);
+
+  // Gemini verification state
+  const [geminiVerification, setGeminiVerification] = useState<GeminiVerificationResult | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!documentId) {
@@ -179,6 +204,64 @@ export const ProductDetail: FC = () => {
       console.log(`Detail image aspect ratio: ${aspectRatio.toFixed(2)}, strategy: ${strategy}, dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
       setMainImageFitStrategy(strategy);
     }
+  };
+
+  // Handle Gemini verification
+  const handleVerifyGemini = async () => {
+    if (!documentId) return;
+
+    setVerifying(true);
+    setVerificationError(null);
+
+    try {
+      const response = await apiService.verifyGeminiChunks(documentId);
+      if (response.success && response.data) {
+        setGeminiVerification({
+          found: response.data.found,
+          chunks: response.data.chunks,
+          responseText: response.data.responseText || '',
+          groundingChunks: response.data.groundingChunks || [],
+          tracking: response.data.tracking,
+          searchQuery: response.data.searchQuery,
+        });
+      } else {
+        setVerificationError(response.error || 'Verification failed');
+      }
+    } catch (err) {
+      setVerificationError(err instanceof Error ? err.message : 'Verification failed');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // Collect all image URLs for the R2 links section
+  const collectAllImageUrls = (): Array<{ url: string; type: string; source: string }> => {
+    const urls: Array<{ url: string; type: string; source: string }> = [];
+
+    // Product images
+    if (productData.main_image?.url) {
+      urls.push({ url: productData.main_image.url, type: 'main', source: 'Product' });
+    }
+    if (productData.gallery_images) {
+      productData.gallery_images.forEach((img, idx) => {
+        if (img.url) urls.push({ url: img.url, type: `gallery-${idx}`, source: 'Product' });
+      });
+    }
+    if (productData.model_image?.url) {
+      urls.push({ url: productData.model_image.url, type: 'model', source: 'Product' });
+    }
+
+    // Variant images
+    productData.variants?.forEach(variant => {
+      if (variant.primary_image?.url) {
+        urls.push({ url: variant.primary_image.url, type: 'primary', source: `Variant ${variant.sku}` });
+      }
+      variant.gallery_images?.forEach((img, idx) => {
+        if (img.url) urls.push({ url: img.url, type: `gallery-${idx}`, source: `Variant ${variant.sku}` });
+      });
+    });
+
+    return urls;
   };
 
   const name = getLocalizedText(productData.name, language);
@@ -407,6 +490,154 @@ export const ProductDetail: FC = () => {
               </div>
             </div>
           )}
+
+          {/* Sync Status Section */}
+          <div className="sync-status-section">
+            <h3>Sync Status</h3>
+            <div className="sync-status-grid">
+              <div className="sync-status-item">
+                <span className="label">Promidata Hash:</span>
+                <code className="hash-value">{(productData as any).promidata_hash || 'Not synced'}</code>
+              </div>
+              <div className="sync-status-item">
+                <span className="label">Gemini Hash:</span>
+                <code className="hash-value">{(productData as any).gemini_synced_hash || 'Not synced'}</code>
+              </div>
+              <div className="sync-status-item">
+                <span className="label">Status:</span>
+                {(productData as any).promidata_hash && (productData as any).gemini_synced_hash ? (
+                  (productData as any).promidata_hash === (productData as any).gemini_synced_hash ? (
+                    <span className="status-badge success">Up to date</span>
+                  ) : (
+                    <span className="status-badge warning">Needs resync</span>
+                  )
+                ) : (
+                  <span className="status-badge neutral">Pending</span>
+                )}
+              </div>
+              <div className="sync-status-item">
+                <span className="label">Last Synced:</span>
+                <span className="value">
+                  {(productData as any).last_synced
+                    ? new Date((productData as any).last_synced).toLocaleString()
+                    : 'Never'
+                  }
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Image Sources Section (R2 Links) */}
+          <div className="image-sources-section">
+            <h3>Image Sources (R2)</h3>
+            {collectAllImageUrls().length > 0 ? (
+              <div className="image-sources-list">
+                {collectAllImageUrls().map((img, idx) => (
+                  <div key={idx} className="image-source-item">
+                    <span className="source-badge">{img.source}</span>
+                    <span className="type-badge">{img.type}</span>
+                    <a href={img.url} target="_blank" rel="noopener noreferrer" className="r2-link">
+                      {img.url.split('/').pop()}
+                    </a>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="no-images-text">No images uploaded</p>
+            )}
+          </div>
+
+          {/* Gemini Verification Section */}
+          <div className="gemini-verification-section">
+            <h3>Gemini FileSearchStore</h3>
+
+            <div className="gemini-tracking">
+              <div className="tracking-item">
+                <span className="label">Tracking Status:</span>
+                {/* Show synced if found in store OR has tracking URI */}
+                {(productData as any).gemini_file_uri || geminiVerification?.found ? (
+                  <span className="status-badge success">Synced</span>
+                ) : geminiVerification && !geminiVerification.found ? (
+                  <span className="status-badge error">Not in store</span>
+                ) : (
+                  <span className="status-badge neutral">Unknown - Click Verify</span>
+                )}
+              </div>
+            </div>
+
+            <div className="verification-actions">
+              <button
+                onClick={handleVerifyGemini}
+                disabled={verifying}
+                className="verify-btn"
+              >
+                {verifying ? 'Verifying...' : 'Verify Chunks'}
+              </button>
+            </div>
+
+            {verificationError && (
+              <div className="verification-error">
+                Error: {verificationError}
+              </div>
+            )}
+
+            {geminiVerification && (
+              <div className="verification-result">
+                <div className="result-item">
+                  <span className="label">Found in Store:</span>
+                  {geminiVerification.found ? (
+                    <span className="status-badge success">Yes</span>
+                  ) : (
+                    <span className="status-badge error">No</span>
+                  )}
+                </div>
+                <div className="result-item">
+                  <span className="label">Chunks Retrieved:</span>
+                  <span className="value">{geminiVerification.chunks}</span>
+                </div>
+                <div className="result-item">
+                  <span className="label">Search Query:</span>
+                  <code className="query-value">{geminiVerification.searchQuery}</code>
+                </div>
+                <div className="result-item">
+                  <span className="label">Hash Match:</span>
+                  {geminiVerification.tracking.hashMatch ? (
+                    <span className="status-badge success">Yes</span>
+                  ) : (
+                    <span className="status-badge warning">No</span>
+                  )}
+                </div>
+
+                {/* Show the AI response text */}
+                {geminiVerification.responseText && (
+                  <div className="response-text-section">
+                    <span className="label">Gemini Response (Synthesized):</span>
+                    <div className="response-text-content">
+                      {geminiVerification.responseText}
+                    </div>
+                  </div>
+                )}
+
+                {/* Show raw grounding chunks */}
+                {geminiVerification.groundingChunks && geminiVerification.groundingChunks.length > 0 && (
+                  <div className="grounding-chunks-section">
+                    <span className="label">Retrieved Chunks ({geminiVerification.groundingChunks.length}):</span>
+                    <div className="grounding-chunks-list">
+                      {geminiVerification.groundingChunks.map((chunk, index) => (
+                        <div key={index} className="grounding-chunk">
+                          <div className="chunk-header">
+                            <span className="chunk-number">Chunk {index + 1}</span>
+                            {chunk.source && <span className="chunk-source">{chunk.source}</span>}
+                          </div>
+                          <div className="chunk-text">{chunk.text}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
 
         </div>

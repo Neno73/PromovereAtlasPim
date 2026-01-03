@@ -72,6 +72,10 @@ class ImageUploadService {
   /**
    * Upload image from URL
    * Main entry point for image uploads
+   *
+   * Deduplication priority:
+   * 1. Check by source URL (Promidata URL) - prevents re-uploading same image
+   * 2. Check by filename - fallback for backwards compatibility
    */
   public async uploadFromUrl(
     imageUrl: string,
@@ -84,14 +88,29 @@ class ImageUploadService {
       const extension = this.extractExtension(imageUrl);
       const cleanFileName = `${fileName}.${extension}`;
 
-      // Check for existing image (deduplication)
-      const dedupCheck = await deduplicationService.checkByFilename(cleanFileName);
-
-      if (dedupCheck.exists) {
+      // PRIORITY 1: Check by source URL (Promidata URL)
+      // This is the most important check - prevents uploading same image twice
+      // even when used for different variants
+      const sourceUrlCheck = await deduplicationService.checkBySourceUrl(imageUrl);
+      if (sourceUrlCheck.exists) {
+        strapi.log.info(`[ImageUpload] ↻ Deduplicated by source URL: ${imageUrl}`);
         return {
           success: true,
-          mediaId: dedupCheck.mediaId,
-          url: dedupCheck.url,
+          mediaId: sourceUrlCheck.mediaId,
+          url: sourceUrlCheck.url,
+          fileName: sourceUrlCheck.fileName,
+          wasDedup: true,
+        };
+      }
+
+      // PRIORITY 2: Check by filename (backwards compatibility)
+      const filenameCheck = await deduplicationService.checkByFilename(cleanFileName);
+      if (filenameCheck.exists) {
+        strapi.log.info(`[ImageUpload] ↻ Deduplicated by filename: ${cleanFileName}`);
+        return {
+          success: true,
+          mediaId: filenameCheck.mediaId,
+          url: filenameCheck.url,
           fileName: cleanFileName,
           wasDedup: true,
         };
@@ -104,8 +123,8 @@ class ImageUploadService {
       // Upload to R2
       await this.uploadToR2(cleanFileName, imageBuffer, contentType);
 
-      // Create Strapi media record
-      const mediaId = await this.createMediaRecord(cleanFileName, imageBuffer, contentType, extension);
+      // Create Strapi media record (with source URL for future deduplication)
+      const mediaId = await this.createMediaRecord(cleanFileName, imageBuffer, contentType, extension, imageUrl);
 
       const publicUrl = `${process.env.R2_PUBLIC_URL}/${cleanFileName}`;
 
@@ -187,12 +206,14 @@ class ImageUploadService {
 
   /**
    * Create Strapi media record
+   * @param sourceUrl - Original Promidata URL for deduplication tracking
    */
   private async createMediaRecord(
     fileName: string,
     buffer: Buffer,
     contentType: string,
-    extension: string
+    extension: string,
+    sourceUrl?: string
   ): Promise<number> {
     try {
       const fileData = {
@@ -206,6 +227,7 @@ class ImageUploadService {
         provider_metadata: {
           public_id: fileName,
           resource_type: 'image',
+          source_url: sourceUrl, // Store original Promidata URL for deduplication
         },
         folderPath: '/',
       };

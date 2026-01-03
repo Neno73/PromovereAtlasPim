@@ -1,0 +1,185 @@
+{
+  "kind": "collectionType",
+  "collectionName": "sync_sessions",
+  "info": {
+    "singularName": "sync-session",
+    "pluralName": "sync-sessions",
+    "displayName": "Sync Session",
+    "description": "Tracks full sync pipeline: Promidata → Images → Meilisearch → Gemini"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "session_id": {
+      "type": "string",
+      "unique": true,
+      "required": true
+    },
+    "supplier": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::supplier.supplier"
+    },
+    "supplier_code": {
+      "type": "string",
+      "required": true
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": ["pending", "running", "completed", "failed", "stopped"],
+      "default": "pending"
+    },
+    "started_at": {
+      "type": "datetime"
+    },
+    "completed_at": {
+      "type": "datetime"
+    },
+    "duration_seconds": {
+      "type": "integer"
+    },
+
+    "promidata_status": {
+      "type": "enumeration",
+      "enum": ["pending", "running", "completed", "failed", "skipped"],
+      "default": "pending"
+    },
+    "promidata_started_at": {
+      "type": "datetime"
+    },
+    "promidata_completed_at": {
+      "type": "datetime"
+    },
+    "promidata_products_found": {
+      "type": "integer",
+      "default": 0
+    },
+    "promidata_families_created": {
+      "type": "integer",
+      "default": 0
+    },
+    "promidata_families_updated": {
+      "type": "integer",
+      "default": 0
+    },
+    "promidata_skipped_unchanged": {
+      "type": "integer",
+      "default": 0
+    },
+    "promidata_hash_efficiency": {
+      "type": "decimal"
+    },
+
+    "images_status": {
+      "type": "enumeration",
+      "enum": ["pending", "running", "completed", "failed", "skipped"],
+      "default": "pending"
+    },
+    "images_started_at": {
+      "type": "datetime"
+    },
+    "images_completed_at": {
+      "type": "datetime"
+    },
+    "images_total": {
+      "type": "integer",
+      "default": 0
+    },
+    "images_uploaded": {
+      "type": "integer",
+      "default": 0
+    },
+    "images_deduplicated": {
+      "type": "integer",
+      "default": 0
+    },
+    "images_failed": {
+      "type": "integer",
+      "default": 0
+    },
+
+    "meilisearch_status": {
+      "type": "enumeration",
+      "enum": ["pending", "running", "completed", "failed", "skipped"],
+      "default": "pending"
+    },
+    "meilisearch_started_at": {
+      "type": "datetime"
+    },
+    "meilisearch_completed_at": {
+      "type": "datetime"
+    },
+    "meilisearch_total": {
+      "type": "integer",
+      "default": 0
+    },
+    "meilisearch_indexed": {
+      "type": "integer",
+      "default": 0
+    },
+    "meilisearch_failed": {
+      "type": "integer",
+      "default": 0
+    },
+
+    "gemini_status": {
+      "type": "enumeration",
+      "enum": ["pending", "running", "completed", "failed", "skipped"],
+      "default": "pending"
+    },
+    "gemini_started_at": {
+      "type": "datetime"
+    },
+    "gemini_completed_at": {
+      "type": "datetime"
+    },
+    "gemini_total": {
+      "type": "integer",
+      "default": 0
+    },
+    "gemini_synced": {
+      "type": "integer",
+      "default": 0
+    },
+    "gemini_skipped": {
+      "type": "integer",
+      "default": 0
+    },
+    "gemini_failed": {
+      "type": "integer",
+      "default": 0
+    },
+
+    "errors": {
+      "type": "json",
+      "default": []
+    },
+    "last_error": {
+      "type": "text"
+    },
+    "error_count": {
+      "type": "integer",
+      "default": 0
+    },
+
+    "verification_status": {
+      "type": "enumeration",
+      "enum": ["pending", "verified", "mismatch", "error"],
+      "default": "pending"
+    },
+    "verification_details": {
+      "type": "json"
+    },
+
+    "triggered_by": {
+      "type": "enumeration",
+      "enum": ["manual", "scheduled", "api"],
+      "default": "manual"
+    },
+    "notes": {
+      "type": "text"
+    }
+  }
+}

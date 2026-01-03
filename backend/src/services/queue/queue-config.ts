@@ -1,10 +1,28 @@
 /**
  * BullMQ Queue Configuration
  * Defines concurrency, retry strategies, and timeouts for all queues
+ *
+ * IMPORTANT: Dev and production use SEPARATE Redis instances for isolation.
+ * - Development: Local Redis (Docker: promoatlas-redis on port 6380)
+ * - Production: Remote Redis on server
+ *
+ * This eliminates the need for queue prefixes and prevents cross-environment interference.
  */
 
 import { QueueOptions, WorkerOptions } from 'bullmq';
 import { randomUUID } from 'crypto';
+
+/**
+ * Queue Names
+ * Simple, unprefixed names - isolation is achieved via separate Redis instances
+ */
+export const QUEUE_NAMES = {
+  SUPPLIER_SYNC: 'supplier-sync',
+  PRODUCT_FAMILY: 'product-family',
+  IMAGE_UPLOAD: 'image-upload',
+  MEILISEARCH_SYNC: 'meilisearch-sync',
+  GEMINI_SYNC: 'gemini-sync',
+} as const;
 
 /**
  * Validate required Redis environment variables

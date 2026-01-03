@@ -62,6 +62,15 @@ export default {
         'api::supplier.supplier.findOne',
         'api::gemini-sync.gemini-sync.stats',
         'api::gemini-sync.gemini-sync.triggerBySupplier',
+        // Sync session endpoints (read-only for monitoring)
+        'api::sync-session.sync-session.find',
+        'api::sync-session.sync-session.findOne',
+        'api::sync-session.sync-session.getActiveSessions',
+        'api::sync-session.sync-session.getSupplierHistory',
+        'api::sync-session.sync-session.getSessionDetails',
+        'api::sync-session.sync-session.getSummary',
+        'api::sync-session.sync-session.verifySession',
+        'api::sync-session.sync-session.getPipelineHealth',
       ];
 
       for (const action of permissionsToSet) {
@@ -102,6 +111,56 @@ export default {
     } catch (error) {
       strapi.log.error('❌ An error occurred during the bootstrap process:', error);
     }
+
+    // Clean up stale sync sessions - runs on startup AND periodically
+    const cleanupStaleSessions = async (reason: string, maxAgeMinutes = 0) => {
+      try {
+        const whereClause = maxAgeMinutes > 0
+          ? `WHERE status = 'running' AND started_at < NOW() - INTERVAL '${maxAgeMinutes} minutes'`
+          : `WHERE status = 'running'`;
+
+        const staleResult = await strapi.db.connection.raw(`
+          UPDATE sync_sessions
+          SET status = 'failed',
+              images_status = CASE WHEN images_status IN ('pending', 'running') THEN 'failed' ELSE images_status END,
+              meilisearch_status = CASE WHEN meilisearch_status IN ('pending', 'running') THEN 'failed' ELSE meilisearch_status END,
+              gemini_status = CASE WHEN gemini_status IN ('pending', 'running') THEN 'failed' ELSE gemini_status END,
+              completed_at = NOW(),
+              last_error = '${reason}'
+          ${whereClause}
+          RETURNING session_id, supplier_code
+        `);
+
+        const cleanedCount = staleResult?.rows?.length || staleResult?.rowCount || 0;
+        return cleanedCount;
+      } catch (error) {
+        strapi.log.warn('⚠️  Could not clean stale sessions:', error.message);
+        return 0;
+      }
+    };
+
+    // Startup cleanup - mark ALL running sessions as failed (they're from previous run)
+    strapi.log.info('\n🧹 Cleaning up stale sync sessions...');
+    const startupCleaned = await cleanupStaleSessions('Session terminated: Strapi restarted');
+    if (startupCleaned > 0) {
+      strapi.log.info(`✅ Marked ${startupCleaned} stale sync session(s) as failed`);
+    } else {
+      strapi.log.info('✅ No stale sync sessions found');
+    }
+
+    // Periodic cleanup - every 10 minutes, mark sessions running > 30 min as failed
+    const CLEANUP_INTERVAL = 10 * 60 * 1000; // 10 minutes
+    const MAX_SESSION_AGE = 30; // minutes
+    setInterval(async () => {
+      const cleaned = await cleanupStaleSessions(
+        `Session timed out: Running for more than ${MAX_SESSION_AGE} minutes`,
+        MAX_SESSION_AGE
+      );
+      if (cleaned > 0) {
+        strapi.log.info(`🧹 Periodic cleanup: Marked ${cleaned} timed-out sync session(s) as failed`);
+      }
+    }, CLEANUP_INTERVAL);
+    strapi.log.info(`⏰ Scheduled periodic session cleanup every ${CLEANUP_INTERVAL / 60000} minutes (timeout: ${MAX_SESSION_AGE} min)`)
 
     // Health check endpoint is now at /api/health (see src/api/health/)
 

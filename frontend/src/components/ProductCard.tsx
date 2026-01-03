@@ -1,15 +1,23 @@
 import { FC } from 'react';
-import { Product, ProductData, ProductVariant, PriceTier } from '../types';
+import { Product, ProductData, ProductVariant, PriceTier, VerificationStatus } from '../types';
 import { getLocalizedText, formatPrice, getColorHex } from '../utils/i18n';
 import { useLanguage } from '../contexts/LanguageContext';
+import { VerificationBadges } from './VerificationBadges';
 import './ProductCard.css';
 
 interface ProductCardProps {
   product: Product;
   onClick: () => void;
+  verificationStatus?: VerificationStatus | null;
+  verificationLoading?: boolean;
 }
 
-export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
+export const ProductCard: FC<ProductCardProps> = ({
+  product,
+  onClick,
+  verificationStatus,
+  verificationLoading
+}) => {
   const { language } = useLanguage();
 
   if (!product) {
@@ -221,6 +229,15 @@ export const ProductCard: FC<ProductCardProps> = ({ product, onClick }) => {
             </div>
           );
         })()}
+
+        {/* Verification badges */}
+        {(verificationStatus !== undefined || verificationLoading) && (
+          <VerificationBadges
+            status={verificationStatus || null}
+            loading={verificationLoading}
+            compact={true}
+          />
+        )}
       </div>
     </div>
   );

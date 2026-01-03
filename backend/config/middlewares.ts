@@ -31,7 +31,13 @@ export default ({ env }) => [
     name: 'strapi::cors',
     config: {
       headers: ['*'],
-      origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:5173'],
+      origin: [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:3002',
+        'http://localhost:5173',
+        'https://atlaspim.solslab.dev',
+      ],
     },
   },
   'strapi::poweredBy',

@@ -102,9 +102,26 @@ class ApiService {
     return this.fetch<ApiResponse<Product>>(`/products/${documentId}?${searchParams.toString()}`);
   }
 
-  // Categories
+  // Categories (with parent for hierarchy building)
+  // Fetches all pages since Strapi caps at 100 per page
   async getCategories(): Promise<ApiResponse<Category[]>> {
-    return this.fetch<ApiResponse<Category[]>>('/categories?pagination[pageSize]=100&populate=parent');
+    const allCategories: Category[] = [];
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await this.fetch<ApiResponse<Category[]>>(
+        `/categories?pagination[page]=${page}&pagination[pageSize]=100&populate=parent&sort=sort_order:asc,name:asc`
+      );
+      allCategories.push(...response.data);
+      hasMore = page < (response.meta?.pagination?.pageCount || 1);
+      page++;
+    }
+
+    return {
+      data: allCategories,
+      meta: { pagination: { page: 1, pageSize: allCategories.length, pageCount: 1, total: allCategories.length } }
+    };
   }
 
   // Suppliers
@@ -187,6 +204,8 @@ class ApiService {
       supplier_code?: string;
       brand?: string;
       category?: string;
+      colors?: string[];
+      sizes?: string[];
       price_min?: number;
       price_max?: number;
       is_active?: boolean;
@@ -226,6 +245,12 @@ class ApiService {
       }
       if (params.filters.category) {
         searchParams.append('category', params.filters.category);
+      }
+      if (params.filters.colors && params.filters.colors.length > 0) {
+        searchParams.append('colors', params.filters.colors.join(','));
+      }
+      if (params.filters.sizes && params.filters.sizes.length > 0) {
+        searchParams.append('sizes', params.filters.sizes.join(','));
       }
       if (params.filters.price_min !== undefined) {
         searchParams.append('price_min', params.filters.price_min.toString());

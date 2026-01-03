@@ -57,6 +57,8 @@ export default factories.createCoreController('api::product.product', ({ strapi 
         supplier_code,
         brand,
         category,
+        colors,                           // Comma-separated colors or array
+        sizes,                            // Comma-separated sizes or array
         price_min,
         price_max,
         is_active = 'true',
@@ -75,9 +77,26 @@ export default factories.createCoreController('api::product.product', ({ strapi 
       // Add filters
       if (supplier_code) filters.push(`supplier_code = "${supplier_code}"`);
       if (brand) filters.push(`brand = "${brand}"`);
-      if (category) filters.push(`category = "${category}"`);
+      // Use STARTS WITH for hierarchical categories (e.g., "FOOD" matches "FOOD/CHOCOLATE")
+      if (category) filters.push(`category STARTS WITH "${category}"`);
       if (price_min) filters.push(`price_min >= ${price_min}`);
       if (price_max) filters.push(`price_min <= ${price_max}`);
+
+      // Handle array filters (colors, sizes)
+      // These can be comma-separated strings or arrays
+      if (colors) {
+        const colorList = Array.isArray(colors) ? colors : String(colors).split(',').map(c => c.trim());
+        if (colorList.length > 0) {
+          // Meilisearch array filter: colors IN ["Red", "Blue"]
+          filters.push(`colors IN [${colorList.map(c => `"${c}"`).join(', ')}]`);
+        }
+      }
+      if (sizes) {
+        const sizeList = Array.isArray(sizes) ? sizes : String(sizes).split(',').map(s => s.trim());
+        if (sizeList.length > 0) {
+          filters.push(`sizes IN [${sizeList.map(s => `"${s}"`).join(', ')}]`);
+        }
+      }
 
       // Parse facets (comma-separated list to array)
       const facetsList = facets ? String(facets).split(',').map(f => f.trim()).filter(Boolean) : [];

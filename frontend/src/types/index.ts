@@ -127,14 +127,19 @@ export interface Category {
   code: string;
   name: MultilingualText;
   sort_order: number;
-  parent?: {
-    data: Category;
-  };
-  children?: {
-    data: Category[];
-  };
+  // Strapi 5 returns flat structure (no .data wrapper)
+  parent?: Category | null;
+  children?: Category[];
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Category tree node with computed children for hierarchical display
+ */
+export interface CategoryTreeNode extends Category {
+  children: CategoryTreeNode[];
+  level: number;
 }
 
 export interface Supplier {
@@ -207,4 +212,32 @@ export interface VerificationStatus {
   hashMatches: boolean;
   imageCount: number;
   lastSynced: string | null;
+}
+
+/**
+ * Facet distribution from Meilisearch
+ * Maps facet values to their counts
+ */
+export interface FacetDistribution {
+  supplier_code?: Record<string, number>;
+  brand?: Record<string, number>;
+  category?: Record<string, number>;
+  colors?: Record<string, number>;
+  sizes?: Record<string, number>;
+  country_of_origin?: Record<string, number>;
+}
+
+/**
+ * Filter state for product list
+ */
+export interface ProductFilters {
+  search: string;
+  category: string;
+  supplier: string;
+  brand: string;
+  colors: string[];
+  sizes: string[];
+  priceMin: string;
+  priceMax: string;
+  isActive: string;
 }

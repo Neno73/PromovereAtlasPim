@@ -1,32 +1,32 @@
 # PromoAtlas PIM System
 
-*Last updated: 2026-01-03*
+*Last updated: 2026-04-01*
 
 ## System Status ✅
 
-**OPERATIONAL**: Backend (1337), Frontend (3000), PostgreSQL (Coolify), Redis (local:6380), 5 BullMQ workers, Gemini RAG
+**OPERATIONAL**: Backend (1337), Frontend (3000), PostgreSQL (local:5433), Redis (local:6382), MeiliSearch (local:7700), 4 BullMQ workers
 
 ## Quick Context
 
-Strapi 5-based PIM for promotional products. Key features:
-- **56 Promidata suppliers** with hash-based incremental sync (89% efficiency)
+Strapi 5.41-based PIM for promotional products. Key features:
+- **59 Promidata suppliers** with hash-based incremental sync
 - **Product → ProductVariant** hierarchy for size/color variants
-- **Gemini FileSearchStore** for semantic search
-- **Meilisearch** for exact search
-- **Cloudflare R2** for images
+- **MeiliSearch** for product search (upgrading to hybrid search)
+- **Cloudflare R2** for images (migrating to SeaweedFS)
+- **Coolify** for deployment (both FE and BE)
 
 ## Essential Commands
 
 ```bash
+# Docker services (postgres, redis, meilisearch)
+docker compose up -d
+
 # Backend
 cd backend && npm run develop   # Start dev server
 cd backend && npm run build     # Build admin panel
 
 # Frontend
 cd frontend && npm run dev      # Start Vite dev server
-
-# Local Redis (dev)
-docker start promoatlas-redis   # Or: docker run -d --name promoatlas-redis -p 6380:6379 redis:alpine
 ```
 
 **URLs**: Backend http://localhost:1337/admin | Frontend http://localhost:3000
@@ -62,6 +62,7 @@ Detailed docs auto-load when needed:
 ## MCP Tools
 
 - **Strapi MCP** - Content management
+- **MeiliSearch MCP** - Search index operations
 - **Context7 MCP** - Documentation lookup
 - **Playwright MCP** - Browser automation
 

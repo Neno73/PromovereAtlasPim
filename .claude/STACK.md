@@ -1,6 +1,6 @@
 # Tech Stack
 
-*Last updated: 2025-12-05 14:50*
+*Last updated: 2026-04-01*
 
 Complete technology stack for PromoAtlas PIM system with versions and rationale.
 
@@ -9,17 +9,17 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 ## Backend Stack (Strapi 5)
 
 ### Core Framework
-- **Strapi 5.17.0** - Headless CMS for content management
+- **Strapi 5.41.1** - Headless CMS for content management
   - **Why**: Provides robust API, content-type builder, admin panel, plugin ecosystem
   - **Node Requirement**: 18.0.0 - 22.x.x
   - **Key Features**: Content types, components, lifecycle hooks, permissions
 
 ### Strapi Plugins
-- **@strapi/plugin-users-permissions** (5.17.0) - Authentication & authorization
-- **@strapi/plugin-cloud** (5.17.0) - Cloud integrations
-- **@strapi/plugin-documentation** - OpenAPI/Swagger API documentation
-- **strapi-provider-cloudflare-r2** (^0.3.0) - Cloudflare R2 storage provider
-- **@strapi/provider-upload-aws-s3** (5.18.0) - S3-compatible upload provider
+- **@strapi/plugin-users-permissions** (5.41.1) - Authentication & authorization
+- **@strapi/plugin-cloud** (5.41.1) - Cloud integrations
+- **@strapi/plugin-documentation** (5.41.1) - OpenAPI/Swagger API documentation
+- **strapi-provider-cloudflare-r2** (^0.3.0) - Cloudflare R2 storage provider (migrating to SeaweedFS)
+- **@strapi/provider-upload-aws-s3** (5.41.1) - S3-compatible upload provider
 - **strapi-plugin-meilisearch** - Meilisearch integration for product search
 
 ### Database
@@ -44,14 +44,6 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
   - **Features**: Faceted search, typo tolerance, instant results
   - **Integration**: strapi-plugin-meilisearch for automatic indexing
 
-### AI/RAG Integration
-- **@google/genai** (^1.30.0) - Google Gemini AI SDK
-  - **Why**: Semantic search and AI-powered product discovery
-  - **Feature**: FileSearchStore for RAG (Retrieval Augmented Generation)
-  - **Store**: `promoatlas-product-catalog-xfex8hxfyifx`
-  - **Data Flow**: Strapi → Meilisearch → Gemini FileSearchStore
-  - **Tracking**: `gemini_file_uri` field on Product tracks sync status
-
 ### HTTP Client
 - **node-fetch** (2.7.0) - HTTP requests for Promidata API integration
   - **Why**: Simple, Promise-based API for external data fetching
@@ -63,12 +55,11 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
   - **Why**: Handles long-running sync operations, concurrent job processing, job retries
   - **Redis Client**: ioredis (^5.3.0)
   - **Redis Provider**: Local Docker (dev) / Coolify Redis (prod)
-  - **Workers**: 5 active workers for parallel processing
+  - **Workers**: 4 active workers for parallel processing
     - `supplier-sync` (concurrency: 1) - Processes supplier sync jobs sequentially
     - `product-family` (concurrency: 3) - Creates product families with parallelism
-    - `image-upload` (concurrency: 10) - High-concurrency image uploads to R2
+    - `image-upload` (concurrency: 10) - High-concurrency image uploads
     - `meilisearch-sync` (concurrency: 5) - Syncs products to Meilisearch index
-    - `gemini-sync` (concurrency: 5) - Syncs products to Gemini FileSearchStore
   - **Features**: Job retries, progress tracking, failure handling, queue monitoring
   - **Configuration**: Lazy Redis connection to prevent startup issues
 - **@bull-board/api** + **@bull-board/koa** - Queue monitoring dashboard

@@ -1,8 +1,30 @@
 # Architectural Decisions
 
-*Last updated: 2026-01-03*
+*Last updated: 2026-04-01*
 
 Decision log for PromoAtlas PIM. Keep decisions concise: Context → Decision → Consequences.
+
+---
+
+## [2026-04-01] Phase 1 Rework: Remove Gemini, Upgrade Strapi, Fix Schemas
+
+**Context**: Major rework toward MeiliSearch hybrid search + Vercel AI SDK + assistant-ui. Existing Gemini RAG integration scrapped. Vercel deployment replaced by Coolify for both FE and BE. Schema analysis found broken price tier extraction and dead fields.
+
+**Decisions**:
+1. **Remove Gemini RAG entirely** (~8,000 lines) — replaced by MeiliSearch hybrid search (planned)
+2. **Remove Vercel** — Coolify handles both FE and BE deployment
+3. **Upgrade Strapi 5.17 → 5.41** — 24 minor versions, all packages aligned
+4. **Fix extractPriceTiers()** — was reading non-existent `price_1`..`price_8`, now reads real `ProductPriceCountryBased[region]`
+5. **Schema cleanup**: Remove `model_name`, `embroidery_sizes` (dead). Add `ean`, `minimum_order_quantity`, `quantity_increments`, `price_region`, `depth` (missing from Promidata)
+6. **Pricing region strategy**: BENELUX priority, EURO fallback, first available as last resort. Each product has exactly one region.
+7. **Supplier name**: Use static `supplier-names.ts` map (60 entries) + `UnstructuredInformation.SupplierNameToShow` fallback
+8. **Local Docker dev stack**: PostgreSQL:5433, Redis:6382, MeiliSearch:7700 (no more shared prod Redis)
+9. **Keep R2 for now** — migrating to SeaweedFS in next phase
+10. **Keep custom BullMQ** (2,600 lines) — official plugin is trivial 80-line wrapper, not worth adopting
+
+**Consequences**: 4 workers (was 5). Full re-sync needed after schema fixes. Promidata field map documented (723 JSON paths in `backend/docs/PROMIDATA_FIELD_MAP.md`).
+
+**PRs**: #27 (Gemini removal), #28 (Strapi upgrade + deep cleanup), #29 (schema + transformer fixes)
 
 ---
 

@@ -1,44 +1,45 @@
 # Known Issues & Workarounds
 
-*Last updated: 2026-01-03*
+*Last updated: 2026-04-01*
 
 Active gotchas in PromoAtlas PIM. Fixed issues archived in git history.
-
-## Gemini FileSearchStore
-
-| Issue | Description | Workaround |
-|-------|-------------|------------|
-| **Namespace Confusion** | `files.list()` doesn't show FileSearchStore files (separate namespace) | Verify with semantic search, not `files.list()` |
-| **No Individual Deletion** | Can only delete entire store, not individual files | Accept file accumulation; track sync in Strapi via `gemini_file_uri` |
-| **Wrong API Format** | `fileSearchStoreIds` doesn't work | Use `config.tools[{ fileSearch: { fileSearchStoreNames: [storeId] } }]` |
-
-**Key Insight**: If semantic search returns products, files ARE uploaded correctly.
 
 ## Backend
 
 | Issue | Description | Workaround |
 |-------|-------------|------------|
 | **Strapi 5 ID Types** | `entityService` requires numeric `id`, but URLs/relations use `documentId` (UUID) | Use `db.query().findOne({ where: { documentId } })` to get numeric `id` first |
+| **entityService Deprecated** | `strapi.entityService` deprecated in 5.40+, 48 calls in 11 files | Still works in 5.41. Migrate to `strapi.documents()` incrementally before Strapi 6 |
 | **Promidata SKU Case** | Promidata JSON uses `Sku` (camelCase), not `SKU` or `sku` | Always check all three: `variants[0].SKU \|\| variants[0].sku \|\| variants[0].Sku` |
 | **Repeatable Components** | Strapi 5 expects arrays for repeatable components, `undefined` causes errors | Return `[]` instead of `undefined` for empty repeatable fields |
 | **Hash Sync Limitations** | If Promidata changes product but keeps same hash, update missed | Run full sync periodically: `UPDATE products SET promidata_hash = NULL;` |
-| **Image Upload Timeout** | Large images/slow network cause 30s timeout | Sync one supplier at a time; increase timeout if needed |
+| **Pricing Region Dynamic** | Region key is BENELUX or EURO depending on supplier, not standardized | Use `selectPriceRegion()` helper: BENELUX > EURO > first available |
+| **HexColor Two Locations** | `NonLanguageDependedProductDetails.HexColor` is usually null | Also check `ProductDetails.{lang}.UnstructuredInformation.HexColor` (A403 pattern) |
+| **ConfigurationFields Non-Standard** | A73 uses `49P_CONFIG_1` instead of `Color` | Check `ConfigurationNameTranslated` for hints, don't assume field names |
+| **Languages Not Universal** | NL + DE always present, EN missing from A403, FR missing from A73 | Always handle missing languages gracefully in extractors |
 | **Connection Pool Exhaustion** | Large syncs may exhaust 10-connection pool | Sync during low-traffic; increase pool in `database.ts` |
-| **JSON Field Indexing** | Multilingual JSON fields can't be indexed efficiently | Add computed columns: `name_en TEXT GENERATED ALWAYS AS (name->>'en') STORED` |
-| **Upstash KEYS Disabled** | `client.keys('pattern*')` fails on Upstash | Use `SCAN` with cursor iteration instead |
+
+## Promidata Integration
+
+| Issue | Description | Workaround |
+|-------|-------------|------------|
+| **Rate Limiting** | No retry logic for 429 errors | `promidata-client.ts` has exponential backoff built in |
+| **String Booleans** | `ProductFiltersByGroup` values are `"True"` not `true` | Parse as strings, not booleans |
+| **Root vs Child Data** | Root has zeroed dimensions/prices, only 1 price tier | Always use ChildProducts[] for real data |
 
 ## Frontend
 
 | Issue | Description | Workaround |
 |-------|-------------|------------|
 | **Image Aspect Ratio** | Hard-coded thresholds (1.2-1.8) may not fit all images | Default `contain` is safe; some images have white space |
-| **Brand Filter Performance** | Fetches 1000 products to extract unique brands | Works for now; add backend `/api/products/brands` endpoint for scale |
+| **Frontend Being Rebuilt** | Current frontend will be replaced with assistant-ui + Vercel AI SDK | Don't invest in current FE fixes |
 
-## Promidata Integration
+## Infrastructure
 
 | Issue | Description | Workaround |
 |-------|-------------|------------|
-| **Rate Limiting** | No retry logic for 429 errors | Add delay between requests; implement exponential backoff |
+| **Dual MeiliSearch Sync** | Plugin writes to `pim_products`, custom service to `MEILISEARCH_INDEX_NAME` | Consolidate to one path (planned) |
+| **CORS localhost only** | `middlewares.ts` only allows localhost origins | Add production FE domain before deploying |
 
 ## Security Notes
 
@@ -47,4 +48,4 @@ Active gotchas in PromoAtlas PIM. Fixed issues archived in git history.
 
 ---
 
-*Update when discovering new issues. Archive fixed issues by removing them. Testing/monitoring gaps covered in STACK.md.*
+*Update when discovering new issues. Archive fixed issues by removing them.*

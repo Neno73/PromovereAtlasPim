@@ -1,6 +1,6 @@
 # Architecture
 
-*Last updated: 2026-01-03*
+*Last updated: 2026-04-01*
 
 System design for PromoAtlas PIM. For implementation patterns, see PATTERNS.md.
 
@@ -9,14 +9,14 @@ System design for PromoAtlas PIM. For implementation patterns, see PATTERNS.md.
 ```
 ┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
 │  React Frontend │────────▶│  Strapi Backend │────────▶│   PostgreSQL    │
-│  (Port 3000)    │  REST   │  (Port 1337)    │  pg     │   (Coolify)     │
+│  (Port 3000)    │  REST   │  (Port 1337)    │  pg     │  (local:5433)   │
 └─────────────────┘         └─────────────────┘         └─────────────────┘
                                      │
                     ┌────────────────┼────────────────┐
                     ▼                ▼                ▼
             ┌───────────┐    ┌───────────┐    ┌───────────┐
-            │ R2 Images │    │ Promidata │    │  Gemini   │
-            │           │    │   API     │    │ RAG Store │
+            │ R2/SeaweedFS   │ Promidata │    │MeiliSearch│
+            │  (Images) │    │   API     │    │  (7700)   │
             └───────────┘    └───────────┘    └───────────┘
 ```
 
@@ -87,11 +87,10 @@ endpoints: { suppliers: '/Import/Import.txt', categories: '/Import/CAT.csv' }
 |--------|-------------|---------|
 | `supplier-sync` | 1 | Full supplier sync (sequential) |
 | `product-family` | 3 | Group by a_number, create Product + Variants |
-| `image-upload` | 10 | Download from Promidata → R2 |
+| `image-upload` | 10 | Download from Promidata → R2/SeaweedFS |
 | `meilisearch-sync` | 5 | Index products for search |
-| `gemini-sync` | 5 | Upload to FileSearchStore |
 
-**Redis**: Local Docker (dev port 6380), Remote (prod)
+**Redis**: Local Docker (dev port 6382), Remote (prod)
 
 **Monitoring**: Bull Board at `/admin/queue-dashboard`
 
@@ -104,18 +103,6 @@ Redis-based distributed locking prevents duplicate syncs:
 - Stop: `sync:promidata:stop:{id}` (5min TTL)
 
 **API**: `GET /api/promidata-sync/active`, `POST /api/promidata-sync/stop/:id`
-
-### Gemini FileSearchStore
-
-**Location**: `backend/src/api/gemini-sync/services/gemini-file-search.ts`
-
-**Key Points**:
-- FileSearchStore ≠ Files API (separate namespaces)
-- Use `fileSearchStoreNames` not `fileSearchStoreIds` for queries
-- Track sync via `gemini_file_uri` field on Product
-- No individual file deletion (only full store)
-
-**Dashboard**: `/admin/gemini-dashboard`
 
 ## Frontend Architecture
 

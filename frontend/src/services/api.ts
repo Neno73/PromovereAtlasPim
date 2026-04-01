@@ -140,31 +140,6 @@ class ApiService {
     }
   }
 
-  // Verify Gemini chunks for a product
-  async verifyGeminiChunks(documentId: string): Promise<{
-    success: boolean;
-    data?: {
-      found: boolean;
-      chunks: number;
-      responseText: string; // The AI's synthesized response
-      groundingChunks: Array<{ text: string; source?: string }>; // Raw document chunks from FileSearchStore
-      product: { documentId: string; sku: string; name: any; a_number: string };
-      tracking: {
-        hasGeminiUri: boolean;
-        foundInStore: boolean; // Whether the product was found via semantic search
-        hashMatch: boolean;
-        promidataHash: string | null;
-        geminiSyncedHash: string | null;
-      };
-      searchQuery: string;
-    };
-    error?: string;
-  }> {
-    return this.fetch(`/gemini-sync/verify-product/${documentId}`, {
-      method: 'POST',
-    });
-  }
-
   // Get verification status for multiple products (batch)
   async getProductVerificationStatus(documentIds: string[]): Promise<{
     success: boolean;

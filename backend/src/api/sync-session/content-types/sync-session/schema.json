@@ -5,7 +5,7 @@
     "singularName": "sync-session",
     "pluralName": "sync-sessions",
     "displayName": "Sync Session",
-    "description": "Tracks full sync pipeline: Promidata → Images → Meilisearch → Gemini"
+    "description": "Tracks full sync pipeline: Promidata → Images → Meilisearch"
   },
   "options": {
     "draftAndPublish": false
@@ -120,34 +120,6 @@
       "default": 0
     },
     "meilisearch_failed": {
-      "type": "integer",
-      "default": 0
-    },
-
-    "gemini_status": {
-      "type": "enumeration",
-      "enum": ["pending", "running", "completed", "failed", "skipped"],
-      "default": "pending"
-    },
-    "gemini_started_at": {
-      "type": "datetime"
-    },
-    "gemini_completed_at": {
-      "type": "datetime"
-    },
-    "gemini_total": {
-      "type": "integer",
-      "default": 0
-    },
-    "gemini_synced": {
-      "type": "integer",
-      "default": 0
-    },
-    "gemini_skipped": {
-      "type": "integer",
-      "default": 0
-    },
-    "gemini_failed": {
       "type": "integer",
       "default": 0
     },

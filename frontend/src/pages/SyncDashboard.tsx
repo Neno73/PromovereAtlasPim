@@ -71,8 +71,6 @@ export const SyncDashboard: FC = () => {
         return '🖼️';
       case 'meilisearch-sync':
         return '🔍';
-      case 'gemini-sync':
-        return '🤖';
       default:
         return '📊';
     }

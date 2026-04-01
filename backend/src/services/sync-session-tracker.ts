@@ -17,7 +17,7 @@
 // Declare global strapi instance
 declare const strapi: any;
 
-export type SyncStage = 'promidata' | 'images' | 'meilisearch' | 'gemini';
+export type SyncStage = 'promidata' | 'images' | 'meilisearch';
 export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
 export type SessionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'stopped';
 
@@ -54,14 +54,6 @@ export interface SyncSession {
   meilisearch_total: number;
   meilisearch_indexed: number;
   meilisearch_failed: number;
-
-  gemini_status: StageStatus;
-  gemini_started_at?: string;
-  gemini_completed_at?: string;
-  gemini_total: number;
-  gemini_synced: number;
-  gemini_skipped: number;
-  gemini_failed: number;
 
   errors: Array<{ timestamp: string; stage: string; error: string; details?: any }>;
   last_error?: string;
@@ -100,7 +92,6 @@ class SyncSessionTracker {
         promidata_started_at: new Date(),
         images_status: 'pending',
         meilisearch_status: 'pending',
-        gemini_status: 'pending',
         errors: [],
         error_count: 0,
         // Initialize all counters to 0
@@ -114,11 +105,7 @@ class SyncSessionTracker {
         images_failed: 0,
         meilisearch_total: 0,
         meilisearch_indexed: 0,
-        meilisearch_failed: 0,
-        gemini_total: 0,
-        gemini_synced: 0,
-        gemini_skipped: 0,
-        gemini_failed: 0
+        meilisearch_failed: 0
       }
     });
 
@@ -341,8 +328,7 @@ class SyncSessionTracker {
     const dependencies: Record<SyncStage, SyncStage | null> = {
       'promidata': null,
       'images': 'promidata',
-      'meilisearch': 'images',
-      'gemini': 'meilisearch'
+      'meilisearch': 'images'
     };
 
     const prerequisite = dependencies[stage];
@@ -392,13 +378,6 @@ class SyncSessionTracker {
         total = session.meilisearch_total || 0;
         processed = session.meilisearch_indexed || 0;
         failed = session.meilisearch_failed || 0;
-        break;
-
-      case 'gemini':
-        total = session.gemini_total || 0;
-        // Gemini processed includes synced AND skipped (not in Meilisearch)
-        processed = (session.gemini_synced || 0) + (session.gemini_skipped || 0);
-        failed = session.gemini_failed || 0;
         break;
     }
 

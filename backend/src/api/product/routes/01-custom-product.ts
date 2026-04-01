@@ -35,7 +35,7 @@ export default {
       handler: 'product.getVerificationStatus',
       config: {
         policies: [], // Public endpoint for frontend
-        description: 'Get verification status (Meilisearch, Gemini, hash) for multiple products',
+        description: 'Get verification status (Meilisearch, hash) for multiple products',
       },
     },
   ],

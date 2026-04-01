@@ -40,7 +40,6 @@ export default factories.createCoreService('api::sync-session.sync-session', ({ 
         promidata_started_at: new Date(),
         images_status: 'pending',
         meilisearch_status: 'pending',
-        gemini_status: 'pending',
         errors: [],
         error_count: 0
       }
@@ -81,7 +80,7 @@ export default factories.createCoreService('api::sync-session.sync-session', ({ 
    */
   async updateStage(
     sessionId: string,
-    stage: 'promidata' | 'images' | 'meilisearch' | 'gemini',
+    stage: 'promidata' | 'images' | 'meilisearch',
     status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped',
     stats?: Record<string, any>
   ) {
@@ -241,7 +240,7 @@ export default factories.createCoreService('api::sync-session.sync-session', ({ 
    */
   async canProceedToStage(
     sessionId: string,
-    stage: 'images' | 'meilisearch' | 'gemini'
+    stage: 'images' | 'meilisearch'
   ): Promise<boolean> {
     const sessions = await strapi.entityService.findMany('api::sync-session.sync-session', {
       filters: { session_id: sessionId },
@@ -258,7 +257,6 @@ export default factories.createCoreService('api::sync-session.sync-session', ({ 
     const dependencies: Record<string, string> = {
       'images': 'promidata',
       'meilisearch': 'images',
-      'gemini': 'meilisearch'
     };
 
     const prerequisite = dependencies[stage];
@@ -327,11 +325,6 @@ export default factories.createCoreService('api::sync-session.sync-session', ({ 
         total = session.meilisearch_total || 0;
         processed = session.meilisearch_indexed || 0;
         failed = session.meilisearch_failed || 0;
-        break;
-      case 'gemini':
-        total = session.gemini_total || 0;
-        processed = session.gemini_synced || 0;
-        failed = session.gemini_failed || 0;
         break;
     }
 

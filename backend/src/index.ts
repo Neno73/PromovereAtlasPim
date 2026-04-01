@@ -122,7 +122,6 @@ export default {
           SET status = 'failed',
               images_status = CASE WHEN images_status IN ('pending', 'running') THEN 'failed' ELSE images_status END,
               meilisearch_status = CASE WHEN meilisearch_status IN ('pending', 'running') THEN 'failed' ELSE meilisearch_status END,
-              gemini_status = CASE WHEN gemini_status IN ('pending', 'running') THEN 'failed' ELSE gemini_status END,
               completed_at = NOW(),
               last_error = '${reason}'
           ${whereClause}

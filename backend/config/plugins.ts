@@ -104,6 +104,13 @@ export default ({ env }) => ({
       },
     },
   },
+  mcp: {
+    enabled: true,
+    config: {
+      session: { type: "memory" },
+      allowedIPs: ["127.0.0.1", "::1"],
+    },
+  },
   documentation: {
     enabled: true,
     config: {

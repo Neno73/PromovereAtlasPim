@@ -8,6 +8,7 @@ on:
       - develop   # Staging deployment
     paths:
       - 'backend/**'
+      - 'frontend/**'
       - 'docker-compose.coolify.yml'
       - '.github/workflows/deploy-coolify.yml'
 

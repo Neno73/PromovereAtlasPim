@@ -73,14 +73,6 @@
     "promidata_hash": {
       "type": "string"
     },
-    "gemini_file_uri": {
-      "type": "string",
-      "private": true
-    },
-    "gemini_synced_hash": {
-      "type": "string",
-      "private": true
-    },
     "battery_information": {
       "type": "string"
     },

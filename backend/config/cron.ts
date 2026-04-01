@@ -23,7 +23,7 @@ export default {
 
       try {
         // Explicit service discovery with validation
-        const queueService = strapi.service('api::queue.queue-service');
+        const queueService = strapi.service('api::promidata-sync.promidata-sync');
 
         if (!queueService || typeof queueService.addSupplierSyncJob !== 'function') {
           strapi.log.error('[CRON] Queue service not properly configured or addSupplierSyncJob method missing');
@@ -125,7 +125,7 @@ export default {
 
       try {
         // Explicit service discovery with validation
-        const queueService = strapi.service('api::queue.queue-service');
+        const queueService = strapi.service('api::promidata-sync.promidata-sync');
 
         if (!queueService || typeof queueService.addSupplierSyncJob !== 'function') {
           strapi.log.error('[CRON] Queue service not properly configured or addSupplierSyncJob method missing');

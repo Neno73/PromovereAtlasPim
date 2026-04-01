@@ -19,7 +19,7 @@ services:
   strapi:
     build:
       context: ./backend
-      dockerfile: Dockerfile.fixed
+      dockerfile: Dockerfile
       target: production
 
     container_name: promoatlas-backend
@@ -86,6 +86,52 @@ services:
   #
   # To scale workers: Increase Coolify replicas - each Strapi instance runs its own workers
   # BullMQ automatically distributes jobs across all worker instances
+
+  # ============================================
+  # Frontend (React + Nginx)
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+
+    container_name: promoatlas-frontend
+    restart: unless-stopped
+
+    labels:
+      - "coolify.managed=true"
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend-http.rule=Host(`atlaspim.solslab.dev`)"
+      - "traefik.http.routers.frontend-http.entrypoints=http"
+      - "traefik.http.routers.frontend-http.middlewares=redirect-to-https"
+      - "traefik.http.routers.frontend-https.rule=Host(`atlaspim.solslab.dev`)"
+      - "traefik.http.routers.frontend-https.entrypoints=https"
+      - "traefik.http.routers.frontend-https.tls=true"
+      - "traefik.http.routers.frontend-https.tls.certresolver=letsencrypt"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+    expose:
+      - "80"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - promoatlas
+
+    depends_on:
+      - strapi
 
 # ============================================
 # Networks

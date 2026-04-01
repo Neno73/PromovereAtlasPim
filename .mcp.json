@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "meilisearch": {
+      "command": "/home/neno/snap/code/231/.local/bin/uvx",
+      "args": ["-n", "meilisearch-mcp"],
+      "env": {
+        "MEILI_HTTP_ADDR": "http://localhost:7700",
+        "MEILI_MASTER_KEY": "promoatlas-dev-key"
+      }
+    }
+  }
+}

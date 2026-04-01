@@ -132,7 +132,6 @@ export default {
         success: true,
         data: {
           promidata: activeSyncs.promidata,
-          gemini: activeSyncs.gemini
         }
       };
     } catch (error) {

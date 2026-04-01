@@ -14,7 +14,7 @@
       "name": "Apache 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "x-generation-date": "2026-01-03T19:14:59.983Z"
+    "x-generation-date": "2026-04-01T19:14:43.550Z"
   },
   "x-strapi-config": {
     "plugins": [
@@ -6792,12 +6792,6 @@
                     "promidata_hash": {
                       "type": "string"
                     },
-                    "gemini_file_uri": {
-                      "type": "string"
-                    },
-                    "gemini_synced_hash": {
-                      "type": "string"
-                    },
                     "battery_information": {
                       "type": "string"
                     },
@@ -8873,12 +8867,6 @@
               "promidata_hash": {
                 "type": "string"
               },
-              "gemini_file_uri": {
-                "type": "string"
-              },
-              "gemini_synced_hash": {
-                "type": "string"
-              },
               "battery_information": {
                 "type": "string"
               },
@@ -9125,12 +9113,6 @@
           },
           "rag_metadata": {},
           "promidata_hash": {
-            "type": "string"
-          },
-          "gemini_file_uri": {
-            "type": "string"
-          },
-          "gemini_synced_hash": {
             "type": "string"
           },
           "battery_information": {
@@ -10140,12 +10122,6 @@
                     },
                     "rag_metadata": {},
                     "promidata_hash": {
-                      "type": "string"
-                    },
-                    "gemini_file_uri": {
-                      "type": "string"
-                    },
-                    "gemini_synced_hash": {
                       "type": "string"
                     },
                     "battery_information": {
@@ -12795,12 +12771,6 @@
               "promidata_hash": {
                 "type": "string"
               },
-              "gemini_file_uri": {
-                "type": "string"
-              },
-              "gemini_synced_hash": {
-                "type": "string"
-              },
               "battery_information": {
                 "type": "string"
               },
@@ -15340,12 +15310,6 @@
                 "promidata_hash": {
                   "type": "string"
                 },
-                "gemini_file_uri": {
-                  "type": "string"
-                },
-                "gemini_synced_hash": {
-                  "type": "string"
-                },
                 "battery_information": {
                   "type": "string"
                 },
@@ -17490,12 +17454,6 @@
                     "promidata_hash": {
                       "type": "string"
                     },
-                    "gemini_file_uri": {
-                      "type": "string"
-                    },
-                    "gemini_synced_hash": {
-                      "type": "string"
-                    },
                     "battery_information": {
                       "type": "string"
                     },
@@ -19547,12 +19505,6 @@
                     },
                     "rag_metadata": {},
                     "promidata_hash": {
-                      "type": "string"
-                    },
-                    "gemini_file_uri": {
-                      "type": "string"
-                    },
-                    "gemini_synced_hash": {
                       "type": "string"
                     },
                     "battery_information": {

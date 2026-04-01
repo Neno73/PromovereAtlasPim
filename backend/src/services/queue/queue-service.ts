@@ -16,7 +16,6 @@ import {
   productFamilyJobOptions,
   imageUploadJobOptions,
   meilisearchSyncJobOptions,
-  geminiSyncJobOptions,
   generateJobId,
   QUEUE_NAMES
 } from './queue-config';
@@ -24,7 +23,7 @@ import {
 import type { SupplierSyncJobData } from './workers/supplier-sync-worker';
 import type { ProductFamilyJobData } from './workers/product-family-worker';
 import type { ImageUploadJobData } from './workers/image-upload-worker';
-import type { MeilisearchSyncJobData, GeminiSyncJobData } from './job-types';
+import type { MeilisearchSyncJobData } from './job-types';
 
 /**
  * Queue Service Class
@@ -34,7 +33,6 @@ class QueueService {
   private productFamilyQueue: Queue<ProductFamilyJobData> | null = null;
   private imageUploadQueue: Queue<ImageUploadJobData> | null = null;
   private meilisearchSyncQueue: Queue<MeilisearchSyncJobData> | null = null;
-  private geminiSyncQueue: Queue<GeminiSyncJobData> | null = null;
   private initialized: boolean = false;
 
   /**
@@ -56,7 +54,6 @@ class QueueService {
       this.productFamilyQueue,
       this.imageUploadQueue,
       this.meilisearchSyncQueue,
-      this.geminiSyncQueue
     ];
 
     return queues.filter(q => q !== null) as Queue[];
@@ -106,13 +103,8 @@ class QueueService {
       defaultQueueOptions
     );
 
-    this.geminiSyncQueue = new Queue<GeminiSyncJobData>(
-      QUEUE_NAMES.GEMINI_SYNC,
-      defaultQueueOptions
-    );
-
     this.initialized = true;
-    strapi.log.info('✅ Queue service initialized (5 queues)');
+    strapi.log.info('✅ Queue service initialized (4 queues)');
   }
 
   /**
@@ -184,110 +176,10 @@ class QueueService {
   }
 
   /**
-   * Enqueue Gemini File Search sync job
-   * Syncs product to Google Gemini for AI-powered RAG
-   * Reads FROM Meilisearch (not Strapi) - Meilisearch is source of truth
-   */
-  public async enqueueGeminiSync(
-    operation: 'add' | 'update' | 'delete',
-    documentId: string,
-    priority?: number,
-    delay?: number, // Delay in milliseconds
-    sessionId?: string // Sync session ID for tracking across pipeline
-  ): Promise<Job<GeminiSyncJobData>> {
-    this.ensureInitialized();
-
-    const jobId = generateJobId('gemini-sync', documentId);
-    const jobData: GeminiSyncJobData = {
-      operation,
-      documentId,
-      priority,
-      delay,
-      sessionId
-    };
-
-    const job = await this.geminiSyncQueue!.add(
-      jobId,
-      jobData,
-      {
-        ...geminiSyncJobOptions,
-        priority: priority || 0, // Higher = more important
-        delay: delay || 0 // Delay in milliseconds (0 = immediate)
-      } as JobsOptions
-    );
-
-    const delayMsg = delay ? ` (delayed ${delay}ms)` : '';
-    strapi.log.debug(`🤖 Enqueued Gemini ${operation} job: ${documentId}${delayMsg}`);
-    return job;
-  }
-
-  /**
-   * Enqueue multiple Gemini File Search sync jobs (Batch)
-   */
-  public async enqueueGeminiSyncBatch(
-    jobs: Array<{
-      operation: 'add' | 'update' | 'delete';
-      documentId: string;
-      priority?: number;
-      delay?: number;
-      sessionId?: string;
-    }>
-  ): Promise<Job<GeminiSyncJobData>[]> {
-    this.ensureInitialized();
-
-    const bulkJobs = jobs.map(job => {
-      const jobId = generateJobId('gemini-sync', job.documentId);
-      return {
-        name: jobId,
-        data: {
-          operation: job.operation,
-          documentId: job.documentId,
-          priority: job.priority,
-          delay: job.delay,
-          sessionId: job.sessionId
-        },
-        opts: {
-          ...geminiSyncJobOptions,
-          priority: job.priority || 0,
-          delay: job.delay || 0
-        }
-      };
-    });
-
-    // DEBUG: Log queue connection state before adding jobs
-    strapi.log.info(`🔍 [Queue Debug] gemini-sync queue ready: checking connection...`);
-
-    try {
-      // Verify queue is connected by getting counts
-      const waitingBefore = await this.geminiSyncQueue!.getWaitingCount();
-      strapi.log.info(`🔍 [Queue Debug] Waiting count before addBulk: ${waitingBefore}`);
-
-      const createdJobs = await this.geminiSyncQueue!.addBulk(bulkJobs);
-      strapi.log.info(`🤖 Enqueued batch of ${createdJobs.length} Gemini sync jobs`);
-
-      // Log the actual job IDs returned
-      strapi.log.info(`🔍 [Queue Debug] Job IDs: ${createdJobs.slice(0, 5).map(j => j.id).join(', ')}${createdJobs.length > 5 ? '...' : ''}`);
-
-      // Verify jobs were actually added
-      const waitingAfter = await this.geminiSyncQueue!.getWaitingCount();
-      strapi.log.info(`🔍 [Queue Debug] Waiting count after addBulk: ${waitingAfter}`);
-
-      if (waitingAfter === waitingBefore) {
-        strapi.log.error(`🚨 [Queue Debug] Jobs NOT added to Redis! waitingBefore=${waitingBefore}, waitingAfter=${waitingAfter}`);
-      }
-
-      return createdJobs;
-    } catch (error) {
-      strapi.log.error(`🚨 [Queue Debug] addBulk failed:`, error);
-      throw error;
-    }
-  }
-
-  /**
    * Get job by ID
    */
   public async getJob(
-    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync',
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync',
     jobId: string
   ): Promise<Job | undefined> {
     this.ensureInitialized();
@@ -298,7 +190,7 @@ class QueueService {
   /**
    * Get queue statistics
    */
-  public async getQueueStats(queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync') {
+  public async getQueueStats(queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync') {
     this.ensureInitialized();
     const queue = this.getQueue(queueName);
 
@@ -389,12 +281,11 @@ class QueueService {
    */
   public async getAllStats() {
     this.ensureInitialized();
-    const [supplierSync, productFamily, imageUploadBasic, meilisearchSync, geminiSync] = await Promise.all([
+    const [supplierSync, productFamily, imageUploadBasic, meilisearchSync] = await Promise.all([
       this.getQueueStats('supplier-sync'),
       this.getQueueStats('product-family'),
       this.getQueueStats('image-upload'),
       this.getQueueStats('meilisearch-sync'),
-      this.getQueueStats('gemini-sync')
     ]);
 
     // Get detailed image upload stats with deduplication
@@ -405,7 +296,6 @@ class QueueService {
       productFamily,
       imageUpload,
       meilisearchSync,
-      geminiSync
     };
   }
 
@@ -416,7 +306,7 @@ class QueueService {
    * @param limit - Maximum number of jobs to clean per call. Default: 1000
    */
   public async cleanCompletedJobs(
-    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync',
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync',
     olderThanMs: number = 24 * 60 * 60 * 1000, // 24 hours default
     limit: number = 1000
   ): Promise<{ deletedCount: number }> {
@@ -447,7 +337,7 @@ class QueueService {
    * @param limit - Maximum number of jobs to clean per call. Default: 1000
    */
   public async cleanFailedJobs(
-    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync',
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync',
     olderThanMs: number = 7 * 24 * 60 * 60 * 1000, // 7 days default
     limit: number = 1000
   ): Promise<{ deletedCount: number }> {
@@ -480,12 +370,11 @@ class QueueService {
   ): Promise<{ totalDeleted: number; details: Record<string, { completed: number; failed: number }> }> {
     this.ensureInitialized();
 
-    const queueNames: Array<'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync'> = [
+    const queueNames: Array<'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync'> = [
       'supplier-sync',
       'product-family',
       'image-upload',
       'meilisearch-sync',
-      'gemini-sync'
     ];
 
     const results: Record<string, { completed: number; failed: number }> = {};
@@ -524,7 +413,6 @@ class QueueService {
       this.productFamilyQueue,
       this.imageUploadQueue,
       this.meilisearchSyncQueue,
-      this.geminiSyncQueue
     ];
 
     await Promise.all(
@@ -535,7 +423,6 @@ class QueueService {
     this.productFamilyQueue = null;
     this.imageUploadQueue = null;
     this.meilisearchSyncQueue = null;
-    this.geminiSyncQueue = null;
     this.initialized = false;
 
     strapi.log.info('✅ All queues closed');
@@ -544,7 +431,7 @@ class QueueService {
   /**
    * Get queue instance (internal helper)
    */
-  private getQueue(queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync' | 'gemini-sync'): Queue {
+  private getQueue(queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync'): Queue {
     let queue: Queue | null = null;
 
     switch (queueName) {
@@ -559,9 +446,6 @@ class QueueService {
         break;
       case 'meilisearch-sync':
         queue = this.meilisearchSyncQueue;
-        break;
-      case 'gemini-sync':
-        queue = this.geminiSyncQueue;
         break;
     }
 

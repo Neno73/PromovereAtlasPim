@@ -30,7 +30,6 @@ export interface AllQueueStats {
   productFamily: QueueStats;
   imageUpload: QueueStats;
   meilisearchSync: QueueStats;
-  geminiSync: QueueStats;
 }
 
 export interface WorkerStatus {

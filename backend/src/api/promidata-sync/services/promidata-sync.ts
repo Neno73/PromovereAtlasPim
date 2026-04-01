@@ -6,11 +6,6 @@
  * - Direct processing (legacy, for testing/debugging)
  *
  * All business logic is in modular services under src/services/promidata/
- * 
- * GEMINI SYNC:
- * - Uses queue-based approach (gemini-sync queue)
- * - Data source: Meilisearch (not Strapi DB)
- * - See: src/api/gemini-sync/services/gemini-file-search.ts
  */
 
 import { factories } from '@strapi/strapi';
@@ -28,11 +23,6 @@ import productTransformer from '../../../services/promidata/transformers/product
 import variantTransformer from '../../../services/promidata/transformers/variant-transformer';
 import productSyncService from '../../../services/promidata/sync/product-sync-service';
 import variantSyncService from '../../../services/promidata/sync/variant-sync-service';
-
-// NOTE: Gemini sync is now queue-based (uses Meilisearch as data source)
-// The old direct service import has been removed:
-// - Old: import geminiService from '../../../services/gemini/gemini-service';
-// - New: Queue job with operation: 'update', documentId: product.documentId
 
 export default factories.createCoreService('api::promidata-sync.promidata-sync', ({ strapi }) => ({
 
@@ -359,27 +349,6 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       }
 
       strapi.log.info(`  ✓ ${aNumber}: Product + ${variantResults.length} variants`);
-
-      // Queue Gemini sync (uses Meilisearch as data source)
-      // The Gemini sync worker will:
-      // 1. Fetch product from Meilisearch (faster, consistent format)
-      // 2. Transform to Gemini JSON format
-      // 3. Upload to FileSearchStore
-      try {
-        // Get the product's documentId for queue job
-        const product = await strapi.db.query('api::product.product').findOne({
-          where: { id: productId },
-          select: ['documentId']
-        });
-
-        if (product?.documentId) {
-          await queueService.enqueueGeminiSync('update', product.documentId);
-          strapi.log.debug(`  📤 Queued Gemini sync for ${aNumber}`);
-        }
-      } catch (geminiError) {
-        strapi.log.error(`Failed to queue Gemini sync for ${aNumber}:`, geminiError);
-        // Don't fail the whole sync if Gemini queue fails
-      }
 
     } catch (error) {
       strapi.log.error(`Failed to process product family ${aNumber}:`, error);

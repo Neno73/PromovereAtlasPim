@@ -32,7 +32,6 @@ const QueueCard: React.FC<QueueCardProps> = ({
       'product-family': 'Product Family',
       'image-upload': 'Image Upload',
       'meilisearch-sync': 'Meilisearch Sync',
-      'gemini-sync': 'Gemini Sync',
     };
     return names[queueName] || queueName;
   };

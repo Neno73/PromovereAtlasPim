@@ -15,7 +15,7 @@ import {
   Tooltip,
   Loader,
 } from "@strapi/design-system";
-import { Play, Clock, CheckCircle, Information, Download, Database, Cross } from "@strapi/icons";
+import { Play, Clock, CheckCircle, Information, Download, Cross } from "@strapi/icons";
 import { useFetchClient, useNotification } from "@strapi/strapi/admin";
 
 // Types for sync status
@@ -30,7 +30,6 @@ interface SyncStatus {
 
 interface ActiveSyncs {
   promidata: Array<{ supplierId: string; lockInfo: any }>;
-  gemini: Array<{ supplierCode: string; lockInfo: any }>;
 }
 
 const SupplierSyncPage = () => {
@@ -39,8 +38,6 @@ const SupplierSyncPage = () => {
   const [syncingSuppliers, setSyncingSuppliers] = useState(new Set<string>());
   const [stoppingSyncSuppliers, setStoppingSyncSuppliers] = useState(new Set<string>());
   const [exportingSuppliers, setExportingSuppliers] = useState(new Set());
-  const [geminiSyncingSuppliers, setGeminiSyncingSuppliers] = useState(new Set<string>());
-  const [stoppingGeminiSuppliers, setStoppingGeminiSuppliers] = useState(new Set<string>());
   const { get, post } = useFetchClient();
   const { toggleNotification } = useNotification();
 
@@ -59,10 +56,6 @@ const SupplierSyncPage = () => {
         // Update promidata syncing suppliers
         const promidataIds = new Set(activeSyncs.promidata.map(s => s.supplierId));
         setSyncingSuppliers(promidataIds);
-
-        // Update gemini syncing suppliers
-        const geminiCodes = new Set(activeSyncs.gemini.map(s => s.supplierCode));
-        setGeminiSyncingSuppliers(geminiCodes);
       }
     } catch (error) {
       console.error("Failed to fetch active syncs:", error);
@@ -75,14 +68,14 @@ const SupplierSyncPage = () => {
 
     // Poll for sync status updates
     const pollInterval = setInterval(() => {
-      if (syncingSuppliers.size > 0 || geminiSyncingSuppliers.size > 0) {
+      if (syncingSuppliers.size > 0) {
         fetchActiveSyncs();
         fetchSuppliers(); // Refresh to get updated last_sync_date
       }
     }, POLL_INTERVAL);
 
     return () => clearInterval(pollInterval);
-  }, [syncingSuppliers.size, geminiSyncingSuppliers.size, fetchActiveSyncs]);
+  }, [syncingSuppliers.size, fetchActiveSyncs]);
 
   const fetchSuppliers = async () => {
     try {
@@ -218,85 +211,6 @@ const SupplierSyncPage = () => {
     }
   };
 
-  const handleGeminiSync = async (supplier: any) => {
-    setGeminiSyncingSuppliers((prev) => new Set(prev).add(supplier.code));
-
-    try {
-      const response = await post('/api/gemini-sync/trigger-by-supplier', {
-        supplierCode: supplier.code
-      });
-
-      if (response.data.success) {
-        toggleNotification({
-          type: "success",
-          message: `Gemini sync started for ${supplier.code}. Click "Stop" to cancel.`,
-        });
-      } else if (response.data.isRunning) {
-        toggleNotification({
-          type: "warning",
-          message: `Gemini sync already running for ${supplier.code}`,
-        });
-      } else {
-        toggleNotification({
-          type: "danger",
-          message: response.data.message || "Gemini sync failed to start",
-        });
-        setGeminiSyncingSuppliers((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(supplier.code);
-          return newSet;
-        });
-      }
-    } catch (error: any) {
-      toggleNotification({
-        type: "danger",
-        message: `Gemini sync failed for ${supplier.code}: ${error.message}`,
-      });
-      setGeminiSyncingSuppliers((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(supplier.code);
-        return newSet;
-      });
-    }
-  };
-
-  const handleStopGeminiSync = async (supplier: any) => {
-    setStoppingGeminiSuppliers((prev) => new Set(prev).add(supplier.code));
-
-    try {
-      const response = await post(`/api/gemini-sync/stop/${supplier.code}`);
-
-      if (response.data.success) {
-        toggleNotification({
-          type: "success",
-          message: `Stop signal sent for Gemini sync ${supplier.code}. Queue cleared.`,
-        });
-        // Remove from syncing set
-        setGeminiSyncingSuppliers((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(supplier.code);
-          return newSet;
-        });
-      } else {
-        toggleNotification({
-          type: "warning",
-          message: response.data.message || "Failed to stop Gemini sync",
-        });
-      }
-    } catch (error: any) {
-      toggleNotification({
-        type: "danger",
-        message: `Failed to stop Gemini sync for ${supplier.code}: ${error.message}`,
-      });
-    } finally {
-      setStoppingGeminiSuppliers((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(supplier.code);
-        return newSet;
-      });
-    }
-  };
-
   const getStatusBadge = (supplier: any) => {
     const isCurrentlySyncing = syncingSuppliers.has(supplier.documentId);
     const lastSyncStatus = supplier.last_sync_status;
@@ -363,15 +277,15 @@ const SupplierSyncPage = () => {
         </Typography>
         <Typography variant="omega" textColor="neutral600" marginBottom={6}>
           Manage individual sync operations for {suppliers.length} suppliers
-          {(syncingSuppliers.size > 0 || geminiSyncingSuppliers.size > 0) && (
+          {syncingSuppliers.size > 0 && (
             <Badge marginLeft={2} backgroundColor="secondary500" textColor="neutral0">
-              {syncingSuppliers.size + geminiSyncingSuppliers.size} active
+              {syncingSuppliers.size} active
             </Badge>
           )}
         </Typography>
 
         <Box padding={6} background="neutral0" shadow="filterShadow" hasRadius>
-          <Table colCount={7} rowCount={suppliers.length}>
+          <Table colCount={6} rowCount={suppliers.length}>
             <Thead>
               <Tr>
                 <Th>
@@ -390,9 +304,6 @@ const SupplierSyncPage = () => {
                   <Typography variant="sigma">Promidata</Typography>
                 </Th>
                 <Th>
-                  <Typography variant="sigma">Gemini</Typography>
-                </Th>
-                <Th>
                   <Typography variant="sigma">Export</Typography>
                 </Th>
               </Tr>
@@ -401,9 +312,6 @@ const SupplierSyncPage = () => {
               {suppliers.map((supplier: any) => {
                 const isSyncing = syncingSuppliers.has(supplier.documentId) || supplier.last_sync_status === 'running';
                 const isStoppingSync = stoppingSyncSuppliers.has(supplier.documentId);
-                const isGeminiSyncing = geminiSyncingSuppliers.has(supplier.code);
-                const isStoppingGemini = stoppingGeminiSuppliers.has(supplier.code);
-
                 return (
                   <Tr key={supplier.id}>
                     <Td>
@@ -447,38 +355,6 @@ const SupplierSyncPage = () => {
                             startIcon={<Play />}
                           >
                             Sync
-                          </Button>
-                        </Tooltip>
-                      )}
-                    </Td>
-                    <Td>
-                      {isGeminiSyncing ? (
-                        <Button
-                          onClick={() => handleStopGeminiSync(supplier)}
-                          loading={isStoppingGemini}
-                          disabled={isStoppingGemini}
-                          variant="danger"
-                          size="S"
-                          startIcon={<Cross />}
-                        >
-                          {isStoppingGemini ? 'Stopping...' : 'Stop'}
-                        </Button>
-                      ) : (
-                        <Tooltip description={
-                          !supplier.is_active
-                            ? `Supplier ${supplier.name} is inactive`
-                            : !supplier.products_count || supplier.products_count === 0
-                            ? `No products synced yet. Sync from Promidata first.`
-                            : `Sync ${supplier.name} products to Gemini File Search`
-                        }>
-                          <Button
-                            onClick={() => handleGeminiSync(supplier)}
-                            disabled={!supplier.is_active || !supplier.products_count || supplier.products_count === 0}
-                            variant="tertiary"
-                            size="S"
-                            startIcon={<Database />}
-                          >
-                            Gemini
                           </Button>
                         </Tooltip>
                       )}

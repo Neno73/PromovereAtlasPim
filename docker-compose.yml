@@ -1,87 +1,68 @@
-version: '3.8'
-
 services:
-  # Strapi Backend
-  backend:
-    build:
-      context: ./backend
-      target: dev
-    container_name: promoatlas-backend
-    restart: unless-stopped
-    ports:
-      - "1337:1337"
-    environment:
-      - NODE_ENV=development
-      - DATABASE_URL=${DATABASE_URL}
-      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
-      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
-      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
-      - R2_PUBLIC_URL=${R2_PUBLIC_URL}
-      - R2_ENDPOINT=${R2_ENDPOINT}
-      - APP_KEYS=${APP_KEYS}
-      - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET}
-      - API_TOKEN_SALT=${API_TOKEN_SALT}
-      - STRAPI_TELEMETRY_DISABLED=true
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
-    networks:
-      - promoatlas-network
-    depends_on:
-      - postgres
-
-  # React Frontend
-  frontend:
-    build:
-      context: ./frontend
-      target: dev
-    container_name: promoatlas-frontend
-    restart: unless-stopped
-    ports:
-      - "3000:5173"
-    environment:
-      - NODE_ENV=development
-      - VITE_API_URL=http://localhost:1337
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    networks:
-      - promoatlas-network
-    depends_on:
-      - backend
-
-  # PostgreSQL Database (for development)
+  # PostgreSQL 17
   postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     container_name: promoatlas-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_DB: promoatlas
       POSTGRES_USER: strapi
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strapi123}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - promoatlas_postgres:/var/lib/postgresql/data
     networks:
-      - promoatlas-network
+      - promoatlas
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U strapi -d promoatlas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Redis (optional, for caching)
+  # Redis 7
   redis:
     image: redis:7-alpine
     container_name: promoatlas-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6382:6379"
     volumes:
-      - redis_data:/data
+      - promoatlas_redis:/data
     networks:
-      - promoatlas-network
+      - promoatlas
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Meilisearch
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    container_name: promoatlas-meilisearch
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_ENV: development
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-promoatlas-dev-key}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - promoatlas_meilisearch:/meili_data
+    networks:
+      - promoatlas
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  postgres_data:
-  redis_data:
+  promoatlas_postgres:
+  promoatlas_redis:
+  promoatlas_meilisearch:
 
 networks:
-  promoatlas-network:
+  promoatlas:
     driver: bridge

@@ -14,7 +14,6 @@ import { createSupplierSyncWorker } from './workers/supplier-sync-worker';
 import { createProductFamilyWorker } from './workers/product-family-worker';
 import { createImageUploadWorker } from './workers/image-upload-worker';
 import { createMeilisearchSyncWorker } from './workers/meilisearch-sync-worker';
-import { createGeminiSyncWorker } from './workers/gemini-sync-worker';
 import queueMonitor from './queue-monitor';
 
 /**
@@ -41,15 +40,12 @@ class WorkerManager {
       const productFamilyWorker = createProductFamilyWorker();
       const imageUploadWorker = createImageUploadWorker();
       const meilisearchSyncWorker = createMeilisearchSyncWorker();
-      const geminiSyncWorker = createGeminiSyncWorker();
-
       // Register workers
       this.workers = [
         supplierSyncWorker,
         productFamilyWorker,
         imageUploadWorker,
         meilisearchSyncWorker,
-        geminiSyncWorker
       ];
 
       // CRITICAL: Wait for all workers to be ready (connected to Redis)
@@ -68,7 +64,6 @@ class WorkerManager {
       strapi.log.info('   - product-family (concurrency: 3)');
       strapi.log.info('   - image-upload (concurrency: 10)');
       strapi.log.info('   - meilisearch-sync (concurrency: 5)');
-      strapi.log.info('   - gemini-sync (concurrency: 5)');
 
     } catch (error) {
       strapi.log.error('❌ Failed to start workers:', error);

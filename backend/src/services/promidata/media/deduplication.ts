@@ -51,7 +51,7 @@ class DeduplicationService {
   }
 
   /**
-   * Check if image already exists by URL
+   * Check if image already exists by URL (final R2 URL)
    */
   public async checkByUrl(url: string): Promise<DeduplicationResult> {
     try {
@@ -76,6 +76,44 @@ class DeduplicationService {
       };
     } catch (error) {
       strapi.log.error(`[Deduplication] Error checking URL ${url}:`, error);
+      return {
+        exists: false,
+        fileName: '',
+      };
+    }
+  }
+
+  /**
+   * Check if image already exists by source URL (original Promidata URL)
+   * This is the PRIMARY deduplication method to prevent uploading the same image twice
+   * even when it's used for different variants/products.
+   */
+  public async checkBySourceUrl(sourceUrl: string): Promise<DeduplicationResult> {
+    try {
+      // Use raw query to check JSON field provider_metadata->>'source_url'
+      const knex = strapi.db.connection;
+      const result = await knex.raw(
+        `SELECT id, name, url FROM files WHERE provider_metadata->>'source_url' = ? LIMIT 1`,
+        [sourceUrl]
+      );
+
+      if (result?.rows?.[0]) {
+        const existingFile = result.rows[0];
+        strapi.log.info(`[Deduplication] ✓ Image exists by source URL: ${sourceUrl} (ID: ${existingFile.id})`);
+        return {
+          exists: true,
+          mediaId: existingFile.id,
+          url: existingFile.url,
+          fileName: existingFile.name,
+        };
+      }
+
+      return {
+        exists: false,
+        fileName: '',
+      };
+    } catch (error) {
+      strapi.log.error(`[Deduplication] Error checking source URL ${sourceUrl}:`, error);
       return {
         exists: false,
         fileName: '',

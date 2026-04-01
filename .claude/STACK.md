@@ -23,10 +23,10 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 - **strapi-plugin-meilisearch** - Meilisearch integration for product search
 
 ### Database
-- **PostgreSQL** via Neon - Primary database
+- **PostgreSQL** via Coolify - Primary database
   - **Why**: Robust relational database with JSON field support for multilingual content
   - **Driver**: `pg` (8.16.3)
-  - **Connection**: Neon with Cloudflare Hyperdrive for connection pooling
+  - **Connection**: Coolify-managed PostgreSQL (46.62.239.73:5432)
   - **Pool Settings**: min 2, max 10 connections
   - **Fallback**: `better-sqlite3` (11.3.0) for development
 
@@ -62,7 +62,7 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 - **BullMQ** (^5.0.0) - Redis-based job queue for background processing
   - **Why**: Handles long-running sync operations, concurrent job processing, job retries
   - **Redis Client**: ioredis (^5.3.0)
-  - **Redis Provider**: Upstash (serverless Redis)
+  - **Redis Provider**: Local Docker (dev) / Coolify Redis (prod)
   - **Workers**: 5 active workers for parallel processing
     - `supplier-sync` (concurrency: 1) - Processes supplier sync jobs sequentially
     - `product-family` (concurrency: 3) - Creates product families with parallelism
@@ -115,9 +115,10 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 ## Infrastructure & External Services
 
 ### Database Hosting
-- **Neon** - Serverless PostgreSQL
-  - **Why**: Serverless scaling, automatic backups, connection pooling
-  - **Feature**: Cloudflare Hyperdrive for optimized connections
+- **Coolify PostgreSQL** - Self-hosted PostgreSQL
+  - **Server**: 46.62.239.73:5432
+  - **Why**: Full control, no vendor lock-in, cost-effective
+  - **Backups**: Managed via Coolify
 
 ### Storage Hosting
 - **Cloudflare R2** - Object storage
@@ -153,19 +154,19 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
   - Docker Compose configurations for local development
 
 ### MCP Tools
-- **Neon MCP** - Database operations
 - **Strapi MCP** - Content management
 - **Playwright MCP** - Browser automation
+- **Context7 MCP** - Documentation lookup
 - **Datadog MCP** - Performance monitoring
 - **Sentry MCP** - Error tracking
 
 ## Deployment
 
 ### Backend Deployment
-- **Target**: Production server or containerized environment
+- **Target**: Coolify-managed server or containerized environment
 - **Build Command**: `npm run build`
 - **Start Command**: `npm run start`
-- **Environment**: PostgreSQL (Neon), Cloudflare R2
+- **Environment**: Coolify PostgreSQL, Coolify Redis, Cloudflare R2
 
 ### Frontend Deployment
 - **Target**: Vercel (configured via `vercel.json` for SPA routing)

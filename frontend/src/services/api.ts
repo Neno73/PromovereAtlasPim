@@ -1,4 +1,4 @@
-import { Product, Category, Supplier, ApiResponse } from '../types';
+import { Product, Category, Supplier, ApiResponse, VerificationStatus } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:1337/api';
 
@@ -102,9 +102,26 @@ class ApiService {
     return this.fetch<ApiResponse<Product>>(`/products/${documentId}?${searchParams.toString()}`);
   }
 
-  // Categories
+  // Categories (with parent for hierarchy building)
+  // Fetches all pages since Strapi caps at 100 per page
   async getCategories(): Promise<ApiResponse<Category[]>> {
-    return this.fetch<ApiResponse<Category[]>>('/categories?pagination[pageSize]=100&populate=parent');
+    const allCategories: Category[] = [];
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await this.fetch<ApiResponse<Category[]>>(
+        `/categories?pagination[page]=${page}&pagination[pageSize]=100&populate=parent&sort=sort_order:asc,name:asc`
+      );
+      allCategories.push(...response.data);
+      hasMore = page < (response.meta?.pagination?.pageCount || 1);
+      page++;
+    }
+
+    return {
+      data: allCategories,
+      meta: { pagination: { page: 1, pageSize: allCategories.length, pageCount: 1, total: allCategories.length } }
+    };
   }
 
   // Suppliers
@@ -123,6 +140,59 @@ class ApiService {
     }
   }
 
+  // Verify Gemini chunks for a product
+  async verifyGeminiChunks(documentId: string): Promise<{
+    success: boolean;
+    data?: {
+      found: boolean;
+      chunks: number;
+      responseText: string; // The AI's synthesized response
+      groundingChunks: Array<{ text: string; source?: string }>; // Raw document chunks from FileSearchStore
+      product: { documentId: string; sku: string; name: any; a_number: string };
+      tracking: {
+        hasGeminiUri: boolean;
+        foundInStore: boolean; // Whether the product was found via semantic search
+        hashMatch: boolean;
+        promidataHash: string | null;
+        geminiSyncedHash: string | null;
+      };
+      searchQuery: string;
+    };
+    error?: string;
+  }> {
+    return this.fetch(`/gemini-sync/verify-product/${documentId}`, {
+      method: 'POST',
+    });
+  }
+
+  // Get verification status for multiple products (batch)
+  async getProductVerificationStatus(documentIds: string[]): Promise<{
+    success: boolean;
+    data: Record<string, VerificationStatus>;
+  }> {
+    return this.fetch('/products/verification-status', {
+      method: 'POST',
+      body: JSON.stringify({ documentIds }),
+    });
+  }
+
+  // Get queue statistics for sync dashboard
+  async getQueueStats(): Promise<{
+    success: boolean;
+    data: {
+      queues: Array<{
+        name: string;
+        waiting: number;
+        active: number;
+        completed: number;
+        failed: number;
+        delayed: number;
+      }>;
+    };
+  }> {
+    return this.fetch('/queue-manager/stats');
+  }
+
   // Meilisearch search endpoint
   async searchProducts(params?: {
     query?: string;
@@ -134,6 +204,8 @@ class ApiService {
       supplier_code?: string;
       brand?: string;
       category?: string;
+      colors?: string[];
+      sizes?: string[];
       price_min?: number;
       price_max?: number;
       is_active?: boolean;
@@ -173,6 +245,12 @@ class ApiService {
       }
       if (params.filters.category) {
         searchParams.append('category', params.filters.category);
+      }
+      if (params.filters.colors && params.filters.colors.length > 0) {
+        searchParams.append('colors', params.filters.colors.join(','));
+      }
+      if (params.filters.sizes && params.filters.sizes.length > 0) {
+        searchParams.append('sizes', params.filters.sizes.join(','));
       }
       if (params.filters.price_min !== undefined) {
         searchParams.append('price_min', params.filters.price_min.toString());

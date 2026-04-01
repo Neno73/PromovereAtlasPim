@@ -247,10 +247,12 @@ export class MeilisearchService {
     const sizes: string[] = product.available_sizes || [];
     const hexColors: string[] = product.hex_colors || [];
 
-    // Extract category codes
+    // Extract category - check both relation and text field
     const categoryCodesList: string[] = [];
     let primaryCategory = '';
-    if (product.categories && Array.isArray(product.categories)) {
+
+    // First try the categories relation (array of Category objects)
+    if (product.categories && Array.isArray(product.categories) && product.categories.length > 0) {
       product.categories.forEach((cat: any) => {
         if (cat.code) {
           categoryCodesList.push(cat.code);
@@ -259,6 +261,11 @@ export class MeilisearchService {
           }
         }
       });
+    }
+    // Fall back to category text field (e.g., "HOME/PLANTS")
+    else if (product.category && typeof product.category === 'string') {
+      primaryCategory = product.category;
+      categoryCodesList.push(product.category);
     }
 
     // Use stored price range from Product schema (schema consolidation 2025-01-16)

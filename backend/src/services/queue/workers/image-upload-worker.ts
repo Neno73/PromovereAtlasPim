@@ -8,15 +8,17 @@
  * 3. Upload to Cloudflare R2
  * 4. Create Strapi media record
  * 5. Update entity relation (product or variant)
+ * 6. Track progress via sync session
  */
 
 import { Worker, Job } from 'bullmq';
-import { imageUploadWorkerOptions } from '../queue-config';
+import { imageUploadWorkerOptions, QUEUE_NAMES } from '../queue-config';
 
 // Import media services
 import imageUploadService from '../../promidata/media/image-upload-service';
 import variantSyncService from '../../promidata/sync/variant-sync-service';
 import productSyncService from '../../promidata/sync/product-sync-service';
+import syncSessionTracker from '../../sync-session-tracker';
 
 /**
  * Image Upload Job Data
@@ -30,6 +32,7 @@ export interface ImageUploadJobData {
   index?: number;            // Gallery image index (for ordering)
   updateParentProduct?: boolean; // If true, also set this image as parent Product's main_image
   parentProductId?: number;  // Parent Product ID (when updateParentProduct is true)
+  sessionId?: string;        // Sync session ID for tracking across pipeline
 }
 
 /**
@@ -37,9 +40,9 @@ export interface ImageUploadJobData {
  */
 export function createImageUploadWorker(): Worker<ImageUploadJobData> {
   const worker = new Worker<ImageUploadJobData>(
-    'image-upload',
+    QUEUE_NAMES.IMAGE_UPLOAD,
     async (job: Job<ImageUploadJobData>) => {
-      const { imageUrl, fileName, entityType, entityId, fieldName, index, updateParentProduct, parentProductId } = job.data;
+      const { imageUrl, fileName, entityType, entityId, fieldName, index, updateParentProduct, parentProductId, sessionId } = job.data;
 
       // Input validation
       if (!imageUrl || typeof imageUrl !== 'string') {
@@ -98,17 +101,37 @@ export function createImageUploadWorker(): Worker<ImageUploadJobData> {
 
         await job.updateProgress({ step: 'complete', percentage: 100 });
 
+        // Update session counters
+        if (sessionId) {
+          if (result.wasDedup) {
+            await syncSessionTracker.incrementCounter(sessionId, 'images_deduplicated');
+          } else {
+            await syncSessionTracker.incrementCounter(sessionId, 'images_uploaded');
+          }
+        }
+
         return {
           fileName,
           mediaId: result.mediaId,
           url: result.url,
           wasDedup: result.wasDedup,
           entityType,
-          entityId
+          entityId,
+          sessionId
         };
 
       } catch (error) {
         strapi.log.error(`❌ Failed to upload image ${fileName}:`, error);
+        // Update session failure counter
+        if (sessionId) {
+          await syncSessionTracker.incrementCounter(sessionId, 'images_failed');
+          await syncSessionTracker.addError(sessionId, 'images', error?.message || 'Unknown error', {
+            fileName,
+            imageUrl,
+            entityType,
+            entityId
+          });
+        }
         throw error;
       }
     },
@@ -116,12 +139,55 @@ export function createImageUploadWorker(): Worker<ImageUploadJobData> {
   );
 
   // Event handlers
-  worker.on('completed', (job) => {
+  worker.on('completed', async (job) => {
+    const { sessionId } = job.returnvalue || {};
     strapi.log.info(`✅ [Worker] Image upload job ${job.id} completed`);
+
+    // Check if images stage is complete
+    if (sessionId) {
+      try {
+        const stageStatus = await syncSessionTracker.isStageComplete(sessionId, 'images');
+        if (stageStatus.complete) {
+          await syncSessionTracker.completeStage(sessionId, 'images', {
+            images_total: stageStatus.total,
+            images_uploaded: stageStatus.processed - (stageStatus.failed || 0),
+            images_failed: stageStatus.failed
+          });
+          strapi.log.info(`📋 Session ${sessionId}: Images stage complete (${stageStatus.processed}/${stageStatus.total})`);
+
+          // Start meilisearch stage
+          await syncSessionTracker.startStage(sessionId, 'meilisearch');
+          strapi.log.info(`📋 Session ${sessionId}: Starting meilisearch stage`);
+        }
+      } catch (sessionError) {
+        strapi.log.error(`Failed to check session ${sessionId}:`, sessionError);
+      }
+    }
   });
 
-  worker.on('failed', (job, error) => {
+  worker.on('failed', async (job, error) => {
     strapi.log.error(`❌ [Worker] Image upload job ${job?.id} failed:`, error);
+
+    // Session failure tracking is handled in the catch block above
+    // Check if images stage should be marked as complete (even with failures)
+    if (job?.data?.sessionId) {
+      try {
+        const stageStatus = await syncSessionTracker.isStageComplete(job.data.sessionId, 'images');
+        if (stageStatus.complete) {
+          await syncSessionTracker.completeStage(job.data.sessionId, 'images', {
+            images_total: stageStatus.total,
+            images_uploaded: stageStatus.processed - (stageStatus.failed || 0),
+            images_failed: stageStatus.failed
+          });
+          strapi.log.info(`📋 Session ${job.data.sessionId}: Images stage complete with failures (${stageStatus.failed} failed)`);
+
+          // Continue to meilisearch stage despite failures
+          await syncSessionTracker.startStage(job.data.sessionId, 'meilisearch');
+        }
+      } catch (sessionError) {
+        strapi.log.error(`Failed to check session:`, sessionError);
+      }
+    }
   });
 
   worker.on('error', (error) => {

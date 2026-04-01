@@ -397,7 +397,7 @@ export class GeminiFileSearchService {
    * 
    * If product not in Meilisearch → skip with warning (don't fail)
    */
-  async addOrUpdateDocument(documentId: string): Promise<{ success: boolean; error?: string }> {
+  async addOrUpdateDocument(documentId: string): Promise<{ success: boolean; error?: string; skipped?: boolean; reason?: string }> {
     let tempFilePath: string | null = null;
 
     try {
@@ -419,6 +419,42 @@ export class GeminiFileSearchService {
       if (!storeId) {
         throw new Error('Failed to get or create Gemini FileSearchStore');
       }
+
+      // === HASH-BASED DEDUPLICATION ===
+      // Check if product is already synced and unchanged (prevents duplicates in FileSearchStore)
+      // FileSearchStore doesn't support file deletion, so we MUST prevent duplicate uploads
+      try {
+        // Use db.query to find by documentId (entityService requires numeric id)
+        const existingProduct = await this.strapi.db.query('api::product.product').findOne({
+          where: { documentId },
+          select: ['id', 'gemini_file_uri', 'gemini_synced_hash', 'promidata_hash', 'sku']
+        });
+
+        if (existingProduct) {
+          const { gemini_file_uri, gemini_synced_hash, promidata_hash, sku } = existingProduct;
+
+          // Skip if: already synced AND hash unchanged (content identical)
+          if (gemini_file_uri && gemini_synced_hash && promidata_hash && gemini_synced_hash === promidata_hash) {
+            this.strapi.log.info(
+              `⏭️  Skipping Gemini sync for ${sku}: Already synced and hash unchanged ` +
+              `(hash: ${promidata_hash.substring(0, 8)}...)`
+            );
+            return { success: true, skipped: true, reason: 'Already synced, hash unchanged' };
+          }
+
+          // Log reason for re-sync
+          if (gemini_file_uri && gemini_synced_hash !== promidata_hash) {
+            this.strapi.log.info(
+              `🔄 Re-syncing ${sku} to Gemini: Hash changed ` +
+              `(old: ${gemini_synced_hash?.substring(0, 8) || 'none'}... → new: ${promidata_hash?.substring(0, 8) || 'none'}...)`
+            );
+          }
+        }
+      } catch (dedupError) {
+        // Non-fatal: if we can't check, proceed with sync anyway
+        this.strapi.log.warn(`Could not check dedup for ${documentId}:`, dedupError);
+      }
+      // === END DEDUPLICATION ===
 
       // Fetch document FROM Meilisearch (not Strapi DB)
       // NOTE: Meilisearch uses the Strapi documentId directly as the primary key
@@ -472,18 +508,25 @@ export class GeminiFileSearchService {
       // Save the Gemini file reference to Strapi for tracking
       // Also save the promidata_hash for hash-based deduplication
       try {
-        // Fetch product from Strapi to get promidata_hash
-        const product = await this.strapi.entityService.findOne('api::product.product', documentId, {
-          fields: ['promidata_hash']
+        // IMPORTANT: entityService uses numeric ID, but we have documentId (UUID)
+        // Use db.query to find by documentId and get the numeric id
+        const product = await this.strapi.db.query('api::product.product').findOne({
+          where: { documentId },
+          select: ['id', 'promidata_hash']
         });
 
-        await this.strapi.entityService.update('api::product.product', documentId, {
-          data: {
-            gemini_file_uri: operation.name,
-            gemini_synced_hash: product?.promidata_hash || null,
-          },
-        });
-        this.strapi.log.debug(`📝 Saved gemini_file_uri and gemini_synced_hash for ${geminiDoc.sku}`);
+        if (!product) {
+          this.strapi.log.warn(`Could not find product with documentId ${documentId} to update tracking`);
+        } else {
+          // Use numeric id for entityService.update
+          await this.strapi.entityService.update('api::product.product', product.id, {
+            data: {
+              gemini_file_uri: operation.name,
+              gemini_synced_hash: product.promidata_hash || null,
+            },
+          });
+          this.strapi.log.debug(`📝 Saved gemini_file_uri and gemini_synced_hash for ${geminiDoc.sku} (id: ${product.id})`);
+        }
       } catch (updateError) {
         // Non-fatal: file was uploaded, just couldn't update tracking field
         this.strapi.log.warn(`Could not update gemini_file_uri for ${documentId}:`, updateError);
@@ -517,15 +560,26 @@ export class GeminiFileSearchService {
       // Files remain in the store but we can clear the tracking fields.
       // Next sync will upload a fresh copy (semantic search handles duplicates).
 
+      // Use db.query to find by documentId and get numeric id
+      const product = await this.strapi.db.query('api::product.product').findOne({
+        where: { documentId },
+        select: ['id']
+      });
+
+      if (!product) {
+        this.strapi.log.warn(`Could not find product with documentId ${documentId} to clear Gemini status`);
+        return { success: false, error: 'Product not found' };
+      }
+
       // Clear both gemini_file_uri and gemini_synced_hash to mark product as needing re-sync
-      await this.strapi.entityService.update('api::product.product', documentId, {
+      await this.strapi.entityService.update('api::product.product', product.id, {
         data: {
           gemini_file_uri: null,
           gemini_synced_hash: null,
         },
       });
 
-      this.strapi.log.info(`🗑️  Cleared Gemini sync status for product ${documentId}`);
+      this.strapi.log.info(`🗑️  Cleared Gemini sync status for product ${documentId} (id: ${product.id})`);
       return { success: true };
     } catch (error) {
       this.strapi.log.error(`Failed to clear Gemini status for ${documentId}:`, error);
@@ -773,15 +827,69 @@ If no products match, say "No products found matching your query."`;
         }
       } as any);
 
-      // Extract response text and metadata
-      // Note: Response structure may vary, returning the full response for debugging
-      const responseText = response.text || '';
+      // Extract response text from various possible locations
+      // The SDK may return text in different places depending on version
+      let responseText = '';
+
+      // Try direct .text property first
+      if (response.text) {
+        responseText = response.text;
+      }
+      // Try candidates structure (common in Gemini responses)
+      else if (response.candidates?.[0]?.content?.parts?.[0]?.text) {
+        responseText = response.candidates[0].content.parts[0].text;
+      }
+      // Try response.response if it exists
+      else if ((response as any).response?.text) {
+        responseText = (response as any).response.text;
+      }
+
+      this.strapi.log.info(`[GeminiTest] Response text length: ${responseText.length}`);
+      if (!responseText) {
+        this.strapi.log.warn('[GeminiTest] No response text found. Response keys:', Object.keys(response || {}));
+      }
+
+      // Extract grounding chunks from the response
+      // Grounding metadata contains the actual document fragments retrieved from FileSearchStore
+      let groundingChunks: Array<{ text: string; source?: string }> = [];
+
+      try {
+        // Try different paths where grounding data might be located
+        const candidates = response.candidates || (response as any).response?.candidates;
+        const groundingMetadata = candidates?.[0]?.groundingMetadata;
+
+        if (groundingMetadata?.groundingChunks) {
+          groundingChunks = groundingMetadata.groundingChunks.map((chunk: any, index: number) => ({
+            text: chunk.web?.title || chunk.retrievedContext?.text || chunk.text || `Chunk ${index + 1}`,
+            source: chunk.web?.uri || chunk.retrievedContext?.uri || chunk.source || 'FileSearchStore'
+          }));
+        }
+
+        // Also try groundingSupports which may contain chunk references
+        if (groundingChunks.length === 0 && groundingMetadata?.groundingSupports) {
+          groundingChunks = groundingMetadata.groundingSupports.map((support: any, index: number) => ({
+            text: support.segment?.text || support.text || `Support ${index + 1}`,
+            source: 'FileSearchStore'
+          }));
+        }
+
+        // Try retrievalMetadata for older API versions
+        if (groundingChunks.length === 0 && groundingMetadata?.retrievalMetadata?.googleSearchDynamicRetrievalScore !== undefined) {
+          // This means grounding happened but chunks aren't directly exposed
+          this.strapi.log.info('[GeminiTest] Grounding occurred but chunks not directly available');
+        }
+
+        this.strapi.log.info(`[GeminiTest] Extracted ${groundingChunks.length} grounding chunks`);
+      } catch (chunkError) {
+        this.strapi.log.warn('[GeminiTest] Could not extract grounding chunks:', chunkError);
+      }
 
       return {
         success: true,
         query,
         responseText,
-        fullResponse: response,  // Include full response for dashboard display
+        groundingChunks,  // Include the raw chunks for inspection
+        fullResponse: response,  // Include full response for debugging
       };
     } catch (error) {
       this.strapi.log.error('Semantic search test failed:', error);

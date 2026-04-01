@@ -1,10 +1,28 @@
 /**
  * BullMQ Queue Configuration
  * Defines concurrency, retry strategies, and timeouts for all queues
+ *
+ * IMPORTANT: Dev and production use SEPARATE Redis instances for isolation.
+ * - Development: Local Redis (Docker: promoatlas-redis on port 6380)
+ * - Production: Remote Redis on server
+ *
+ * This eliminates the need for queue prefixes and prevents cross-environment interference.
  */
 
 import { QueueOptions, WorkerOptions } from 'bullmq';
 import { randomUUID } from 'crypto';
+
+/**
+ * Queue Names
+ * Simple, unprefixed names - isolation is achieved via separate Redis instances
+ */
+export const QUEUE_NAMES = {
+  SUPPLIER_SYNC: 'supplier-sync',
+  PRODUCT_FAMILY: 'product-family',
+  IMAGE_UPLOAD: 'image-upload',
+  MEILISEARCH_SYNC: 'meilisearch-sync',
+  GEMINI_SYNC: 'gemini-sync',
+} as const;
 
 /**
  * Validate required Redis environment variables
@@ -52,6 +70,9 @@ const createRedisConnection = () => {
 };
 
 export const redisConnection = createRedisConnection();
+
+// Alias for workers that need to create new connections
+export const getRedisConnection = createRedisConnection;
 
 /**
  * Default Queue Options
@@ -162,6 +183,64 @@ export const imageUploadJobOptions = {
     delay: 30000, // 30 seconds fixed delay
   },
   timeout: getEnvNumber('BULLMQ_JOB_TIMEOUT_IMAGE', 120000), // 2 minutes default
+};
+
+/**
+ * Meilisearch Sync Worker Configuration
+ */
+export const meilisearchSyncWorkerOptions: WorkerOptions = {
+  connection: redisConnection,
+  concurrency: getEnvNumber('BULLMQ_CONCURRENCY_MEILISEARCH', 5),
+  limiter: {
+    max: 10,
+    duration: 1000,
+  },
+  settings: {
+    backoffStrategy: (attemptsMade: number) => {
+      return Math.pow(2, attemptsMade) * 5000;
+    },
+  },
+};
+
+/**
+ * Meilisearch Sync Job Options
+ */
+export const meilisearchSyncJobOptions = {
+  attempts: 3,
+  backoff: {
+    type: 'exponential' as const,
+    delay: 5000,
+  },
+  timeout: getEnvNumber('BULLMQ_JOB_TIMEOUT_MEILISEARCH', 60000), // 1 minute default
+};
+
+/**
+ * Gemini Sync Worker Configuration
+ */
+export const geminiSyncWorkerOptions: WorkerOptions = {
+  connection: redisConnection,
+  concurrency: getEnvNumber('BULLMQ_CONCURRENCY_GEMINI', 5),
+  limiter: {
+    max: 10,
+    duration: 1000,
+  },
+  settings: {
+    backoffStrategy: (attemptsMade: number) => {
+      return Math.pow(2, attemptsMade) * 5000;
+    },
+  },
+};
+
+/**
+ * Gemini Sync Job Options
+ */
+export const geminiSyncJobOptions = {
+  attempts: 3,
+  backoff: {
+    type: 'exponential' as const,
+    delay: 5000,
+  },
+  timeout: getEnvNumber('BULLMQ_JOB_TIMEOUT_GEMINI', 120000), // 2 minutes default
 };
 
 /**

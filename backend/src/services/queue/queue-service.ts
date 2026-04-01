@@ -17,7 +17,8 @@ import {
   imageUploadJobOptions,
   meilisearchSyncJobOptions,
   geminiSyncJobOptions,
-  generateJobId
+  generateJobId,
+  QUEUE_NAMES
 } from './queue-config';
 
 import type { SupplierSyncJobData } from './workers/supplier-sync-worker';
@@ -86,27 +87,27 @@ class QueueService {
     strapi.log.info('🚀 Initializing queue service...');
 
     this.supplierSyncQueue = new Queue<SupplierSyncJobData>(
-      'supplier-sync',
+      QUEUE_NAMES.SUPPLIER_SYNC,
       defaultQueueOptions
     );
 
     this.productFamilyQueue = new Queue<ProductFamilyJobData>(
-      'product-family',
+      QUEUE_NAMES.PRODUCT_FAMILY,
       defaultQueueOptions
     );
 
     this.imageUploadQueue = new Queue<ImageUploadJobData>(
-      'image-upload',
+      QUEUE_NAMES.IMAGE_UPLOAD,
       defaultQueueOptions
     );
 
     this.meilisearchSyncQueue = new Queue<MeilisearchSyncJobData>(
-      'meilisearch-sync',
+      QUEUE_NAMES.MEILISEARCH_SYNC,
       defaultQueueOptions
     );
 
     this.geminiSyncQueue = new Queue<GeminiSyncJobData>(
-      'gemini-sync',
+      QUEUE_NAMES.GEMINI_SYNC,
       defaultQueueOptions
     );
 
@@ -152,7 +153,8 @@ class QueueService {
     entityId: number,
     documentId: string,
     priority?: number,
-    delay?: number // Delay in milliseconds
+    delay?: number, // Delay in milliseconds
+    sessionId?: string // Sync session ID for tracking across pipeline
   ): Promise<Job<MeilisearchSyncJobData>> {
     this.ensureInitialized();
 
@@ -162,7 +164,8 @@ class QueueService {
       entityType,
       entityId,
       documentId,
-      priority
+      priority,
+      sessionId
     };
 
     const job = await this.meilisearchSyncQueue!.add(
@@ -189,7 +192,8 @@ class QueueService {
     operation: 'add' | 'update' | 'delete',
     documentId: string,
     priority?: number,
-    delay?: number // Delay in milliseconds
+    delay?: number, // Delay in milliseconds
+    sessionId?: string // Sync session ID for tracking across pipeline
   ): Promise<Job<GeminiSyncJobData>> {
     this.ensureInitialized();
 
@@ -198,7 +202,8 @@ class QueueService {
       operation,
       documentId,
       priority,
-      delay
+      delay,
+      sessionId
     };
 
     const job = await this.geminiSyncQueue!.add(
@@ -225,6 +230,7 @@ class QueueService {
       documentId: string;
       priority?: number;
       delay?: number;
+      sessionId?: string;
     }>
   ): Promise<Job<GeminiSyncJobData>[]> {
     this.ensureInitialized();
@@ -237,7 +243,8 @@ class QueueService {
           operation: job.operation,
           documentId: job.documentId,
           priority: job.priority,
-          delay: job.delay
+          delay: job.delay,
+          sessionId: job.sessionId
         },
         opts: {
           ...geminiSyncJobOptions,

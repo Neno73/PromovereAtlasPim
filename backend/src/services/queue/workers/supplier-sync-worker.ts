@@ -8,13 +8,15 @@
  * 3. Perform batch hash check
  * 4. Enqueue product family jobs for changed products
  * 5. Update supplier sync status
+ * 6. Track progress via sync session
  */
 
 import { Worker, Job, Queue } from 'bullmq';
 import {
   supplierSyncWorkerOptions,
   productFamilyJobOptions,
-  getRedisConnection
+  getRedisConnection,
+  QUEUE_NAMES
 } from '../queue-config';
 
 // Import modular services
@@ -23,6 +25,7 @@ import productParser from '../../promidata/parsers/product-parser';
 import groupingService from '../../promidata/transformers/grouping';
 import productSyncService from '../../promidata/sync/product-sync-service';
 import { syncLockService } from '../../sync-lock-service';
+import syncSessionTracker from '../../sync-session-tracker';
 
 /**
  * Supplier Sync Job Data
@@ -32,6 +35,7 @@ export interface SupplierSyncJobData {
   supplierCode: string;    // For logging
   supplierNumericId: number; // Numeric ID for database queries
   manual: boolean;         // Manual vs scheduled sync
+  sessionId?: string;      // Sync session ID (created if not provided)
 }
 
 /**
@@ -43,6 +47,7 @@ interface ProductFamilyJobData {
   supplierId: number;
   supplierCode: string;
   productHash: string;
+  sessionId?: string; // Sync session ID for tracking across pipeline
 }
 
 /**
@@ -50,9 +55,10 @@ interface ProductFamilyJobData {
  */
 export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
   const worker = new Worker<SupplierSyncJobData>(
-    'supplier-sync',
+    QUEUE_NAMES.SUPPLIER_SYNC,
     async (job: Job<SupplierSyncJobData>) => {
       const { supplierId, supplierCode, supplierNumericId, manual } = job.data;
+      let sessionId = job.data.sessionId;
 
       // Input validation
       if (!supplierId || typeof supplierId !== 'string') {
@@ -71,12 +77,32 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
       strapi.log.info(`🔄 [Worker] Syncing supplier: ${supplierCode}`);
       strapi.log.info(`${'='.repeat(60)}\n`);
 
+      // Create or retrieve sync session
+      if (!sessionId) {
+        const session = await syncSessionTracker.createSession(
+          supplierNumericId,
+          supplierCode,
+          manual ? 'manual' : 'scheduled'
+        );
+        sessionId = session.session_id;
+        strapi.log.info(`📋 Created sync session: ${sessionId}`);
+      } else {
+        strapi.log.info(`📋 Using existing session: ${sessionId}`);
+      }
+
+      // Store sessionId in job data for event handlers
+      job.data.sessionId = sessionId;
+
       try {
         // Helper to check stop signal
         const checkStopSignal = async (): Promise<boolean> => {
           const shouldStop = await syncLockService.isPromidataStopRequested(supplierId);
           if (shouldStop) {
             strapi.log.info(`⏹️  Stop signal received for ${supplierCode}. Stopping sync...`);
+            await syncSessionTracker.updateSession(sessionId!, {
+              status: 'stopped',
+              last_error: 'Sync stopped by user request'
+            } as any);
           }
           return shouldStop;
         };
@@ -88,13 +114,26 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
         const importEntries = await importParser.parseForSupplier(supplierCode);
         strapi.log.info(`✓ Found ${importEntries.length} variant entries`);
 
+        // Update session with products found
+        await syncSessionTracker.updateSession(sessionId, {
+          promidata_products_found: importEntries.length
+        } as any);
+
         if (importEntries.length === 0) {
           strapi.log.info(`⚠️  No products found for ${supplierCode}`);
+          await syncSessionTracker.completeStage(sessionId, 'promidata', {
+            promidata_products_found: 0,
+            promidata_families_created: 0,
+            promidata_families_updated: 0,
+            promidata_skipped_unchanged: 0
+          });
+          await syncSessionTracker.completeSession(sessionId);
           return {
             supplierCode,
             productsProcessed: 0,
             message: 'No products found',
-            stopped: false
+            stopped: false,
+            sessionId
           };
         }
 
@@ -163,8 +202,14 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
         strapi.log.info(`\n🔍 Step 4: Performing batch hash check...`);
 
         const productFamilies = Array.from(groupedByANumber.entries()).map(([aNumber, variants]) => {
-          const firstSku = variants[0].SKU || variants[0].sku;
+          // Try all SKU case variations (Promidata uses camelCase 'Sku')
+          const firstSku = variants[0].SKU || variants[0].sku || variants[0].Sku;
           const matchingEntry = importEntries.find(e => e.sku === firstSku);
+
+          if (!matchingEntry) {
+            strapi.log.warn(`[ProductSync] No Import.txt entry found for SKU: ${firstSku} (a_number: ${aNumber})`);
+          }
+
           return {
             aNumber,
             hash: matchingEntry?.hash || ''
@@ -178,14 +223,34 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
 
         strapi.log.info(`✓ Efficiency: ${filterResult.efficiency.toFixed(1)}% (${filterResult.skipped} unchanged)`);
 
+        // Update session with hash check results
+        await syncSessionTracker.updateSession(sessionId, {
+          promidata_skipped_unchanged: filterResult.skipped,
+          promidata_hash_efficiency: filterResult.efficiency
+        } as any);
+
         if (filterResult.needsSync.length === 0) {
           strapi.log.info(`✅ All products up-to-date for ${supplierCode}`);
+          await syncSessionTracker.completeStage(sessionId, 'promidata', {
+            promidata_products_found: importEntries.length,
+            promidata_families_created: 0,
+            promidata_families_updated: 0,
+            promidata_skipped_unchanged: filterResult.skipped
+          });
+          // Skip downstream stages since no changes
+          await syncSessionTracker.updateSession(sessionId, {
+            images_status: 'skipped',
+            meilisearch_status: 'skipped',
+            gemini_status: 'skipped'
+          } as any);
+          await syncSessionTracker.completeSession(sessionId);
           return {
             supplierCode,
             productsProcessed: 0,
             skipped: filterResult.skipped,
             efficiency: filterResult.efficiency,
-            stopped: false
+            stopped: false,
+            sessionId
           };
         }
 
@@ -198,8 +263,8 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
         await job.updateProgress({ step: 'enqueueing_families', percentage: 70 });
         strapi.log.info(`\n⚡ Step 5: Enqueueing ${filterResult.needsSync.length} product family jobs...`);
 
-        // Get queue instance
-        const productFamilyQueue = new Queue('product-family', { connection: getRedisConnection() });
+        // Get queue instance (using prefixed name for environment isolation)
+        const productFamilyQueue = new Queue(QUEUE_NAMES.PRODUCT_FAMILY, { connection: getRedisConnection() });
 
         const enqueuedJobs = [];
         for (const family of filterResult.needsSync) {
@@ -211,7 +276,8 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
             variants,
             supplierId: supplierNumericId,
             supplierCode,
-            productHash: family.hash
+            productHash: family.hash,
+            sessionId // Pass session ID to child jobs
           };
 
           const familyJob = await productFamilyQueue.add(
@@ -225,6 +291,18 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
 
           enqueuedJobs.push(familyJob.id);
         }
+
+        // Update session - promidata stage complete, families enqueued
+        await syncSessionTracker.completeStage(sessionId, 'promidata', {
+          promidata_products_found: importEntries.length,
+          promidata_families_created: filterResult.needsSync.length,
+          promidata_families_updated: 0, // Will be updated by product-family workers
+          promidata_skipped_unchanged: filterResult.skipped
+        });
+
+        // Note: images_total and meilisearch_total are now tracked accurately by
+        // product-family-worker as it enqueues jobs. No estimates needed here.
+        // gemini_total is set when manually triggering Gemini sync.
 
         await job.updateProgress({ step: 'complete', percentage: 100 });
 
@@ -240,11 +318,17 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
           skipped: filterResult.skipped,
           efficiency: filterResult.efficiency,
           duration: `${duration}s`,
-          jobIds: enqueuedJobs
+          jobIds: enqueuedJobs,
+          sessionId // Include sessionId in return for downstream tracking
         };
 
       } catch (error) {
         strapi.log.error(`❌ Supplier sync failed for ${supplierCode}:`, error);
+        // Record error in session
+        if (sessionId) {
+          await syncSessionTracker.failStage(sessionId, 'promidata', error?.message || 'Unknown error');
+          await syncSessionTracker.failSession(sessionId, error?.message || 'Unknown error');
+        }
         throw error;
       }
     },
@@ -253,10 +337,13 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
 
   // Event handlers
   worker.on('completed', async (job) => {
-    const { supplierId, supplierNumericId, supplierCode } = job.data;
+    const { supplierId, supplierNumericId, supplierCode, sessionId } = job.data;
     const wasStopped = job.returnvalue?.stopped;
 
     strapi.log.info(`✅ [Worker] Supplier sync job ${job.id} completed${wasStopped ? ' (stopped by user)' : ''}`);
+    if (sessionId) {
+      strapi.log.info(`📋 Session: ${sessionId}`);
+    }
 
     // Release lock
     try {
@@ -293,13 +380,20 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
     } catch (error) {
       strapi.log.error(`Failed to update supplier last_sync_date:`, error);
     }
+
+    // Note: Session is NOT completed here because downstream workers
+    // (product-family, images, meilisearch, gemini) still need to run
+    // Session will be completed when all stages finish
+    if (sessionId) {
+      strapi.log.info(`📋 Session ${sessionId}: Promidata stage complete. Waiting for downstream workers...`);
+    }
   });
 
   worker.on('failed', async (job, error) => {
     strapi.log.error(`❌ [Worker] Supplier sync job ${job?.id} failed:`, error);
 
     if (job?.data) {
-      const { supplierId, supplierNumericId, supplierCode } = job.data;
+      const { supplierId, supplierNumericId, supplierCode, sessionId } = job.data;
 
       // Release lock
       try {
@@ -321,6 +415,17 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
         strapi.log.info(`✓ Updated last_sync_status to failed for ${supplierCode}`);
       } catch (updateError) {
         strapi.log.error(`Failed to update supplier last_sync_status:`, updateError);
+      }
+
+      // Update session with failure (only if not already done in catch block)
+      if (sessionId) {
+        try {
+          await syncSessionTracker.failStage(sessionId, 'promidata', error?.message || 'Unknown error');
+          await syncSessionTracker.failSession(sessionId, error?.message || 'Unknown error');
+          strapi.log.info(`📋 Session ${sessionId}: Marked as failed`);
+        } catch (sessionError) {
+          strapi.log.error(`Failed to update session ${sessionId}:`, sessionError);
+        }
       }
     }
   });

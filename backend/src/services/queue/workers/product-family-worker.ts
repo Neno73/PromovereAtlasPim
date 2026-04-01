@@ -74,7 +74,7 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
 
         // Step 2: Transform and create/update Product
         await job.updateProgress({ step: 'creating_product', percentage: 30 });
-        const productData = productTransformer.transform(aNumber, variants, supplierId, productHash);
+        const productData = productTransformer.transform(aNumber, variants, supplierId, supplierCode, productHash);
         const productResult = await productSyncService.createOrUpdate(productData);
 
         const productId = Number(productResult.productId);

@@ -58,6 +58,13 @@ export interface MeilisearchProductDocument {
   price_min?: number;            // Lowest price (for filtering/sorting)
   price_max?: number;            // Highest price
   currency: string;              // Default: EUR
+  price_region?: string;         // BENELUX, EURO, etc.
+  minimum_order_quantity?: number;
+  quantity_increments?: number;
+
+  // Additional product data
+  ean?: string;
+  customs_tariff_number?: string;
 
   // Timestamps (for sorting)
   createdAt: number;             // Unix timestamp

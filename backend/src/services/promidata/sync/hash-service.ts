@@ -21,7 +21,6 @@ class HashService {
       aNumber: productData.a_number,
       name: productData.name,
       description: productData.description,
-      modelName: productData.model_name,
       brand: productData.brand,
       priceTiers: this.normalizePriceTiers(productData.price_tiers),
       // Note: NOT including variant-specific data like colors/sizes

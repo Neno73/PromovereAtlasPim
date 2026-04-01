@@ -47,7 +47,7 @@ describe('ProductTransformer', () => {
                 },
             ];
 
-            const result = productTransformer.transform('A123', mockVariants, 1, 'hash123');
+            const result = productTransformer.transform('A123', mockVariants, 1, 'A123', 'hash123');
 
             expect(result).toMatchObject({
                 sku: 'A123',
@@ -103,7 +103,7 @@ describe('ProductTransformer', () => {
                 },
             ];
 
-            const result = productTransformer.transform('A456', mockVariants, 1, 'hash456');
+            const result = productTransformer.transform('A456', mockVariants, 1, 'A456', 'hash456');
 
             expect(result.available_colors).toEqual(['Red', 'Blue']);
             expect(result.total_variants_count).toBe(3);
@@ -146,7 +146,7 @@ describe('ProductTransformer', () => {
                 },
             ];
 
-            const result = productTransformer.transform('A789', mockVariants, 1, 'hash789');
+            const result = productTransformer.transform('A789', mockVariants, 1, 'A789', 'hash789');
 
             expect(result.available_sizes).toEqual(['L', 'M', 'S']); // Sorted
         });
@@ -161,7 +161,7 @@ describe('ProductTransformer', () => {
                 },
             ];
 
-            const result = productTransformer.transform('AMIN', mockVariants, 1, 'hashmin');
+            const result = productTransformer.transform('AMIN', mockVariants, 1, 'AMIN', 'hashmin');
 
             expect(result.sku).toBe('AMIN');
             expect(result.name).toEqual({ en: 'Minimal Product' });
@@ -177,7 +177,7 @@ describe('ProductTransformer', () => {
                 },
             ];
 
-            const result = productTransformer.transform('ANAME', mockVariants, 1, 'hashname');
+            const result = productTransformer.transform('ANAME', mockVariants, 1, 'ANAME', 'hashname');
 
             expect(result.name).toEqual({ en: 'Unnamed Product' });
         });

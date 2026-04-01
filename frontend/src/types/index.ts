@@ -208,7 +208,6 @@ export type ProductData = Product & MeilisearchFields;
  */
 export interface VerificationStatus {
   inMeilisearch: boolean;
-  inGemini: boolean;
   hashMatches: boolean;
   imageCount: number;
   lastSynced: string | null;

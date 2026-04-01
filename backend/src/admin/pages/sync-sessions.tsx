@@ -46,12 +46,6 @@ interface SyncSession {
   meilisearch_indexed: number;
   meilisearch_failed: number;
 
-  gemini_status: string;
-  gemini_total: number;
-  gemini_synced: number;
-  gemini_skipped: number;
-  gemini_failed: number;
-
   error_count: number;
   last_error?: string;
   supplier?: {
@@ -71,7 +65,6 @@ interface PipelineHealth {
   services: {
     queue: { healthy: boolean; message: string };
     meilisearch: { healthy: boolean; message: string };
-    gemini: { healthy: boolean; message: string };
   };
   last_check: string;
 }
@@ -91,7 +84,7 @@ interface SessionSummary {
   }>;
 }
 
-const STAGE_ORDER = ['promidata', 'images', 'meilisearch', 'gemini'] as const;
+const STAGE_ORDER = ['promidata', 'images', 'meilisearch'] as const;
 
 const SyncSessionsPage = () => {
   const [sessions, setSessions] = useState<SyncSession[]>([]);
@@ -242,11 +235,6 @@ const SyncSessionsPage = () => {
         total = session.meilisearch_total || 0;
         failed = session.meilisearch_failed || 0;
         break;
-      case 'gemini':
-        processed = (session.gemini_synced || 0) + (session.gemini_skipped || 0);
-        total = session.gemini_total || 0;
-        failed = session.gemini_failed || 0;
-        break;
     }
 
     const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
@@ -332,12 +320,6 @@ const SyncSessionsPage = () => {
                     <Typography variant="pi" textColor="neutral600">Meilisearch</Typography>
                     <Typography fontWeight="semiBold" textColor={health.services.meilisearch.healthy ? 'success600' : 'danger600'}>
                       {health.services.meilisearch.healthy ? '✓' : '✗'} {health.services.meilisearch.message}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="pi" textColor="neutral600">Gemini</Typography>
-                    <Typography fontWeight="semiBold" textColor={health.services.gemini.healthy ? 'success600' : 'danger600'}>
-                      {health.services.gemini.healthy ? '✓' : '✗'} {health.services.gemini.message}
                     </Typography>
                   </Box>
                 </Flex>
@@ -450,7 +432,7 @@ const SyncSessionsPage = () => {
             Recent Sessions
           </Typography>
           <Box background="neutral0" shadow="filterShadow" hasRadius>
-            <Table colCount={8} rowCount={sessions.length}>
+            <Table colCount={7} rowCount={sessions.length}>
               <Thead>
                 <Tr>
                   <Th><Typography variant="sigma">Session ID</Typography></Th>
@@ -459,7 +441,6 @@ const SyncSessionsPage = () => {
                   <Th><Typography variant="sigma">Promidata</Typography></Th>
                   <Th><Typography variant="sigma">Images</Typography></Th>
                   <Th><Typography variant="sigma">Meilisearch</Typography></Th>
-                  <Th><Typography variant="sigma">Gemini</Typography></Th>
                   <Th><Typography variant="sigma">Actions</Typography></Th>
                 </Tr>
               </Thead>
@@ -510,14 +491,6 @@ const SyncSessionsPage = () => {
                         {getStatusBadge(session.meilisearch_status)}
                         <Typography variant="pi" textColor="neutral600">
                           {session.meilisearch_indexed || 0}/{session.meilisearch_total || 0}
-                        </Typography>
-                      </Flex>
-                    </Td>
-                    <Td>
-                      <Flex direction="column" gap={1}>
-                        {getStatusBadge(session.gemini_status)}
-                        <Typography variant="pi" textColor="neutral600">
-                          {session.gemini_synced || 0}/{session.gemini_total || 0}
                         </Typography>
                       </Flex>
                     </Td>
@@ -665,12 +638,6 @@ const SyncSessionsPage = () => {
                           <Box marginTop={2}>
                             <Typography variant="pi">Uploaded: {selectedSession.images_uploaded}</Typography>
                             <Typography variant="pi"> | Dedup: {selectedSession.images_deduplicated}</Typography>
-                          </Box>
-                        )}
-                        {stage === 'gemini' && (
-                          <Box marginTop={2}>
-                            <Typography variant="pi">Synced: {selectedSession.gemini_synced}</Typography>
-                            <Typography variant="pi"> | Skipped: {selectedSession.gemini_skipped}</Typography>
                           </Box>
                         )}
                       </Box>

@@ -46,20 +46,6 @@ export function createResilientHttpClient(
 }
 
 /**
- * Pre-configured client for Gemini API calls
- */
-export const geminiHttpClient = createResilientHttpClient(
-    {
-        timeout: 30000, // 30 seconds
-        headers: {
-            'Content-Type': 'application/json',
-        },
-    },
-    3, // 3 retries
-    2000 // 2 second base delay
-);
-
-/**
  * Pre-configured client for Promidata API calls
  */
 export const promidataHttpClient = createResilientHttpClient(

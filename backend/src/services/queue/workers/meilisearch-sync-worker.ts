@@ -142,10 +142,6 @@ export function createMeilisearchSyncWorker(): Worker<
             await syncSessionTracker.incrementCounter(sessionId, 'meilisearch_indexed');
           }
 
-          // NOTE: Gemini sync is now manual only (via admin UI "Gemini" button)
-          // Removed automatic trigger to allow manual control over when/which suppliers sync to Gemini
-          // See: backend/src/admin/pages/supplier-sync.tsx → handleGeminiSync()
-
           return {
             success: true,
             operation,
@@ -198,10 +194,6 @@ export function createMeilisearchSyncWorker(): Worker<
             meilisearch_failed: stageStatus.failed
           });
           strapi.log.info(`📋 Session ${sessionId}: Meilisearch stage complete (${stageStatus.processed}/${stageStatus.total})`);
-
-          // Start gemini stage
-          await syncSessionTracker.startStage(sessionId, 'gemini');
-          strapi.log.info(`📋 Session ${sessionId}: Starting gemini stage`);
         }
       } catch (sessionError) {
         strapi.log.error(`Failed to check session ${sessionId}:`, sessionError);
@@ -227,9 +219,6 @@ export function createMeilisearchSyncWorker(): Worker<
               meilisearch_failed: stageStatus.failed
             });
             strapi.log.info(`📋 Session ${job.data.sessionId}: Meilisearch stage complete with failures (${stageStatus.failed} failed)`);
-
-            // Continue to gemini stage despite failures
-            await syncSessionTracker.startStage(job.data.sessionId, 'gemini');
           }
         } catch (sessionError) {
           strapi.log.error(`Failed to check session:`, sessionError);

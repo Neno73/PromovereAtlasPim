@@ -241,7 +241,6 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
           await syncSessionTracker.updateSession(sessionId, {
             images_status: 'skipped',
             meilisearch_status: 'skipped',
-            gemini_status: 'skipped'
           } as any);
           await syncSessionTracker.completeSession(sessionId);
           return {
@@ -302,7 +301,6 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
 
         // Note: images_total and meilisearch_total are now tracked accurately by
         // product-family-worker as it enqueues jobs. No estimates needed here.
-        // gemini_total is set when manually triggering Gemini sync.
 
         await job.updateProgress({ step: 'complete', percentage: 100 });
 
@@ -382,7 +380,7 @@ export function createSupplierSyncWorker(): Worker<SupplierSyncJobData> {
     }
 
     // Note: Session is NOT completed here because downstream workers
-    // (product-family, images, meilisearch, gemini) still need to run
+    // (product-family, images, meilisearch) still need to run
     // Session will be completed when all stages finish
     if (sessionId) {
       strapi.log.info(`📋 Session ${sessionId}: Promidata stage complete. Waiting for downstream workers...`);

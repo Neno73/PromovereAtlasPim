@@ -70,7 +70,7 @@ export default {
       config: {
         policies: [],
         middlewares: [],
-        description: 'Verify session counts across Strapi, Meilisearch, and Gemini',
+        description: 'Verify session counts across Strapi and Meilisearch',
         tag: {
           plugin: 'sync-session',
           name: 'Verify Session'

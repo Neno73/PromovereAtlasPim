@@ -108,7 +108,7 @@ export default factories.createCoreController('api::sync-session.sync-session', 
       const session = sessions[0];
 
       // Calculate progress percentage
-      const stages = ['promidata', 'images', 'meilisearch', 'gemini'];
+      const stages = ['promidata', 'images', 'meilisearch'];
       const completedStages = stages.filter(stage =>
         session[`${stage}_status`] === 'completed' || session[`${stage}_status`] === 'skipped'
       ).length;
@@ -262,19 +262,6 @@ export default factories.createCoreController('api::sync-session.sync-session', 
         strapi.log.warn('Could not get Meilisearch count:', err);
       }
 
-      // Get Gemini count via service
-      let geminiCount = 0;
-      try {
-        // @ts-ignore
-        const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
-        if (geminiService) {
-          const stats = await geminiService.getStats();
-          geminiCount = stats?.syncedProducts || 0;
-        }
-      } catch (err) {
-        strapi.log.warn('Could not get Gemini count:', err);
-      }
-
       // Compare counts
       const verification = {
         session_id: sessionId,
@@ -289,10 +276,6 @@ export default factories.createCoreController('api::sync-session.sync-session', 
           documents: meilisearchCount,
           session_tracked: session.meilisearch_indexed || 0
         },
-        gemini: {
-          files: geminiCount,
-          session_tracked: session.gemini_synced || 0
-        },
         mismatches: [] as string[]
       };
 
@@ -302,9 +285,6 @@ export default factories.createCoreController('api::sync-session.sync-session', 
       }
       if (verification.meilisearch.documents !== verification.meilisearch.session_tracked) {
         verification.mismatches.push(`Meilisearch documents (${verification.meilisearch.documents}) != session tracked (${verification.meilisearch.session_tracked})`);
-      }
-      if (verification.gemini.files !== verification.gemini.session_tracked) {
-        verification.mismatches.push(`Gemini files (${verification.gemini.files}) != session tracked (${verification.gemini.session_tracked})`);
       }
 
       if (verification.mismatches.length > 0) {
@@ -383,24 +363,8 @@ export default factories.createCoreController('api::sync-session.sync-session', 
         strapi.log.warn('Could not get Meilisearch health:', err);
       }
 
-      // Check Gemini health
-      let geminiHealth = { healthy: false, message: 'Gemini status unknown' };
-      try {
-        // @ts-ignore
-        const geminiService = strapi.service('api::gemini-sync.gemini-file-search');
-        if (geminiService) {
-          const isHealthy = await geminiService.healthCheck?.();
-          geminiHealth = {
-            healthy: isHealthy !== false,
-            message: isHealthy !== false ? 'Gemini FileSearchStore operational' : 'Gemini issues detected'
-          };
-        }
-      } catch (err) {
-        strapi.log.warn('Could not get Gemini health:', err);
-      }
-
       // Overall health assessment
-      const overallHealthy = failedRecent === 0 && queueHealth.healthy && meilisearchHealth.healthy && geminiHealth.healthy;
+      const overallHealthy = failedRecent === 0 && queueHealth.healthy && meilisearchHealth.healthy;
 
       ctx.body = {
         success: true,
@@ -415,7 +379,6 @@ export default factories.createCoreController('api::sync-session.sync-session', 
           services: {
             queue: queueHealth,
             meilisearch: meilisearchHealth,
-            gemini: geminiHealth
           },
           last_check: new Date().toISOString()
         }
@@ -457,13 +420,6 @@ function getStageStats(session: any, stage: string): Record<string, number> {
         total: session.meilisearch_total || 0,
         indexed: session.meilisearch_indexed || 0,
         failed: session.meilisearch_failed || 0
-      };
-    case 'gemini':
-      return {
-        total: session.gemini_total || 0,
-        synced: session.gemini_synced || 0,
-        skipped: session.gemini_skipped || 0,
-        failed: session.gemini_failed || 0
       };
     default:
       return {};

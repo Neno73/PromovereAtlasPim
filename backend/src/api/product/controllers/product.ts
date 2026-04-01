@@ -192,7 +192,7 @@ export default factories.createCoreController('api::product.product', ({ strapi 
 
   /**
    * Get verification status for multiple products
-   * Returns Meilisearch, Gemini, and hash status for batch verification
+   * Returns Meilisearch and hash status for batch verification
    */
   async getVerificationStatus(ctx) {
     try {
@@ -221,8 +221,6 @@ export default factories.createCoreController('api::product.product', ({ strapi 
           'documentId',
           'sku',
           'promidata_hash',
-          'gemini_synced_hash',
-          'gemini_file_uri',
           'last_synced',
         ],
         populate: ['main_image', 'gallery_images', 'variants'],
@@ -231,7 +229,6 @@ export default factories.createCoreController('api::product.product', ({ strapi 
       // Build status map
       const statusMap: Record<string, {
         inMeilisearch: boolean;
-        inGemini: boolean;
         hashMatches: boolean;
         imageCount: number;
         lastSynced: string | null;
@@ -263,8 +260,7 @@ export default factories.createCoreController('api::product.product', ({ strapi 
 
         statusMap[product.documentId] = {
           inMeilisearch,
-          inGemini: !!product.gemini_file_uri,
-          hashMatches: product.promidata_hash === product.gemini_synced_hash,
+          hashMatches: !!product.promidata_hash,
           imageCount,
           lastSynced: product.last_synced || null,
         };

@@ -73,6 +73,22 @@
     "promidata_hash": {
       "type": "string"
     },
+    "ean": {
+      "type": "string",
+      "maxLength": 20
+    },
+    "minimum_order_quantity": {
+      "type": "integer",
+      "default": 1
+    },
+    "quantity_increments": {
+      "type": "integer",
+      "default": 1
+    },
+    "price_region": {
+      "type": "string",
+      "maxLength": 20
+    },
     "battery_information": {
       "type": "string"
     },
@@ -84,9 +100,6 @@
       "required": true
     },
     "description": {
-      "type": "json"
-    },
-    "model_name": {
       "type": "json"
     },
     "short_description": {

@@ -121,9 +121,6 @@
       "type": "boolean",
       "default": false
     },
-    "embroidery_sizes": {
-      "type": "json"
-    },
     "is_service_base": {
       "type": "boolean",
       "default": false

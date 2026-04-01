@@ -321,7 +321,7 @@ export default factories.createCoreService('api::promidata-sync.promidata-sync',
       // Step 2: Transform and create/update Product (parent)
       // Ensure numeric supplier ID for database operations
       const supplierId = this.validateSupplierNumericId(supplier);
-      const productData = productTransformer.transform(aNumber, variants, supplierId, productHash);
+      const productData = productTransformer.transform(aNumber, variants, supplierId, supplier.code || '', productHash);
       const productResult = await productSyncService.createOrUpdate(productData);
 
       const productId = Number(productResult.productId);

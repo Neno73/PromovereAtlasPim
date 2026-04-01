@@ -4,6 +4,7 @@
  */
 
 import { RawProductData } from '../parsers/product-parser';
+import { SUPPLIER_NAMES } from '../data/supplier-names';
 
 /**
  * Transformed Product Data (matches Strapi Product schema)
@@ -21,7 +22,6 @@ export interface ProductData {
   name: Record<string, string>;
   description?: Record<string, string>;
   short_description?: Record<string, string>;
-  model_name?: Record<string, string>;
   material?: Record<string, string>;
   customization?: Record<string, string>;
   refining?: Record<string, string>;
@@ -48,6 +48,10 @@ export interface ProductData {
   hex_colors?: string[];
   price_min?: number;
   price_max?: number;
+  ean?: string;
+  minimum_order_quantity?: number;
+  quantity_increments?: number;
+  price_region?: string;
   country_of_origin?: string;
   delivery_time?: string;
   customs_tariff_number?: string;
@@ -82,6 +86,7 @@ class ProductTransformer {
     aNumber: string,
     variants: RawProductData[],
     supplierId: number,
+    supplierCode: string,
     productHash: string
   ): ProductData {
     // Use first variant as base for shared data
@@ -91,13 +96,12 @@ class ProductTransformer {
       sku: aNumber,
       a_number: aNumber,
       supplier_sku: this.extractSupplierSku(baseVariant),
-      supplier_name: this.extractSupplierName(baseVariant),
+      supplier_name: this.extractSupplierName(baseVariant, supplierCode),
       brand: this.extractBrand(baseVariant),
       category: this.extractCategory(baseVariant),
       name: this.extractMultilingualName(baseVariant),
       description: this.extractMultilingualDescription(baseVariant),
       short_description: this.extractMultilingualShortDescription(baseVariant),
-      model_name: this.extractMultilingualModelName(baseVariant),
       material: this.extractMultilingualMaterial(baseVariant),
       customization: this.extractCustomization(baseVariant),
       refining: this.extractRefining(baseVariant),
@@ -107,6 +111,10 @@ class ProductTransformer {
       product_filters: this.extractProductFilters(baseVariant),
       price_tiers: this.extractPriceTiers(baseVariant),
       dimensions: this.extractDimensions(baseVariant),
+      ean: this.extractEan(variants),
+      minimum_order_quantity: this.extractMinimumOrderQuantity(baseVariant),
+      quantity_increments: this.extractQuantityIncrements(baseVariant),
+      price_region: this.extractPriceRegion(baseVariant),
       country_of_origin: this.extractCountryOfOrigin(baseVariant),
       delivery_time: this.extractDeliveryTime(baseVariant),
       customs_tariff_number: this.extractCustomsTariffNumber(baseVariant),
@@ -127,7 +135,7 @@ class ProductTransformer {
       promidata_hash: productHash,
       last_synced: new Date(),
       is_active: true,
-      rag_metadata: {}, // Empty for now (populated separately)
+      rag_metadata: {},
     };
   }
 
@@ -144,15 +152,18 @@ class ProductTransformer {
   }
 
   /**
-   * Extract supplier name
+   * Extract supplier name from static map, Promidata data, or legacy fields
    */
-  private extractSupplierName(data: RawProductData): string | undefined {
-    return (
-      data.supplier_name ||
-      data.SupplierName ||
-      data.supplierName ||
-      data.Supplier
-    );
+  private extractSupplierName(data: RawProductData, supplierCode: string): string | undefined {
+    // 1. Static map (most reliable — maintained manually)
+    if (SUPPLIER_NAMES[supplierCode]) return SUPPLIER_NAMES[supplierCode];
+
+    // 2. Promidata UnstructuredInformation.SupplierNameToShow
+    const unstructured = (data as any).UnstructuredInformation;
+    if (unstructured?.SupplierNameToShow) return unstructured.SupplierNameToShow;
+
+    // 3. Legacy fallback
+    return data.supplier_name || data.SupplierName || undefined;
   }
 
   /**
@@ -272,56 +283,60 @@ class ProductTransformer {
   }
 
   /**
-   * Extract multilingual model name
+   * Select the pricing region for this product.
+   * Priority: BENELUX > EURO > first available.
    */
-  private extractMultilingualModelName(data: RawProductData): Record<string, string> | undefined {
-    const modelName = data.model_name || data.ModelName || data.modelName;
+  private selectPriceRegion(data: RawProductData): { region: string; regionData: any } | null {
+    const prices = (data as any).ProductPriceCountryBased;
+    if (!prices || typeof prices !== 'object') return null;
 
-    if (!modelName) {
-      return undefined;
+    for (const preferred of ['BENELUX', 'EURO']) {
+      if (prices[preferred]) return { region: preferred, regionData: prices[preferred] };
     }
-
-    // If already multilingual object
-    if (typeof modelName === 'object' && !Array.isArray(modelName)) {
-      return modelName as Record<string, string>;
-    }
-
-    // If string, use for all languages
-    if (typeof modelName === 'string') {
-      return {
-        en: modelName,
-        nl: modelName,
-        de: modelName,
-        fr: modelName,
-      };
-    }
-
-    return undefined;
+    const firstKey = Object.keys(prices)[0];
+    return firstKey ? { region: firstKey, regionData: prices[firstKey] } : null;
   }
 
   /**
-   * Extract price tiers (8-tier structure)
-   * IMPORTANT: Returns empty array (not undefined) for Strapi 5 repeatable component compatibility
+   * Extract price tiers from ProductPriceCountryBased
+   * Reads from ProductPriceCountryBased[region].RecommendedSellingPrice[] and GeneralBuyingPrice[].
+   * Returns empty array (not undefined) for Strapi 5 repeatable component compatibility.
    */
   private extractPriceTiers(data: RawProductData): any[] {
-    const priceTiers: any[] = [];
+    const regionInfo = this.selectPriceRegion(data);
+    if (!regionInfo) return [];
 
-    // Tier 1-8 fields
-    for (let i = 1; i <= 8; i++) {
-      const price = data[`price_${i}`] || data[`Price${i}`] || data[`PRICE_${i}`];
-      const minQty = data[`min_qty_${i}`] || data[`MinQty${i}`] || (i === 1 ? 1 : null);
+    const { region, regionData } = regionInfo;
+    const tiers: any[] = [];
+    const sellingPrices = regionData.RecommendedSellingPrice || [];
+    const buyingPrices = regionData.GeneralBuyingPrice || [];
 
-      if (price !== undefined && price !== null) {
-        priceTiers.push({
-          tier: i,
-          price: parseFloat(price),
-          min_quantity: minQty ? parseInt(minQty) : null,
-        });
+    for (const sp of sellingPrices) {
+      if (sp.OnRequest) continue;
+      const price = parseFloat(sp.Price);
+      if (isNaN(price) || price <= 0) continue;
+
+      const tier: any = {
+        quantity: parseInt(sp.Quantity) || 1,
+        price,
+        currency: (sp.Valuta === 'EURO' ? 'EUR' : sp.Valuta) || 'EUR',
+        price_type: 'selling',
+        region,
+      };
+
+      // Match buying price for same quantity
+      const bp = buyingPrices.find((b: any) => b.Quantity === sp.Quantity && !b.OnRequest);
+      if (bp) {
+        const buyPrice = parseFloat(bp.Price);
+        if (!isNaN(buyPrice) && buyPrice > 0) {
+          tier.buying_price = buyPrice;
+        }
       }
+
+      tiers.push(tier);
     }
 
-    // Always return array (empty if no tiers) - Strapi 5 repeatable components require arrays
-    return priceTiers;
+    return tiers;
   }
 
   /**
@@ -884,19 +899,75 @@ class ProductTransformer {
   }
 
   /**
-   * Extract available hex colors from all variants
+   * Extract EAN barcode from first variant with a non-empty value
+   */
+  private extractEan(variants: RawProductData[]): string | undefined {
+    for (const variant of variants) {
+      const ean = (variant as any).Ean || variant.ean || variant.EAN;
+      if (ean && typeof ean === 'string' && ean.trim()) return ean.trim();
+    }
+    return undefined;
+  }
+
+  /**
+   * Extract minimum order quantity from the pricing region
+   */
+  private extractMinimumOrderQuantity(data: RawProductData): number | undefined {
+    const regionInfo = this.selectPriceRegion(data);
+    if (!regionInfo) return undefined;
+    const moq = regionInfo.regionData.MinimumOrderQuantity;
+    return typeof moq === 'number' && moq > 0 ? moq : undefined;
+  }
+
+  /**
+   * Extract quantity increments from the pricing region
+   */
+  private extractQuantityIncrements(data: RawProductData): number | undefined {
+    const regionInfo = this.selectPriceRegion(data);
+    if (!regionInfo) return undefined;
+    const qi = regionInfo.regionData.QuantityIncrements;
+    return typeof qi === 'number' && qi > 0 ? qi : undefined;
+  }
+
+  /**
+   * Extract which pricing region was used (BENELUX, EURO, etc.)
+   */
+  private extractPriceRegion(data: RawProductData): string | undefined {
+    const regionInfo = this.selectPriceRegion(data);
+    return regionInfo?.region;
+  }
+
+  /**
+   * Extract available hex colors from all variants.
+   * Checks NonLanguageDependedProductDetails.HexColor AND
+   * ProductDetails.{lang}.UnstructuredInformation.HexColor (A403 pattern).
    */
   private extractAvailableHexColors(variants: RawProductData[]): string[] {
     const hexColors = new Set<string>();
 
     for (const variant of variants) {
-      // Try NonLanguageDependedProductDetails.HexColor first (Promidata structure)
-      const nonLangDetails = (variant as any).NonLanguageDependedProductDetails;
-      let hex = nonLangDetails?.HexColor;
+      let hex: string | null = null;
 
-      // FALLBACK: Try legacy direct fields
+      // 1. NonLanguageDependedProductDetails.HexColor (usually null but check first)
+      const nonLangDetails = (variant as any).NonLanguageDependedProductDetails;
+      if (nonLangDetails?.HexColor && nonLangDetails.HexColor !== 'null') {
+        hex = nonLangDetails.HexColor;
+      }
+
+      // 2. ProductDetails.{lang}.UnstructuredInformation.HexColor (A403 pattern)
+      if (!hex && (variant as any).ProductDetails) {
+        const pd = (variant as any).ProductDetails;
+        for (const lang of ['nl', 'de', 'en', 'fr']) {
+          if (pd[lang]?.UnstructuredInformation?.HexColor) {
+            hex = pd[lang].UnstructuredInformation.HexColor;
+            break;
+          }
+        }
+      }
+
+      // 3. Legacy fallback
       if (!hex) {
-        hex = variant.hex_color || variant.HexColor || variant.hexColor;
+        hex = variant.hex_color || variant.HexColor || variant.hexColor || null;
       }
 
       if (hex && typeof hex === 'string' && hex.trim() && hex !== 'null') {
@@ -908,137 +979,33 @@ class ProductTransformer {
   }
 
   /**
-   * Calculate minimum price from price tiers
-   * NEW: Promidata stores prices in ProductPriceCountryBased.BENELUX.RecommendedSellingPrice[]
+   * Calculate minimum selling price from the selected price region
    */
   private calculateMinPrice(data: RawProductData): number | undefined {
-    const prices: number[] = [];
+    const regionInfo = this.selectPriceRegion(data);
+    if (!regionInfo) return undefined;
 
-    // Try Promidata ProductPriceCountryBased structure
-    const priceData = (data as any).ProductPriceCountryBased;
-    if (priceData) {
-      // Try each region (BENELUX, DACH, etc.)
-      for (const region of Object.keys(priceData)) {
-        const regionData = priceData[region];
-
-        // Extract RecommendedSellingPrice
-        if (regionData.RecommendedSellingPrice && Array.isArray(regionData.RecommendedSellingPrice)) {
-          for (const priceItem of regionData.RecommendedSellingPrice) {
-            if (priceItem.Price !== undefined && priceItem.Price !== null) {
-              const parsed = parseFloat(priceItem.Price);
-              if (!isNaN(parsed) && parsed > 0) {
-                prices.push(parsed);
-              }
-            }
-          }
-        }
-
-        // Also extract GeneralBuyingPrice as fallback
-        if (regionData.GeneralBuyingPrice && Array.isArray(regionData.GeneralBuyingPrice)) {
-          for (const priceItem of regionData.GeneralBuyingPrice) {
-            if (priceItem.Price !== undefined && priceItem.Price !== null) {
-              const parsed = parseFloat(priceItem.Price);
-              if (!isNaN(parsed) && parsed > 0) {
-                prices.push(parsed);
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // FALLBACK: Check legacy price tier fields
-    if (prices.length === 0) {
-      for (let i = 1; i <= 8; i++) {
-        const price = data[`price_${i}`] || data[`Price${i}`] || data[`PRICE_${i}`];
-        if (price !== undefined && price !== null) {
-          const parsed = parseFloat(price);
-          if (!isNaN(parsed) && parsed > 0) {
-            prices.push(parsed);
-          }
-        }
-      }
-
-      // Also check PriceDetails array
-      if (data.PriceDetails && Array.isArray(data.PriceDetails)) {
-        for (const priceDetail of data.PriceDetails) {
-          if (priceDetail.Price !== undefined && priceDetail.Price !== null) {
-            const parsed = parseFloat(priceDetail.Price);
-            if (!isNaN(parsed) && parsed > 0) {
-              prices.push(parsed);
-            }
-          }
-        }
-      }
-    }
+    const sellingPrices = regionInfo.regionData.RecommendedSellingPrice || [];
+    const prices = sellingPrices
+      .filter((p: any) => !p.OnRequest)
+      .map((p: any) => parseFloat(p.Price))
+      .filter((p: number) => !isNaN(p) && p > 0);
 
     return prices.length > 0 ? Math.min(...prices) : undefined;
   }
 
   /**
-   * Calculate maximum price from price tiers
-   * NEW: Promidata stores prices in ProductPriceCountryBased.BENELUX.RecommendedSellingPrice[]
+   * Calculate maximum selling price from the selected price region
    */
   private calculateMaxPrice(data: RawProductData): number | undefined {
-    const prices: number[] = [];
+    const regionInfo = this.selectPriceRegion(data);
+    if (!regionInfo) return undefined;
 
-    // Try Promidata ProductPriceCountryBased structure
-    const priceData = (data as any).ProductPriceCountryBased;
-    if (priceData) {
-      // Try each region (BENELUX, DACH, etc.)
-      for (const region of Object.keys(priceData)) {
-        const regionData = priceData[region];
-
-        // Extract RecommendedSellingPrice
-        if (regionData.RecommendedSellingPrice && Array.isArray(regionData.RecommendedSellingPrice)) {
-          for (const priceItem of regionData.RecommendedSellingPrice) {
-            if (priceItem.Price !== undefined && priceItem.Price !== null) {
-              const parsed = parseFloat(priceItem.Price);
-              if (!isNaN(parsed) && parsed > 0) {
-                prices.push(parsed);
-              }
-            }
-          }
-        }
-
-        // Also extract GeneralBuyingPrice as fallback
-        if (regionData.GeneralBuyingPrice && Array.isArray(regionData.GeneralBuyingPrice)) {
-          for (const priceItem of regionData.GeneralBuyingPrice) {
-            if (priceItem.Price !== undefined && priceItem.Price !== null) {
-              const parsed = parseFloat(priceItem.Price);
-              if (!isNaN(parsed) && parsed > 0) {
-                prices.push(parsed);
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // FALLBACK: Check legacy price tier fields
-    if (prices.length === 0) {
-      for (let i = 1; i <= 8; i++) {
-        const price = data[`price_${i}`] || data[`Price${i}`] || data[`PRICE_${i}`];
-        if (price !== undefined && price !== null) {
-          const parsed = parseFloat(price);
-          if (!isNaN(parsed) && parsed > 0) {
-            prices.push(parsed);
-          }
-        }
-      }
-
-      // Also check PriceDetails array
-      if (data.PriceDetails && Array.isArray(data.PriceDetails)) {
-        for (const priceDetail of data.PriceDetails) {
-          if (priceDetail.Price !== undefined && priceDetail.Price !== null) {
-            const parsed = parseFloat(priceDetail.Price);
-            if (!isNaN(parsed) && parsed > 0) {
-              prices.push(parsed);
-            }
-          }
-        }
-      }
-    }
+    const sellingPrices = regionInfo.regionData.RecommendedSellingPrice || [];
+    const prices = sellingPrices
+      .filter((p: any) => !p.OnRequest)
+      .map((p: any) => parseFloat(p.Price))
+      .filter((p: number) => !isNaN(p) && p > 0);
 
     return prices.length > 0 ? Math.max(...prices) : undefined;
   }

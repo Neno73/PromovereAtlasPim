@@ -22,6 +22,10 @@
       "type": "decimal",
       "min": 0
     },
+    "depth": {
+      "type": "decimal",
+      "min": 0
+    },
     "weight": {
       "type": "decimal",
       "min": 0

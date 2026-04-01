@@ -150,7 +150,11 @@ export class MeilisearchService {
         'price_min',
         'price_max',
         'currency',
+        'price_region',
+        'minimum_order_quantity',
         'total_variants_count',
+        'ean',
+        'customs_tariff_number',
       ],
 
       // Sortable attributes
@@ -161,6 +165,7 @@ export class MeilisearchService {
         'brand',
         'price_min',
         'price_max',
+        'minimum_order_quantity',
         'total_variants_count',
       ],
 
@@ -349,6 +354,13 @@ export class MeilisearchService {
       price_min: priceMin,
       price_max: priceMax,
       currency,
+      price_region: product.price_region,
+      minimum_order_quantity: product.minimum_order_quantity,
+      quantity_increments: product.quantity_increments,
+
+      // Additional product data
+      ean: product.ean,
+      customs_tariff_number: product.customs_tariff_number,
 
       // Timestamps (convert to Unix timestamp for sorting)
       createdAt: new Date(product.createdAt).getTime(),

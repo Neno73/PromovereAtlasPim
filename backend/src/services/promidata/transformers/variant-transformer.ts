@@ -34,8 +34,7 @@ export interface ProductVariantData {
   dimensions_depth?: number;
   weight?: number;
 
-  // Embroidery/Imprint
-  embroidery_sizes?: any;
+  // Imprint
   imprint_required?: boolean;
   fragile?: boolean;
   is_service_base?: boolean;
@@ -90,7 +89,6 @@ class VariantTransformer {
       dimensions_diameter: this.extractDimension(variantData, 'diameter'),
       dimensions_depth: this.extractDimension(variantData, 'depth'),
       weight: this.extractWeight(variantData),
-      embroidery_sizes: this.extractEmbroiderySizes(variantData),
       imprint_required: this.extractImprintRequired(variantData),
       fragile: this.extractFragile(variantData),
       is_service_base: this.extractIsServiceBase(variantData),
@@ -164,15 +162,23 @@ class VariantTransformer {
    * NEW: Promidata stores in NonLanguageDependedProductDetails.HexColor
    */
   private extractHexColor(data: RawProductData): string | undefined {
-    // Try NonLanguageDependedProductDetails.HexColor first (Promidata structure)
+    // 1. NonLanguageDependedProductDetails.HexColor (usually null)
     const nonLangDetails = (data as any).NonLanguageDependedProductDetails;
-    const hex = nonLangDetails?.HexColor;
-
-    if (hex && hex !== 'null') {
-      return hex;
+    if (nonLangDetails?.HexColor && nonLangDetails.HexColor !== 'null') {
+      return nonLangDetails.HexColor;
     }
 
-    // FALLBACK: Try legacy direct fields
+    // 2. ProductDetails.{lang}.UnstructuredInformation.HexColor (A403 pattern)
+    const pd = (data as any).ProductDetails;
+    if (pd) {
+      for (const lang of ['nl', 'de', 'en', 'fr']) {
+        if (pd[lang]?.UnstructuredInformation?.HexColor) {
+          return pd[lang].UnstructuredInformation.HexColor;
+        }
+      }
+    }
+
+    // 3. Legacy fallback
     return data.hex_color || data.HexColor || data.hexColor || data.color_hex;
   }
 
@@ -327,16 +333,19 @@ class VariantTransformer {
   }
 
   /**
-   * Extract embroidery sizes
-   */
-  private extractEmbroiderySizes(data: RawProductData): any {
-    return data.embroidery_sizes || data.EmbroiderySizes || data.embroiderySizes;
-  }
-
-  /**
-   * Extract imprint required flag
+   * Extract imprint required flag from ImportantInformation or legacy fields
    */
   private extractImprintRequired(data: RawProductData): boolean {
+    // Check real Promidata path: ProductDetails.{lang}.ImportantInformation.ImprintRequired
+    const pd = (data as any).ProductDetails;
+    if (pd) {
+      for (const lang of ['nl', 'de', 'en', 'fr']) {
+        const info = pd[lang]?.ImportantInformation;
+        if (info && typeof info.ImprintRequired === 'boolean') return info.ImprintRequired;
+      }
+    }
+
+    // Legacy fallback
     const value = data.imprint_required || data.ImprintRequired || data.imprintRequired;
     return value === true || value === 'true' || value === '1' || value === 1;
   }

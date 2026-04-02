@@ -2,12 +2,14 @@
 
 import { AnimatePresence } from "framer-motion";
 import { ProductCard } from "./ProductCard";
+import { cn } from "@/lib/utils";
 import type { MeilisearchProduct } from "@/lib/types";
 
 interface ProductGridProps {
   products: MeilisearchProduct[];
   total: number;
   loading: boolean;
+  chatOpen?: boolean;
 }
 
 function SkeletonCard() {
@@ -32,14 +34,18 @@ function SkeletonCard() {
   );
 }
 
-export function ProductGrid({ products, total, loading }: ProductGridProps) {
+export function ProductGrid({ products, total, loading, chatOpen = false }: ProductGridProps) {
+  const gridCols = chatOpen
+    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+    : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
+
   if (loading) {
     return (
       <div>
         <div className="mb-4 flex items-center gap-2">
           <div className="h-5 w-32 animate-pulse-subtle rounded bg-sols-mid-gray" />
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className={cn("grid gap-4", gridCols)}>
           {[...Array(12)].map((_, i) => (
             <SkeletonCard key={i} />
           ))}
@@ -78,7 +84,7 @@ export function ProductGrid({ products, total, loading }: ProductGridProps) {
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className={cn("grid gap-4", gridCols)}>
         <AnimatePresence mode="popLayout">
           {products.map((product) => (
             <ProductCard key={product.id} product={product} />

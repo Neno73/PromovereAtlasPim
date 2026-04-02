@@ -135,7 +135,7 @@ function CatalogContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const { isChatMode, chatProducts, exitChatMode } = useChatContext();
+  const { isChatMode, isChatOpen, chatProducts, exitChatMode } = useChatContext();
 
   const [params, setParams] = useState<SearchParams>(() =>
     paramsFromURL(searchParams),
@@ -315,6 +315,7 @@ function CatalogContent() {
             products={gridProducts}
             total={gridTotal}
             loading={!isChatMode && loading}
+            chatOpen={isChatOpen}
           />
 
           {/* Pagination */}

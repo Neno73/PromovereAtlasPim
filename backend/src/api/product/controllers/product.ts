@@ -51,6 +51,7 @@ export default factories.createCoreController('api::product.product', ({ strapi 
         q = '',                           // Search query
         limit = 20,                       // Results per page
         offset = 0,                       // Pagination offset
+        semantic,                         // Semantic ratio: 0-1 (0=keyword, 1=semantic, default=0.5)
         facets = '',                      // Comma-separated facets (e.g., "supplier_code,brand,category")
         sort = '',                        // Comma-separated sort fields (e.g., "price_min:asc,updatedAt:desc")
         // Filters
@@ -113,20 +114,26 @@ export default factories.createCoreController('api::product.product', ({ strapi 
       // Parse sort (comma-separated list to array)
       const sortList = sort ? String(sort).split(',').map(s => s.trim()).filter(Boolean) : [];
 
-      // Execute Meilisearch search with hybrid (semantic + keyword) when there's a text query
+      // Build hybrid search config:
+      // - If caller provides semantic ratio, use it explicitly
+      // - Otherwise, auto-enable hybrid (0.5) when there's a text query
+      const semanticRatio = semantic !== undefined ? parseFloat(String(semantic)) : undefined;
+      let hybrid: { semanticRatio: number; embedder: string } | undefined;
+      if (semanticRatio !== undefined && !isNaN(semanticRatio)) {
+        hybrid = { semanticRatio: Math.max(0, Math.min(1, semanticRatio)), embedder: 'product_search' };
+      } else if (q) {
+        hybrid = { semanticRatio: 0.5, embedder: 'product_search' };
+      }
+
+      // Execute Meilisearch search
       const searchResult = await meilisearchService.searchProducts({
         query: q,
         limit: parseInt(String(limit), 10),
         offset: parseInt(String(offset), 10),
+        hybrid,
         filters,
         facets: facetsList,
         sort: sortList,
-        ...(q ? {
-          hybrid: {
-            embedder: 'product_search',
-            semanticRatio: 0.5,
-          },
-        } : {}),
       });
 
       // Return in Strapi-compatible format

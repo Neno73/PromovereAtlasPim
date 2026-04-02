@@ -494,6 +494,7 @@ export class MeilisearchService {
       query = '',
       limit = 20,
       offset = 0,
+      hybrid,
       filters = [],
       facets = [],
       sort = [],
@@ -501,7 +502,6 @@ export class MeilisearchService {
       attributesToHighlight = [],
       attributesToCrop = [],
       cropLength = 200,
-      hybrid,
     } = options;
 
     try {
@@ -524,8 +524,8 @@ export class MeilisearchService {
       // Add hybrid search if configured
       if (hybrid) {
         searchParams.hybrid = {
-          embedder: hybrid.embedder,
           semanticRatio: hybrid.semanticRatio ?? 0.5,
+          embedder: hybrid.embedder || 'product_search',
         };
       }
 

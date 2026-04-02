@@ -58,6 +58,20 @@ export function formatPrice(
   }).format(price);
 }
 
+/** Format a min/max price range as a human-readable string */
+export function formatPriceRange(
+  priceMin: number | undefined | null,
+  priceMax: number | undefined | null,
+  currency: string = "EUR",
+): string | null {
+  if (priceMin != null && priceMax != null) {
+    if (priceMin === priceMax) return formatPrice(priceMin, currency);
+    return `${formatPrice(priceMin, currency)} – ${formatPrice(priceMax, currency)}`;
+  }
+  if (priceMin != null) return `from ${formatPrice(priceMin, currency)}`;
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Color utilities
 // ---------------------------------------------------------------------------
@@ -109,10 +123,7 @@ const COLOR_MAP: Record<string, string> = {
 const HEX_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
 
 /** Map a color name to a hex value. Prefer existingHex if it looks valid. */
-export function getColorHex(
-  colorName: string,
-  existingHex?: string,
-): string {
+export function getColorHex(colorName: string, existingHex?: string): string {
   if (existingHex && HEX_RE.test(existingHex)) return existingHex;
 
   const key = colorName.toLowerCase().trim();

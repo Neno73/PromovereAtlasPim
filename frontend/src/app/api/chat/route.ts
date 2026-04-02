@@ -1,14 +1,40 @@
 import { streamText, tool, stepCountIs } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
+import { readPrompts } from "@/app/api/admin/prompts/route";
 
 export const maxDuration = 30;
 
 const STRAPI_BASE =
   process.env.STRAPI_INTERNAL_URL || "http://localhost:1337";
 
-const SYSTEM_PROMPT = `You are the PromoAtlas product search assistant. You help users find promotional products from the catalog.
+// ---------------------------------------------------------------------------
+// Build system prompt from saved prompt sections
+// ---------------------------------------------------------------------------
 
+async function buildSystemPrompt(): Promise<string> {
+  const p = await readPrompts();
+
+  const sections = [
+    p.regularPrompt,
+    p.companyKnowledge ? `\n\n## Company Knowledge\n${p.companyKnowledge}` : "",
+    p.industryKnowledge
+      ? `\n\n## Industry Knowledge\n${p.industryKnowledge}`
+      : "",
+    p.preSearchQuestions
+      ? `\n\n## Pre-Search Questions\n${p.preSearchQuestions}`
+      : "",
+    p.productSearchFlow
+      ? `\n\n## Product Search Flow\n${p.productSearchFlow}`
+      : "",
+    p.brandVoice ? `\n\n## Brand Voice & Tone\n${p.brandVoice}` : "",
+  ];
+
+  const dynamicPrompt = sections.filter(Boolean).join("");
+
+  return `${dynamicPrompt}
+
+## Tool Usage
 When a user asks about products, use the searchProducts tool to find matching items.
 - For general queries, pass the user's description as the search query
 - For specific attributes, use the appropriate filter parameters
@@ -26,6 +52,7 @@ You can search by:
 - Colors (comma-separated)
 - Sizes (comma-separated)
 - Price range (min/max in EUR)`;
+}
 
 async function searchStrapi(params: Record<string, string>) {
   const qs = new URLSearchParams(params);
@@ -46,10 +73,11 @@ async function searchStrapi(params: Record<string, string>) {
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
+  const systemPrompt = await buildSystemPrompt();
 
   const result = streamText({
     model: anthropic("claude-sonnet-4-20250514"),
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     messages,
     tools: {
       searchProducts: tool({

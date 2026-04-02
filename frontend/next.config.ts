@@ -2,12 +2,33 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: "http://localhost:1337/api/:path*",
-      },
-    ];
+    return {
+      // beforeFiles rewrites are checked before pages/public files and after
+      // Route Handlers, ensuring local API routes take priority.
+      beforeFiles: [
+        {
+          source: "/api/:path*",
+          has: [
+            {
+              type: "header",
+              key: "x-rewrite-to-strapi",
+            },
+          ],
+          destination: "http://localhost:1337/api/:path*",
+        },
+      ],
+      afterFiles: [],
+      // fallback rewrites are checked after both pages/public files AND
+      // Route Handlers. If a local Route Handler exists (e.g. /api/admin/*,
+      // /api/chat), it will be served by Next.js. Otherwise the request
+      // falls through to Strapi.
+      fallback: [
+        {
+          source: "/api/:path*",
+          destination: "http://localhost:1337/api/:path*",
+        },
+      ],
+    };
   },
 
   images: {

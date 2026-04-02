@@ -203,6 +203,63 @@ export interface AdminRole extends Struct.CollectionTypeSchema {
   };
 }
 
+export interface AdminSession extends Struct.CollectionTypeSchema {
+  collectionName: 'strapi_sessions';
+  info: {
+    description: 'Session Manager storage';
+    displayName: 'Session';
+    name: 'Session';
+    pluralName: 'sessions';
+    singularName: 'session';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  pluginOptions: {
+    'content-manager': {
+      visible: false;
+    };
+    'content-type-builder': {
+      visible: false;
+    };
+    i18n: {
+      localized: false;
+    };
+  };
+  attributes: {
+    absoluteExpiresAt: Schema.Attribute.DateTime & Schema.Attribute.Private;
+    childId: Schema.Attribute.String & Schema.Attribute.Private;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    deviceId: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    expiresAt: Schema.Attribute.DateTime &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<'oneToMany', 'admin::session'> &
+      Schema.Attribute.Private;
+    origin: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+    publishedAt: Schema.Attribute.DateTime;
+    sessionId: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private &
+      Schema.Attribute.Unique;
+    status: Schema.Attribute.String & Schema.Attribute.Private;
+    type: Schema.Attribute.String & Schema.Attribute.Private;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    userId: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Private;
+  };
+}
+
 export interface AdminTransferToken extends Struct.CollectionTypeSchema {
   collectionName: 'strapi_transfer_tokens';
   info: {
@@ -435,7 +492,6 @@ export interface ApiProductVariantProductVariant
     dimensions_height: Schema.Attribute.Decimal;
     dimensions_length: Schema.Attribute.Decimal;
     dimensions_width: Schema.Attribute.Decimal;
-    embroidery_sizes: Schema.Attribute.JSON;
     fragile: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     gallery_images: Schema.Attribute.Media<'images', true>;
     hex_color: Schema.Attribute.String;
@@ -523,6 +579,10 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
       }>;
     description: Schema.Attribute.JSON;
     dimensions: Schema.Attribute.Component<'product.dimensions', false>;
+    ean: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 20;
+      }>;
     gallery_images: Schema.Attribute.Media<'images', true>;
     hex_colors: Schema.Attribute.JSON;
     imprint_position: Schema.Attribute.Component<
@@ -540,13 +600,18 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     main_image: Schema.Attribute.Media<'images'>;
     material: Schema.Attribute.JSON;
     maxcolors: Schema.Attribute.Integer;
+    minimum_order_quantity: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<1>;
     model_image: Schema.Attribute.Media<'images'>;
-    model_name: Schema.Attribute.JSON;
     must_have_imprint: Schema.Attribute.Boolean &
       Schema.Attribute.DefaultTo<false>;
     name: Schema.Attribute.JSON & Schema.Attribute.Required;
     price_max: Schema.Attribute.Decimal;
     price_min: Schema.Attribute.Decimal;
+    price_region: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 20;
+      }>;
     price_tiers: Schema.Attribute.Component<'product.price-tier', true>;
     print_option_group: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{
@@ -555,6 +620,8 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     product_filters: Schema.Attribute.JSON;
     promidata_hash: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
+    quantity_increments: Schema.Attribute.Integer &
+      Schema.Attribute.DefaultTo<1>;
     rag_metadata: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<{}>;
     refining: Schema.Attribute.JSON;
     refining_dimensions: Schema.Attribute.JSON;
@@ -748,7 +815,7 @@ export interface ApiSyncConfigurationSyncConfiguration
 export interface ApiSyncSessionSyncSession extends Struct.CollectionTypeSchema {
   collectionName: 'sync_sessions';
   info: {
-    description: 'Tracks full sync pipeline: Promidata \u2192 Images \u2192 Meilisearch \u2192 Gemini';
+    description: 'Tracks full sync pipeline: Promidata \u2192 Images \u2192 Meilisearch';
     displayName: 'Sync Session';
     pluralName: 'sync-sessions';
     singularName: 'sync-session';
@@ -764,16 +831,6 @@ export interface ApiSyncSessionSyncSession extends Struct.CollectionTypeSchema {
     duration_seconds: Schema.Attribute.Integer;
     error_count: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
     errors: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<[]>;
-    gemini_completed_at: Schema.Attribute.DateTime;
-    gemini_failed: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
-    gemini_skipped: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
-    gemini_started_at: Schema.Attribute.DateTime;
-    gemini_status: Schema.Attribute.Enumeration<
-      ['pending', 'running', 'completed', 'failed', 'skipped']
-    > &
-      Schema.Attribute.DefaultTo<'pending'>;
-    gemini_synced: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
-    gemini_total: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
     images_completed_at: Schema.Attribute.DateTime;
     images_deduplicated: Schema.Attribute.Integer &
       Schema.Attribute.DefaultTo<0>;
@@ -1100,12 +1157,13 @@ export interface PluginUploadFile extends Struct.CollectionTypeSchema {
     };
   };
   attributes: {
-    alternativeText: Schema.Attribute.String;
-    caption: Schema.Attribute.String;
+    alternativeText: Schema.Attribute.Text;
+    caption: Schema.Attribute.Text;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
     ext: Schema.Attribute.String;
+    focalPoint: Schema.Attribute.JSON;
     folder: Schema.Attribute.Relation<'manyToOne', 'plugin::upload.folder'> &
       Schema.Attribute.Private;
     folderPath: Schema.Attribute.String &
@@ -1125,7 +1183,7 @@ export interface PluginUploadFile extends Struct.CollectionTypeSchema {
       Schema.Attribute.Private;
     mime: Schema.Attribute.String & Schema.Attribute.Required;
     name: Schema.Attribute.String & Schema.Attribute.Required;
-    previewUrl: Schema.Attribute.String;
+    previewUrl: Schema.Attribute.Text;
     provider: Schema.Attribute.String & Schema.Attribute.Required;
     provider_metadata: Schema.Attribute.JSON;
     publishedAt: Schema.Attribute.DateTime;
@@ -1134,7 +1192,7 @@ export interface PluginUploadFile extends Struct.CollectionTypeSchema {
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
-    url: Schema.Attribute.String & Schema.Attribute.Required;
+    url: Schema.Attribute.Text & Schema.Attribute.Required;
     width: Schema.Attribute.Integer;
   };
 }
@@ -1349,6 +1407,7 @@ declare module '@strapi/strapi' {
       'admin::api-token-permission': AdminApiTokenPermission;
       'admin::permission': AdminPermission;
       'admin::role': AdminRole;
+      'admin::session': AdminSession;
       'admin::transfer-token': AdminTransferToken;
       'admin::transfer-token-permission': AdminTransferTokenPermission;
       'admin::user': AdminUser;

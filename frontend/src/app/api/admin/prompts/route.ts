@@ -129,9 +129,6 @@ export async function POST(req: Request) {
     return Response.json({ success: true, prompts });
   } catch (err) {
     console.error("Failed to write prompts file:", err);
-    return Response.json(
-      { error: "Failed to save prompts" },
-      { status: 500 },
-    );
+    return Response.json({ error: "Failed to save prompts" }, { status: 500 });
   }
 }

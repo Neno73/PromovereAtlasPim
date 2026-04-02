@@ -61,9 +61,7 @@ function CategoryNodeItem({
   onChange: (v: string) => void;
   depth?: number;
 }) {
-  const [expanded, setExpanded] = useState(
-    selected.startsWith(node.fullPath),
-  );
+  const [expanded, setExpanded] = useState(selected.startsWith(node.fullPath));
   const isSelected = selected === node.fullPath;
   const hasChildren = node.children.length > 0;
 
@@ -133,9 +131,7 @@ export function CategoryFilter({
   const tree = useMemo(() => buildTree(facets || {}), [facets]);
 
   if (tree.length === 0) {
-    return (
-      <p className="text-xs text-sols-muted">No categories available</p>
-    );
+    return <p className="text-xs text-sols-muted">No categories available</p>;
   }
 
   return (

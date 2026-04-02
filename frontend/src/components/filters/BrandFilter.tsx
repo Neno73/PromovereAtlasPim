@@ -55,7 +55,9 @@ export function BrandFilter({ facets, selected, onChange }: BrandFilterProps) {
               key={name}
               className={cn(
                 "flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs transition-colors",
-                isSelected ? "bg-sols-light-gray" : "hover:bg-sols-light-gray/60",
+                isSelected
+                  ? "bg-sols-light-gray"
+                  : "hover:bg-sols-light-gray/60",
               )}
             >
               <input
@@ -89,7 +91,9 @@ export function BrandFilter({ facets, selected, onChange }: BrandFilterProps) {
       )}
 
       {search && sorted.length === 0 && (
-        <p className="text-xs text-sols-muted">No brands match &quot;{search}&quot;</p>
+        <p className="text-xs text-sols-muted">
+          No brands match &quot;{search}&quot;
+        </p>
       )}
     </div>
   );

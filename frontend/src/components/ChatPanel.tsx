@@ -3,15 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useChatContext } from "@/lib/chat-context";
-import { cn, formatPrice } from "@/lib/utils";
-import type {
-  FacetDistribution,
-  MeilisearchProduct,
-  SearchParams,
-} from "@/lib/types";
+import { cn } from "@/lib/utils";
+import type { FacetDistribution, SearchParams } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
-// Inline product card for chat results (slim preview)
+// Tool output types
 // ---------------------------------------------------------------------------
 
 interface SlimProduct {
@@ -25,44 +21,6 @@ interface SlimProduct {
   sizes?: string[];
   category?: string;
 }
-
-function ChatProductCard({ product }: { product: SlimProduct }) {
-  return (
-    <a
-      href={`/products/${product.id}`}
-      className="flex gap-3 rounded-lg border border-sols-border/50 bg-white p-2 transition-colors hover:bg-sols-light-gray/50"
-    >
-      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-sols-light-gray p-1">
-        <svg
-          className="h-6 w-6 text-sols-muted"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={1}
-        >
-          <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-        </svg>
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-semibold text-sols-dark">
-          {product.name}
-        </p>
-        {product.brand && (
-          <p className="text-[10px] text-sols-muted">{product.brand}</p>
-        )}
-        {product.price_min != null && (
-          <p className="text-xs font-semibold text-sols-accent">
-            {formatPrice(product.price_min, product.currency)}
-          </p>
-        )}
-      </div>
-    </a>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tool output types
-// ---------------------------------------------------------------------------
 
 interface ToolOutput {
   filters_applied?: Record<string, unknown>;

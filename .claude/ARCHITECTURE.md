@@ -10,10 +10,10 @@ System design for PromoAtlas PIM. For implementation patterns, see PATTERNS.md.
 ┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
 │  React Frontend │────────▶│  Strapi Backend │────────▶│   PostgreSQL    │
 │  (Port 3000)    │  REST   │  (Port 1337)    │  pg     │  (local:5433)   │
-└─────────────────┘         └─────────────────┘         └─────────────────┘
-                                     │
-                    ┌────────────────┼────────────────┐
-                    ▼                ▼                ▼
+│                 │         └─────────────────┘         └─────────────────┘
+│  /  = Catalog   │                  │
+│  /chat = Chatbot│   ┌──────────────┼────────────────┐
+└─────────────────┘   ▼              ▼                ▼
             ┌───────────┐    ┌───────────┐    ┌───────────┐
             │ R2/SeaweedFS   │ Promidata │    │MeiliSearch│
             │  (Images) │    │   API     │    │  (7700)   │
@@ -211,6 +211,29 @@ Supplier: {{ doc.supplier_name }}.
 
 **Auth**: Email/password login against env vars, HTTP-only cookie session (24hr).
 
+## Standalone Chatbot (`/chat`)
+
+A full-screen conversational interface independent from the catalog page. No shared filter state, no sidebar, no product grid -- products render as rich inline cards directly in the chat stream.
+
+### How It Differs From the Catalog Chat
+
+| Aspect | Catalog Chat (`/`) | Standalone Chatbot (`/chat`) |
+|--------|-------------------|------------------------------|
+| Tool | `updateCatalogFilters` | `searchProducts` |
+| API route | `/api/chat` | `/api/chat-bot` |
+| Products display | Grid updates via shared `SearchParams` | Inline cards in conversation |
+| Filter state | Shared with sidebar + URL | None -- each search is independent |
+| Conversation history | Lost on page reload | Persisted in localStorage (up to 30 conversations) |
+
+### Key Features
+
+- **Inline product cards** -- Images, prices, color swatches, and brand badges rendered directly in assistant messages. Cards link to `/products/[id]` (opens in new tab).
+- **Conversation sidebar** -- Switch between saved conversations. New Chat button starts a fresh thread.
+- **localStorage persistence** -- Messages serialized after each AI response completes. Up to 30 conversations retained; oldest pruned automatically.
+- **`searchProducts` tool** -- AI decomposes queries into structured filters (category, brand, colors, price) + semantic text query, same as the catalog chat but returns `RichProduct` objects for inline rendering instead of `filters_applied`.
+- **Shared search infrastructure** -- Both `/api/chat` and `/api/chat-bot` use `lib/chat-search.ts` (`searchStrapi` + `mapToRichProduct`) to query MeiliSearch with hybrid search.
+- **Suggestion chips** -- Empty state shows starter prompts to guide first interaction.
+
 ## Frontend Architecture
 
 ### Directory Structure
@@ -219,9 +242,11 @@ Supplier: {{ doc.supplier_name }}.
 frontend/src/
 ├── app/
 │   ├── page.tsx              # Catalog page (unified filter state)
+│   ├── chat/page.tsx         # Standalone AI chatbot (full-screen, localStorage history)
 │   ├── admin/page.tsx        # Admin prompt editor
 │   └── api/
-│       ├── chat/route.ts     # AI chat endpoint (Vercel AI SDK + Claude)
+│       ├── chat/route.ts     # Catalog chat endpoint (updateCatalogFilters tool)
+│       ├── chat-bot/route.ts # Standalone chatbot endpoint (searchProducts tool)
 │       └── admin/            # Prompt CRUD + auth
 ├── components/
 │   ├── ChatPanel.tsx         # AI chat (useChat, filter extraction)
@@ -232,6 +257,7 @@ frontend/src/
 │   └── filters/              # Category, Brand, Color, Size, Price filters
 ├── lib/
 │   ├── chat-context.tsx      # Chat panel + sidebar state
+│   ├── chat-search.ts        # Shared MeiliSearch search helpers (used by both chat routes)
 │   ├── api.ts                # MeiliSearch API client
 │   ├── types.ts              # All TypeScript interfaces
 │   └── utils.ts              # Formatting, color mapping

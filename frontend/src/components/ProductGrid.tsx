@@ -23,10 +23,7 @@ function SkeletonCard() {
         <div className="h-4 w-20 rounded bg-sols-mid-gray" />
         <div className="mt-2 flex gap-1">
           {[...Array(4)].map((_, i) => (
-            <div
-              key={i}
-              className="h-4 w-4 rounded-full bg-sols-mid-gray"
-            />
+            <div key={i} className="h-4 w-4 rounded-full bg-sols-mid-gray" />
           ))}
         </div>
       </div>
@@ -34,7 +31,12 @@ function SkeletonCard() {
   );
 }
 
-export function ProductGrid({ products, total, loading, chatOpen = false }: ProductGridProps) {
+export function ProductGrid({
+  products,
+  total,
+  loading,
+  chatOpen = false,
+}: ProductGridProps) {
   const gridCols = chatOpen
     ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
     : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";

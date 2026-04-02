@@ -26,13 +26,15 @@ const SECTIONS: PromptSection[] = [
   {
     key: "regularPrompt",
     label: "Regular Prompt",
-    description: "The main system prompt defining the assistant's persona and behavior",
+    description:
+      "The main system prompt defining the assistant's persona and behavior",
     placeholder: "Define the AI assistant's core identity and instructions...",
   },
   {
     key: "companyKnowledge",
     label: "Company Knowledge",
-    description: "Information about your company, products, and internal processes",
+    description:
+      "Information about your company, products, and internal processes",
     placeholder: "Describe your company, product range, service areas...",
   },
   {
@@ -44,20 +46,23 @@ const SECTIONS: PromptSection[] = [
   {
     key: "preSearchQuestions",
     label: "Pre-Search Questions",
-    description: "Questions to collect from users before searching for products",
+    description:
+      "Questions to collect from users before searching for products",
     placeholder: "List the qualifying questions the assistant should ask...",
   },
   {
     key: "productSearchFlow",
     label: "Product Search Flow",
-    description: "The step-by-step search behavior instructions for the assistant",
+    description:
+      "The step-by-step search behavior instructions for the assistant",
     placeholder: "Define the stages of product discovery and recommendation...",
   },
   {
     key: "brandVoice",
     label: "Brand Voice & Tone",
     description: "Define how the chatbot should communicate with customers",
-    placeholder: "Describe the communication style, tone, and language preferences...",
+    placeholder:
+      "Describe the communication style, tone, and language preferences...",
   },
 ];
 
@@ -316,11 +321,7 @@ function PromptEditor({ onLogout }: { onLogout: () => void }) {
     return (
       <div className="flex min-h-[calc(100vh-56px)] items-center justify-center">
         <div className="flex items-center gap-3 text-sm text-[#6B7280]">
-          <svg
-            className="h-5 w-5 animate-spin"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
+          <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle
               className="opacity-25"
               cx="12"
@@ -454,11 +455,7 @@ export default function AdminPage() {
     return (
       <div className="flex min-h-[calc(100vh-56px)] items-center justify-center">
         <div className="flex items-center gap-3 text-sm text-[#6B7280]">
-          <svg
-            className="h-5 w-5 animate-spin"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
+          <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle
               className="opacity-25"
               cx="12"

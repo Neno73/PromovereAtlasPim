@@ -296,15 +296,7 @@ const InlineProductGrid = React.memo(function InlineProductGrid({
   const products = output.products || [];
   const total = output.total || 0;
 
-  if (output.no_results || products.length === 0) {
-    return (
-      <div className="rounded-lg border border-sols-border/50 bg-sols-light-gray/50 p-3 text-center text-xs text-sols-muted">
-        No products found for this search.
-      </div>
-    );
-  }
-
-  // Build catalog link from structured filters
+  // Must be above early return to satisfy React Rules of Hooks
   const catalogUrl = useMemo(() => {
     const fa = output.filters_applied;
     if (!fa) return "/";
@@ -315,6 +307,14 @@ const InlineProductGrid = React.memo(function InlineProductGrid({
     const qs = params.toString();
     return qs ? `/?${qs}` : "/";
   }, [output.filters_applied]);
+
+  if (output.no_results || products.length === 0) {
+    return (
+      <div className="rounded-lg border border-sols-border/50 bg-sols-light-gray/50 p-3 text-center text-xs text-sols-muted">
+        No products found for this search.
+      </div>
+    );
+  }
 
   return (
     <div className="mt-2 space-y-2">

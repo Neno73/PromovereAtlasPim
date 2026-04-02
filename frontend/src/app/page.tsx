@@ -298,7 +298,7 @@ function CatalogContent() {
         </div>
       )}
 
-      {/* Content area */}
+      {/* Content area: filters | products | chat panel */}
       <div className="flex gap-8">
         {!isChatMode && (
           <FilterSidebar
@@ -354,11 +354,13 @@ function CatalogContent() {
             </div>
           )}
         </div>
+
+        {/* Chat panel: pushes grid on desktop, overlays on mobile */}
+        <ChatPanel />
       </div>
 
-      {/* Chat */}
+      {/* Chat toggle button */}
       <ChatWidget />
-      <ChatPanel />
     </div>
   );
 }

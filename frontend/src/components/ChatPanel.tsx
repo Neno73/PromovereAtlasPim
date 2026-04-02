@@ -51,7 +51,7 @@ interface ToolOutput {
 }
 
 export function ChatPanel() {
-  const { isChatOpen, setChatProducts } = useChatContext();
+  const { isChatOpen, toggleChat, setChatProducts } = useChatContext();
   const messagesEnd = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
 
@@ -99,18 +99,32 @@ export function ChatPanel() {
   return (
     <div
       className={cn(
-        "fixed bottom-24 right-6 z-50 flex w-[400px] max-w-[calc(100vw-2rem)] flex-col",
-        "overflow-hidden rounded-2xl border border-sols-border bg-white shadow-2xl",
-        "animate-slide-up",
-        "h-[520px]",
+        // Desktop: inline push panel (not fixed, lives in page flow)
+        "hidden lg:flex lg:w-[420px] lg:shrink-0 lg:flex-col",
+        "overflow-hidden rounded-2xl border border-sols-border bg-white shadow-lg",
+        "sticky top-24 h-[calc(100vh-8rem)]",
+        // Mobile: fixed overlay (full screen minus header)
+        "max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:top-16 max-lg:z-50 max-lg:flex max-lg:flex-col max-lg:rounded-none max-lg:shadow-2xl",
       )}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-sols-border bg-sols-dark px-4 py-3">
-        <div className="h-2 w-2 rounded-full bg-green-400" />
-        <h3 className="text-sm font-semibold text-white">
-          PromoAtlas Assistant
-        </h3>
+      <div className="flex items-center justify-between border-b border-sols-border bg-sols-dark px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-green-400" />
+          <h3 className="text-sm font-semibold text-white">
+            PromoAtlas Assistant
+          </h3>
+        </div>
+        <button
+          type="button"
+          onClick={toggleChat}
+          className="rounded-md p-1 text-white/60 transition-colors hover:text-white"
+          aria-label="Close chat"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
       {/* Messages */}

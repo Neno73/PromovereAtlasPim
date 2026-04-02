@@ -39,7 +39,7 @@ services:
 
   # Meilisearch
   meilisearch:
-    image: getmeili/meilisearch:latest
+    image: getmeili/meilisearch:v1.41
     container_name: promoatlas-meilisearch
     restart: unless-stopped
     ports:

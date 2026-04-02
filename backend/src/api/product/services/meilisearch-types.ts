@@ -141,6 +141,12 @@ export interface MeilisearchSearchOptions {
   // Cropping (for long text)
   attributesToCrop?: string[];    // Fields to crop
   cropLength?: number;            // Max length per cropped field
+
+  // Hybrid search (semantic + keyword)
+  hybrid?: {
+    embedder: string;             // Embedder name (e.g., 'product_search')
+    semanticRatio?: number;       // 0.0 = keyword only, 1.0 = semantic only (default: 0.5)
+  };
 }
 
 /**

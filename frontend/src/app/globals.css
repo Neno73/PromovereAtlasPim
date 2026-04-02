@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/* -----------------------------------------------------------------------
+   Sols Brand Design Tokens (Tailwind v4 CSS-based theme)
+   ----------------------------------------------------------------------- */
+
+@theme inline {
+  /* Brand palette */
+  --color-sols-dark: #141413;
+  --color-sols-light: #FCFCFC;
+  --color-sols-accent: #ED2F54;
+  --color-sols-accent-hover: #D41E42;
+  --color-sols-mid-gray: #E9E9E9;
+  --color-sols-light-gray: #EEEEEE;
+  --color-sols-muted: #6B7280;
+  --color-sols-border: #E2E2E2;
+
+  /* Semantic aliases */
+  --color-background: var(--color-sols-light);
+  --color-foreground: var(--color-sols-dark);
+
+  /* Font family */
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+
+  /* Custom animations */
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-slide-up: slide-up 0.3s ease-out;
+  --animate-slide-in-right: slide-in-right 0.3s ease-out;
+  --animate-pulse-subtle: pulse-subtle 2s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* -----------------------------------------------------------------------
+   Base styles
+   ----------------------------------------------------------------------- */
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-sols-mid-gray);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-sols-muted);
+}
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid var(--color-sols-accent);
+  outline-offset: 2px;
+}

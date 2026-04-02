@@ -63,6 +63,7 @@ export default factories.createCoreController('api::product.product', ({ strapi 
         price_min,
         price_max,
         is_active = 'true',
+        ids,                              // Comma-separated product IDs for curated selection
       } = ctx.query;
 
       // Build filters array
@@ -99,17 +100,30 @@ export default factories.createCoreController('api::product.product', ({ strapi 
         }
       }
 
+      // Handle product IDs filter (for AI curated selections)
+      if (ids) {
+        const idList = Array.isArray(ids) ? ids : String(ids).split(',').map(i => i.trim());
+        if (idList.length > 0) {
+          filters.push(`id IN [${idList.map(i => `"${i}"`).join(', ')}]`);
+        }
+      }
+
       // Parse facets (comma-separated list to array)
       const facetsList = facets ? String(facets).split(',').map(f => f.trim()).filter(Boolean) : [];
 
       // Parse sort (comma-separated list to array)
       const sortList = sort ? String(sort).split(',').map(s => s.trim()).filter(Boolean) : [];
 
-      // Build hybrid search config if semantic ratio is specified
+      // Build hybrid search config:
+      // - If caller provides semantic ratio, use it explicitly
+      // - Otherwise, auto-enable hybrid (0.5) when there's a text query
       const semanticRatio = semantic !== undefined ? parseFloat(String(semantic)) : undefined;
-      const hybrid = semanticRatio !== undefined && !isNaN(semanticRatio)
-        ? { semanticRatio: Math.max(0, Math.min(1, semanticRatio)), embedder: 'product_search' }
-        : undefined;
+      let hybrid: { semanticRatio: number; embedder: string } | undefined;
+      if (semanticRatio !== undefined && !isNaN(semanticRatio)) {
+        hybrid = { semanticRatio: Math.max(0, Math.min(1, semanticRatio)), embedder: 'product_search' };
+      } else if (q) {
+        hybrid = { semanticRatio: 0.5, embedder: 'product_search' };
+      }
 
       // Execute Meilisearch search
       const searchResult = await meilisearchService.searchProducts({

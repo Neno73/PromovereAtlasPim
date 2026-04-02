@@ -509,7 +509,7 @@ export class MeilisearchService {
       const filterString = filters.length > 0 ? filters.join(' AND ') : undefined;
 
       // Build search params
-      const searchParams: any = {
+      const searchParams: Record<string, unknown> = {
         limit,
         offset,
         filter: filterString,

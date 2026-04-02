@@ -1,139 +1,63 @@
-import { FC } from 'react';
-import './ActiveFilters.css';
+"use client";
 
-interface ActiveFilter {
+import { cn } from "@/lib/utils";
+
+export interface ActiveFilter {
   key: string;
   label: string;
   value: string;
-  displayValue: string;
 }
 
 interface ActiveFiltersProps {
-  filters: Record<string, any>;
-  onRemoveFilter: (key: string, value?: string) => void;
+  filters: ActiveFilter[];
+  onRemove: (key: string, value: string) => void;
   onClearAll: () => void;
-  supplierDisplay?: string;
-  categoryDisplay?: string;
 }
 
-/**
- * Active filter pills displayed above search results
- * Shows removable chips for each active filter
- */
-export const ActiveFilters: FC<ActiveFiltersProps> = ({
+export function ActiveFilters({
   filters,
-  onRemoveFilter,
+  onRemove,
   onClearAll,
-  supplierDisplay,
-  categoryDisplay,
-}) => {
-  // Build list of active filters
-  const activeFilters: ActiveFilter[] = [];
-
-  if (filters.search) {
-    activeFilters.push({
-      key: 'search',
-      label: 'Search',
-      value: filters.search,
-      displayValue: `"${filters.search}"`,
-    });
-  }
-
-  if (filters.category) {
-    activeFilters.push({
-      key: 'category',
-      label: 'Category',
-      value: filters.category,
-      displayValue: categoryDisplay || filters.category,
-    });
-  }
-
-  if (filters.supplier) {
-    activeFilters.push({
-      key: 'supplier',
-      label: 'Supplier',
-      value: filters.supplier,
-      displayValue: supplierDisplay || filters.supplier,
-    });
-  }
-
-  if (filters.brand) {
-    activeFilters.push({
-      key: 'brand',
-      label: 'Brand',
-      value: filters.brand,
-      displayValue: filters.brand,
-    });
-  }
-
-  if (filters.colors && filters.colors.length > 0) {
-    filters.colors.forEach((color: string) => {
-      activeFilters.push({
-        key: 'colors',
-        label: 'Color',
-        value: color,
-        displayValue: color,
-      });
-    });
-  }
-
-  if (filters.sizes && filters.sizes.length > 0) {
-    filters.sizes.forEach((size: string) => {
-      activeFilters.push({
-        key: 'sizes',
-        label: 'Size',
-        value: size,
-        displayValue: size,
-      });
-    });
-  }
-
-  if (filters.priceMin) {
-    activeFilters.push({
-      key: 'priceMin',
-      label: 'Min Price',
-      value: filters.priceMin,
-      displayValue: `€${filters.priceMin}`,
-    });
-  }
-
-  if (filters.priceMax) {
-    activeFilters.push({
-      key: 'priceMax',
-      label: 'Max Price',
-      value: filters.priceMax,
-      displayValue: `€${filters.priceMax}`,
-    });
-  }
-
-  // Don't show isActive filter as a pill (it's a default)
-
-  if (activeFilters.length === 0) {
-    return null;
-  }
+}: ActiveFiltersProps) {
+  if (filters.length === 0) return null;
 
   return (
-    <div className="active-filters">
-      <span className="active-filters-label">Active filters:</span>
-      <div className="filter-pills">
-        {activeFilters.map((filter, index) => (
+    <div className="flex flex-wrap items-center gap-2">
+      {filters.map((f) => (
+        <span
+          key={`${f.key}-${f.value}`}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full",
+            "bg-sols-light-gray px-2.5 py-1 text-xs font-medium text-sols-dark",
+          )}
+        >
+          <span className="text-sols-muted">{f.label}:</span>
+          <span>{f.value}</span>
           <button
-            key={`${filter.key}-${filter.value}-${index}`}
-            className="filter-pill"
-            onClick={() => onRemoveFilter(filter.key, filter.value)}
-            title={`Remove ${filter.label}: ${filter.displayValue}`}
+            type="button"
+            onClick={() => onRemove(f.key, f.value)}
+            className="ml-0.5 rounded-full p-0.5 text-sols-muted transition-colors hover:bg-sols-mid-gray hover:text-sols-dark"
           >
-            <span className="pill-label">{filter.label}:</span>
-            <span className="pill-value">{filter.displayValue}</span>
-            <span className="pill-remove">×</span>
+            <svg
+              className="h-3 w-3"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
+              <path d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
-        ))}
-      </div>
-      {activeFilters.length > 1 && (
-        <button className="clear-all-btn" onClick={onClearAll}>
-          Clear All
-        </button>
-      )}
+        </span>
+      ))}
+
+      <button
+        type="button"
+        onClick={onClearAll}
+        className="text-xs font-medium text-sols-accent transition-colors hover:text-sols-accent-hover"
+      >
+        Clear all
+      </button>
     </div>
   );
-};
+}

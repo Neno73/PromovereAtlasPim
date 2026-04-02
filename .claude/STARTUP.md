@@ -1,18 +1,25 @@
 # Startup Guide
 
-*Last updated: 2026-01-03*
+*Last updated: 2026-04-01*
 
 Quick setup and operations for PromoAtlas PIM.
 
 ## Prerequisites
 
 - Node.js 18-22
-- Docker (for local Redis)
+- Docker + Docker Compose (for local services)
 - Git
 
 ## Quick Start
 
-### 1. Backend
+### 1. Start Docker services
+
+```bash
+docker compose up -d
+# Starts: PostgreSQL (5433), Redis (6382), MeiliSearch (7700)
+```
+
+### 2. Backend
 
 ```bash
 cd backend
@@ -22,48 +29,12 @@ npm run build         # First time only
 npm run develop       # Start with hot-reload
 ```
 
-### 2. Frontend
+### 3. Frontend
 
 ```bash
 cd frontend
 npm install
 npm run dev           # Starts on port 3000+
-```
-
-### 3. Local Redis (Dev)
-
-```bash
-docker run -d --name promoatlas-redis -p 6380:6379 redis:alpine
-```
-
-## Environment Variables
-
-### Backend (.env) - Required
-
-```env
-# Database (Coolify PostgreSQL)
-DATABASE_URL=postgres://postgres:password@46.62.239.73:5432/postgres?sslmode=require
-DATABASE_CLIENT=postgres
-
-# Redis (local dev)
-REDIS_URL=redis://localhost:6380/0
-
-# Cloudflare R2
-R2_ACCESS_KEY_ID=xxx
-R2_SECRET_ACCESS_KEY=xxx
-R2_BUCKET_NAME=promo-atlas-images
-R2_PUBLIC_URL=https://bucket.account.r2.cloudflarestorage.com
-R2_ENDPOINT=https://account.r2.cloudflarestorage.com
-
-# Strapi (generate: node -e "console.log(require('crypto').randomBytes(16).toString('base64'))")
-APP_KEYS=key1,key2,key3,key4
-ADMIN_JWT_SECRET=xxx
-API_TOKEN_SALT=xxx
-TRANSFER_TOKEN_SALT=xxx
-JWT_SECRET=xxx
-
-HOST=0.0.0.0
-PORT=1337
 ```
 
 ## Service URLs
@@ -75,7 +46,15 @@ PORT=1337
 | API | http://localhost:1337/api |
 | Frontend | http://localhost:3000 |
 | Queue Dashboard | http://localhost:1337/admin/queue-dashboard |
-| Gemini Dashboard | http://localhost:1337/admin/gemini-dashboard |
+| MeiliSearch | http://localhost:7700 |
+
+## Docker Services
+
+| Service | Container | Port | Credentials |
+|---------|-----------|------|-------------|
+| PostgreSQL 17 | promoatlas-postgres | localhost:5433 | strapi / strapi123 / db: promoatlas |
+| Redis 7 | promoatlas-redis | localhost:6382 | no auth |
+| MeiliSearch | promoatlas-meilisearch | localhost:7700 | key: promoatlas-dev-key |
 
 ## Common Commands
 
@@ -90,6 +69,11 @@ npm run start        # Production server
 cd frontend
 npm run dev          # Vite dev server
 npm run build        # Production build
+
+# Docker
+docker compose up -d     # Start all services
+docker compose down      # Stop all services
+docker compose logs -f   # View logs
 ```
 
 ## Running Sync
@@ -102,15 +86,9 @@ curl -X POST http://localhost:1337/api/promidata-sync/start \
   -H "Authorization: Bearer $JWT_TOKEN"
 ```
 
-**Force full re-sync**:
+**Force full re-sync** (bypasses hash check):
 ```sql
 UPDATE products SET promidata_hash = NULL;
-```
-
-## Database Access
-
-```bash
-PGPASSWORD="password" psql -h 46.62.239.73 -U postgres -d postgres
 ```
 
 ## Troubleshooting
@@ -118,35 +96,26 @@ PGPASSWORD="password" psql -h 46.62.239.73 -U postgres -d postgres
 | Issue | Solution |
 |-------|----------|
 | `ECONNRESET` on DB | Set `ssl: { rejectUnauthorized: false }` in `database.ts` |
-| `ECONNREFUSED` | Check DATABASE_URL and server connectivity |
-| R2 `Access Denied` | Verify R2_ACCESS_KEY_ID/SECRET |
+| `ECONNREFUSED` | Check Docker services: `docker compose ps` |
 | Admin won't load | Run `npm run build` first |
 | Port in use | `lsof -ti:PORT \| xargs kill -9` |
 | npm install fails | `rm -rf node_modules package-lock.json && npm install` |
-| API 404 in frontend | Ensure backend is running on 1337 |
 | Empty products | Check Strapi permissions (Public role) |
+| Empty price tiers | Run full re-sync after schema changes |
 
 ## First Time Setup
 
-1. Start backend: `npm run develop`
-2. Visit http://localhost:1337/admin
-3. Create admin account
-4. Suppliers auto-bootstrap on first run (56 total)
+1. `docker compose up -d` — Start PostgreSQL, Redis, MeiliSearch
+2. `cd backend && npm install && npm run build && npm run develop`
+3. Visit http://localhost:1337/admin — Create admin account
+4. Suppliers auto-bootstrap on first run (59 total)
 5. Run first sync via admin panel
 
-## Deployment
+## Deployment (Coolify)
 
-**Backend** (Coolify/Docker):
-```bash
-npm run build && npm run start
-# Set NODE_ENV=production and production env vars
-```
-
-**Frontend** (Vercel):
-```bash
-npm run build  # Output: dist/
-vercel --prod
-```
+Both backend and frontend deploy via Coolify using `docker-compose.coolify.yml`:
+- Push to `develop` → Staging deploy
+- Push to `main` → Production deploy
 
 ---
 

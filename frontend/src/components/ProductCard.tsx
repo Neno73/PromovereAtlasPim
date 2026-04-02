@@ -1,244 +1,145 @@
-import { FC } from 'react';
-import { Product, ProductData, ProductVariant, PriceTier, VerificationStatus } from '../types';
-import { getLocalizedText, formatPrice, getColorHex } from '../utils/i18n';
-import { useLanguage } from '../contexts/LanguageContext';
-import { VerificationBadges } from './VerificationBadges';
-import './ProductCard.css';
+"use client";
+
+import Link from "next/link";
+import Image from "next/image";
+import { motion } from "framer-motion";
+import { cn, formatPrice } from "@/lib/utils";
+import { ColorSwatch } from "./ColorSwatch";
+import type { MeilisearchProduct } from "@/lib/types";
 
 interface ProductCardProps {
-  product: Product;
-  onClick: () => void;
-  verificationStatus?: VerificationStatus | null;
-  verificationLoading?: boolean;
+  product: MeilisearchProduct;
 }
 
-export const ProductCard: FC<ProductCardProps> = ({
-  product,
-  onClick,
-  verificationStatus,
-  verificationLoading
-}) => {
-  const { language } = useLanguage();
+export function ProductCard({ product }: ProductCardProps) {
+  const name =
+    product.name_en ||
+    product.name_de ||
+    product.name_fr ||
+    product.name_es ||
+    product.sku;
 
-  if (!product) {
-    // This will prevent the component from crashing if the product data is malformed.
-    return null;
-  }
+  const imgSrc = product.main_image_url || product.main_image_thumbnail_url;
+  const maxSwatches = 5;
+  const visibleColors = product.colors.slice(0, maxSwatches);
+  const overflowCount = product.colors.length - maxSwatches;
 
-  // ProductData type supports both Strapi nested format and Meilisearch flat format
-  const productData = product as ProductData;
-
-  // Get primary variant (for display in product list)
-  const primaryVariant = productData.variants?.find((v: ProductVariant) => v.is_primary_for_color);
-
-  // Get the best available image URL (prioritize variant, fallback to product)
-  const getImageUrl = (): string | null => {
-    // Try primary variant images first
-    if (primaryVariant?.primary_image?.url) {
-      return primaryVariant.primary_image.url;
-    }
-    if (primaryVariant?.gallery_images?.[0]?.url) {
-      return primaryVariant.gallery_images[0].url;
-    }
-
-    // Check for Meilisearch flat string format (main_image_url)
-    if (productData.main_image_url) {
-      return productData.main_image_url;
-    }
-
-    // Fallback to product-level images (Strapi object format)
-    if (productData.main_image?.url) {
-      return productData.main_image.url;
-    }
-    if (productData.gallery_images?.[0]?.url) {
-      return productData.gallery_images[0].url;
-    }
-    if (productData.model_image?.url) {
-      return productData.model_image.url;
-    }
-    return null;
-  };
-
-  const imageUrl = getImageUrl();
-
-  // Helper to get localized text from both Meilisearch flat format and Strapi nested format
-  const getLocalizedField = (baseName: string): string => {
-    // Use Record type for dynamic field access
-    const data = productData as unknown as Record<string, string | number | object | undefined>;
-
-    // Try Meilisearch flat format first: name_en, name_de, etc.
-    const langKey = `${baseName}_${language}`;
-    if (data[langKey] && typeof data[langKey] === 'string') {
-      return data[langKey] as string;
-    }
-    // Fallback chain for Meilisearch: en → de → fr → es
-    if (data[`${baseName}_en`]) return data[`${baseName}_en`] as string;
-    if (data[`${baseName}_de`]) return data[`${baseName}_de`] as string;
-    if (data[`${baseName}_fr`]) return data[`${baseName}_fr`] as string;
-    if (data[`${baseName}_es`]) return data[`${baseName}_es`] as string;
-
-    // Try Strapi nested format: { en: "...", de: "..." }
-    if (data[baseName] && typeof data[baseName] === 'object') {
-      return getLocalizedText(data[baseName] as Record<string, string>, language);
-    }
-    // Return as string if it's a plain string
-    if (typeof data[baseName] === 'string') {
-      return data[baseName] as string;
-    }
-    return '';
-  };
-
-  const name = getLocalizedField('name');
-  const description = getLocalizedField('description');
-  
-  // Get lowest price - supports both Meilisearch (price_min) and Strapi (price_tiers) formats
-  const getLowestPrice = (): { price: number; currency: string } | null => {
-    // Try Meilisearch flat format first
-    if (productData.price_min !== undefined && productData.price_min !== null) {
-      return {
-        price: productData.price_min,
-        currency: productData.currency || 'EUR'
-      };
-    }
-
-    // Fallback to Strapi price_tiers format
-    if (!productData.price_tiers || productData.price_tiers.length === 0) {
-      return null;
-    }
-    const lowestTier = productData.price_tiers.reduce((min: PriceTier, tier: PriceTier) =>
-      tier.price < min.price ? tier : min,
-      productData.price_tiers[0]
-    );
-    return {
-      price: lowestTier.price,
-      currency: lowestTier.currency || 'EUR'
-    };
-  };
-
-  const lowestPrice = getLowestPrice();
-
-  // Get category - supports both Meilisearch (category string) and Strapi (categories array)
-  const getCategoryName = (): string => {
-    // Try Meilisearch flat format
-    if (productData.category && typeof productData.category === 'string') {
-      return productData.category;
-    }
-    // Try Strapi categories array format
-    if (productData.categories?.[0]) {
-      const cat = productData.categories[0];
-      if (typeof cat.name === 'object') {
-        return getLocalizedText(cat.name, language);
+  const priceLabel = (() => {
+    if (product.price_min != null && product.price_max != null) {
+      if (product.price_min === product.price_max) {
+        return formatPrice(product.price_min, product.currency);
       }
-      return cat.name || cat.code || '';
+      return `${formatPrice(product.price_min, product.currency)} - ${formatPrice(product.price_max, product.currency)}`;
     }
-    return '';
-  };
-
-  // Get supplier name - supports both Meilisearch (supplier_name) and Strapi (supplier.name)
-  const getSupplierName = (): string => {
-    if (productData.supplier_name) {
-      return productData.supplier_name;
-    }
-    if (productData.supplier?.name) {
-      return productData.supplier.name;
-    }
-    return '';
-  };
-
-  const categoryName = getCategoryName();
-  const supplierName = getSupplierName();
+    if (product.price_min != null)
+      return `from ${formatPrice(product.price_min, product.currency)}`;
+    return null;
+  })();
 
   return (
-    <div className="product-card" onClick={onClick}>
-      <div className="product-image">
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={name}
-            loading="lazy"
-          />
-        ) : (
-          <div className="no-image">
-            <span>No Image</span>
-          </div>
+    <motion.div
+      layout
+      layoutId={`product-${product.id}`}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      className="group"
+    >
+      <Link
+        href={`/products/${product.id}`}
+        className={cn(
+          "flex flex-col overflow-hidden rounded-xl bg-white",
+          "border border-sols-border/60",
+          "transition-all duration-200",
+          "hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5",
         )}
-        {productData.brand && (
-          <div className="product-brand-badge">
-            {productData.brand}
-          </div>
-        )}
-      </div>
-      
-      <div className="product-info">
-        <h3 className="product-title">{name}</h3>
-        
-        <div className="product-meta">
-          <p className="product-sku">SKU: {productData.sku_supplier || productData.sku}</p>
-          {productData.model && (
-            <p className="product-model">Model: {productData.model}</p>
+      >
+        {/* Image */}
+        <div className="relative aspect-square overflow-hidden bg-sols-light-gray">
+          {imgSrc ? (
+            <Image
+              src={imgSrc}
+              alt={name}
+              fill
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+              className="object-contain p-3 transition-transform duration-300 group-hover:scale-105"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-sols-muted/40">
+              <svg
+                className="h-16 w-16"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1}
+              >
+                <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+          )}
+
+          {/* Brand badge */}
+          {product.brand && (
+            <span className="absolute left-2.5 top-2.5 rounded-md bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-sols-dark shadow-sm backdrop-blur-sm">
+              {product.brand}
+            </span>
           )}
         </div>
-        
-        {description && (
-          <p className="product-description">
-            {description.length > 140 ? `${description.substring(0, 140)}...` : description}
-          </p>
-        )}
-        
-        {lowestPrice && (
-          <div className="product-pricing">
-            <p className="product-price">
-              From {formatPrice(lowestPrice.price, lowestPrice.currency)}
+
+        {/* Info */}
+        <div className="flex flex-1 flex-col gap-2 p-3.5">
+          {/* Category tag */}
+          {product.category && (
+            <span className="self-start rounded-full bg-sols-light-gray px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sols-muted">
+              {product.category}
+            </span>
+          )}
+
+          {/* Name */}
+          <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-sols-dark">
+            {name}
+          </h3>
+
+          {/* Price */}
+          {priceLabel && (
+            <p className="text-sm font-semibold text-sols-accent">
+              {priceLabel}
             </p>
-            {productData.price_tiers && productData.price_tiers.length > 1 && (
-              <p className="price-tiers-info">
-                {productData.price_tiers.length} price tiers
-              </p>
+          )}
+
+          {/* Colors */}
+          {visibleColors.length > 0 && (
+            <div className="flex items-center gap-1 pt-0.5">
+              {visibleColors.map((color, i) => (
+                <ColorSwatch
+                  key={`${color}-${i}`}
+                  colorName={color}
+                  hex={product.hex_colors?.[i]}
+                  size="sm"
+                  showTooltip
+                />
+              ))}
+              {overflowCount > 0 && (
+                <span className="ml-0.5 text-[11px] text-sols-muted">
+                  +{overflowCount}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="mt-auto flex items-center justify-between border-t border-sols-border/40 pt-2 text-[11px] text-sols-muted">
+            <span>{product.supplier_name}</span>
+            {product.total_variants_count > 0 && (
+              <span>
+                {product.total_variants_count} variant
+                {product.total_variants_count !== 1 ? "s" : ""}
+              </span>
             )}
           </div>
-        )}
-        
-        <div className="product-details">
-          {categoryName && (
-            <span className="product-category">
-              {categoryName}
-            </span>
-          )}
-
-          {supplierName && (
-            <span className="product-supplier">
-              {supplierName}
-            </span>
-          )}
         </div>
-
-        {/* Show color info - from variants or Meilisearch colors array */}
-        {(primaryVariant?.color || (productData.colors && productData.colors.length > 0)) && (() => {
-          const colorName = primaryVariant?.color || productData.colors?.[0] || '';
-          const hexColor = primaryVariant?.hex_color || primaryVariant?.supplier_color_code || productData.hex_colors?.[0];
-          const displayColor = getColorHex(colorName, hexColor);
-          return (
-            <div className="product-color">
-              <span className="color-label">Color:</span>
-              <span className="color-name">{colorName}</span>
-              <span
-                className="color-swatch"
-                style={{ background: displayColor }}
-                title={colorName}
-              ></span>
-            </div>
-          );
-        })()}
-
-        {/* Verification badges */}
-        {(verificationStatus !== undefined || verificationLoading) && (
-          <VerificationBadges
-            status={verificationStatus || null}
-            loading={verificationLoading}
-            compact={true}
-          />
-        )}
-      </div>
-    </div>
+      </Link>
+    </motion.div>
   );
-};
+}

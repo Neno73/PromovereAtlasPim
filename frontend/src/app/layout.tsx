@@ -39,6 +39,12 @@ export default function RootLayout({
                 >
                   Catalog
                 </Link>
+                <Link
+                  href="/chat"
+                  className="transition-colors hover:text-sols-dark"
+                >
+                  AI Chat
+                </Link>
               </nav>
             </div>
           </header>

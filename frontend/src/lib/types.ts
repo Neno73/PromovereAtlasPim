@@ -252,6 +252,23 @@ export interface Product {
   updatedAt: string;
 }
 
+/** Rich product for inline chat display (includes images + descriptions) */
+export interface RichProduct {
+  id: string;
+  name: string;
+  brand?: string;
+  price_min?: number;
+  price_max?: number;
+  currency: string;
+  colors: string[];
+  hex_colors: string[];
+  category?: string;
+  supplier_name: string;
+  main_image_url?: string;
+  main_image_thumbnail_url?: string;
+  description?: string;
+}
+
 export interface StrapiResponse<T> {
   data: T;
   meta?: Record<string, unknown>;

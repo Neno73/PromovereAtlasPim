@@ -2,10 +2,9 @@ import { streamText, tool, stepCountIs, convertToModelMessages } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import { readPrompts } from "@/app/api/admin/prompts/route";
+import { searchStrapi } from "@/lib/chat-search";
 
 export const maxDuration = 30;
-
-const STRAPI_BASE = process.env.STRAPI_INTERNAL_URL || "http://localhost:1337";
 
 // ---------------------------------------------------------------------------
 // Build system prompt from saved prompt sections + dynamic catalog context
@@ -150,23 +149,6 @@ The grid and sidebar show ALL product details. The user can see everything.
 - If 0 results, the grid keeps the previous view. Suggest relaxing a filter.
 - For curated final recommendations, use the ids parameter with specific product IDs.
 - When the user asks about available options (brands, colors), answer from the facet data — no tool call needed.${catalogContext}`;
-}
-
-async function searchStrapi(params: Record<string, string>) {
-  const qs = new URLSearchParams(params);
-  qs.set("limit", params.limit || "8");
-  qs.set("is_active", "true");
-  qs.set("facets", "brand,category,colors,sizes,supplier_name");
-
-  const res = await fetch(`${STRAPI_BASE}/api/products/search?${qs}`, {
-    headers: { "Content-Type": "application/json" },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Search API responded ${res.status}`);
-  }
-
-  return res.json();
 }
 
 export async function POST(req: Request) {

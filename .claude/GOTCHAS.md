@@ -36,6 +36,9 @@ Active gotchas in PromoAtlas PIM. Fixed issues archived in git history.
 | **Chat Panel Must Stay Mounted** | Returning `null` when closed destroys `useChat` state (all messages lost) | Use CSS `hidden` class, never `if (!open) return null` |
 | **Tool-Grid Result Mismatch** | AI tool queries MeiliSearch independently; if it doesn't carry forward existing filters, tool count differs from grid | Tool now merges AI args with `currentFilters` on server before querying |
 | **Hybrid Search Latency** | Hybrid search with embeddings takes ~2s vs ~50ms keyword-only | Only activates when text query is present; filter-only searches stay fast |
+| **AI SDK v6 useChat Transport** | `useChat()` no longer accepts `api` option directly. Must use `transport: new DefaultChatTransport({ api: "/api/chat-bot" })` from `ai` package | Import `DefaultChatTransport` from `ai`, pass via `transport` option |
+| **AI SDK v6 Tool Part States** | Tool part `state` values changed in v6. No `"call"` or `"partial-call"` states. Valid streaming states are `"input-streaming"` and `"streaming"` | Check SDK types for valid states before using in conditionals |
+| **React.memo + useMemo Order** | `useMemo` inside a `React.memo` component must be called before any early returns, or React throws "rendered more hooks" error | Always place all hooks above conditional returns |
 
 ## Infrastructure
 

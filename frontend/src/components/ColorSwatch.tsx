@@ -39,16 +39,11 @@ export function ColorSwatch({
         "relative shrink-0 rounded-full transition-all",
         sizeMap[size],
         isWhiteish && "border border-sols-border",
-        selected &&
-          "ring-2 ring-sols-accent ring-offset-1 ring-offset-white",
+        selected && "ring-2 ring-sols-accent ring-offset-1 ring-offset-white",
         onClick && "cursor-pointer hover:scale-110",
         !onClick && "cursor-default",
       )}
-      style={
-        isGrad
-          ? { background: color }
-          : { backgroundColor: color }
-      }
+      style={isGrad ? { background: color } : { backgroundColor: color }}
     >
       <span className="sr-only">{colorName}</span>
     </button>

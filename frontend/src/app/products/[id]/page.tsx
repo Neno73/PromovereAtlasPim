@@ -59,9 +59,7 @@ export default async function ProductPage({ params }: PageProps) {
   if (!product) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
-        <h1 className="text-2xl font-bold text-sols-dark">
-          Product not found
-        </h1>
+        <h1 className="text-2xl font-bold text-sols-dark">Product not found</h1>
         <p className="mt-2 text-sols-muted">
           The product you are looking for does not exist or has been removed.
         </p>

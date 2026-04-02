@@ -170,32 +170,32 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 - **Environment**: Coolify PostgreSQL, Coolify Redis, Cloudflare R2
 
 ### Frontend Deployment
-- **Target**: Vercel (configured via `vercel.json` for SPA routing)
+- **Target**: Coolify (same as backend)
 - **Build Command**: `npm run build`
-- **Output**: `dist/` directory
-- **SPA Routing**: All routes rewrite to `index.html` for React Router
+- **Output**: `.next/` directory
+- **Routing**: Next.js App Router (file-system based)
 
 ## Version Summary Table
 
 | Category | Technology | Version | Purpose |
 |----------|-----------|---------|---------|
 | Backend Framework | Strapi | 5.17.0 | Headless CMS & API |
-| Frontend Framework | React | 18.2.0 | UI library |
+| Frontend Framework | Next.js | 16.2.2 | Full-stack React framework |
+| UI Library | React | 19.2.4 | UI library |
 | Language | TypeScript | 5.2.2 (FE), 5.7.3 (BE) | Type safety |
-| Build Tool (FE) | Vite | 5.0.8 | Fast dev & build |
+| Build Tool (FE) | Next.js Turbopack | - | Build tool and dev server |
 | Database | PostgreSQL | - | Data storage |
 | DB Driver | pg | 8.16.3 | Database connection |
 | Storage | Cloudflare R2 | - | Image hosting |
 | AWS SDK | @aws-sdk/client-s3 | 3.844.0 | R2 integration |
 | Search Engine | Meilisearch | 0.54.0 | Full-text search |
-| AI/RAG | @google/genai | 1.30.0 | Gemini FileSearchStore |
+| AI Chat | Vercel AI SDK | 6.0.143 | Streaming AI chat |
 | HTTP Client | node-fetch | 2.7.0 | API calls |
 | HTTP Client | axios | - | Retry-enabled API calls |
 | Queue System | BullMQ | 5.0.0 | Background jobs |
 | Queue UI | @bull-board/* | - | Queue monitoring |
 | Redis Client | ioredis | 5.3.0 | Queue backend |
 | Testing | Jest | 30.2.0 | Unit tests |
-| Routing | React Router DOM | 6.26.0 | Client routing |
 | Node Runtime | Node.js | 18-22 | Server runtime |
 
 ## Key Technology Decisions
@@ -207,11 +207,12 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 - Lifecycle hooks for custom logic (AutoRAG sync)
 - Built-in REST API with filtering, pagination, population
 
-### Why React + Vite (not Next.js)?
-- Simple SPA requirements (no SSR needed)
-- Vite provides faster dev experience
-- Simpler deployment (static build)
-- Backend already handles API (Strapi)
+### Why Next.js 16 (migrated from React + Vite)?
+- Server-side API routes for AI streaming (Vercel AI SDK `streamText`)
+- Turbopack for fast development builds
+- App Router with file-system routing
+- Static + dynamic rendering (product detail pages use ISR)
+- API route proxying to Strapi via `next.config.ts` rewrites
 
 ### Why CSS Modules (not Tailwind/styled-components)?
 - Zero runtime overhead

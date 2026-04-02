@@ -6,6 +6,22 @@ Decision log for PromoAtlas PIM. Keep decisions concise: Context → Decision �
 
 ---
 
+## [2026-04-02] Standalone Full-Screen AI Chatbot Page
+
+**Context**: The unified catalog+chat page works well for filter-driven product discovery, but some users prefer a pure conversational experience — like ChatGPT/Claude style — where products appear inline in the chat without a catalog grid or sidebar filters.
+
+**Decisions**:
+1. **Independent `/chat` route** — Not a mode toggle on the catalog page. Completely separate page with its own API route, state, and UX.
+2. **Reuse MeiliSearch infrastructure** — Same `searchStrapi()` (extracted to `lib/chat-search.ts`), same hybrid search, same product index. No backend changes needed.
+3. **`searchProducts` tool (not `updateCatalogFilters`)** — Returns rich product data (images, descriptions, prices, colors) for inline rendering. No `filters_applied` for grid control.
+4. **localStorage for conversation history** — Anonymous sessions, no auth required. Up to 30 conversations stored per browser. Sidebar for switching.
+5. **`DefaultChatTransport`** — AI SDK v6 removed `api` option from `useChat()`. Must use `new DefaultChatTransport({ api: "/api/chat-bot" })` instead.
+6. **Shared prompt sections** — Loads `regularPrompt`, `companyKnowledge`, `industryKnowledge`, `brandVoice` from admin prompts. Intentionally skips `preSearchQuestions` and `productSearchFlow` (catalog-specific).
+
+**Consequences**: Two chat experiences: catalog page for structured browsing, `/chat` for conversational discovery. Both use the same search backend. Admin prompt changes to personality/knowledge sections apply to both; catalog-specific prompt sections only apply to the catalog chat panel.
+
+---
+
 ## [2026-04-02] AI Chat + Catalog Unified Filter Architecture + Hybrid Search
 
 **Context**: The AI chat widget and the product catalog were mutually exclusive — `isChatMode` replaced the grid with AI results, hid the sidebar, abandoned the URL, and offered no way to refine. Chat had no awareness of active filters or available facets. MeiliSearch hybrid search embedder was configured (`product_search` with OpenAI text-embedding-3-small) but never wired into search queries.

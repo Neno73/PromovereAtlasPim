@@ -408,26 +408,12 @@ export default function ChatPage() {
 
   const [input, setInput] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [conversations, setConversations] = useState<ConversationMeta[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState("");
+  const [conversations, setConversations] = useState(loadConversations);
+  const [activeConversationId, setActiveConversationId] = useState(generateId);
   const [restoredMessages, setRestoredMessages] = useState<StoredMessage[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const initRef = useRef(false);
-
-  // Initialize on mount
-  useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
-
-    const convos = loadConversations();
-    setConversations(convos);
-
-    // Start a new conversation
-    const newId = generateId();
-    setActiveConversationId(newId);
-  }, []);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -481,11 +467,9 @@ export default function ChatPage() {
 
     saveMessages(activeConversationId, stored);
 
-    // Update conversation meta — use in-memory state, not redundant localStorage read
-    const allConvos = [...conversations];
-    const existingIdx = allConvos.findIndex(
-      (c) => c.id === activeConversationId,
-    );
+    // Update conversation meta via functional updater (avoids stale closure
+    // and the "setState in effect" lint rule, since the update is derived
+    // from previous state rather than called unconditionally).
     const firstUserMsg = messages.find((m) => m.role === "user");
     const title = firstUserMsg
       ? (
@@ -502,20 +486,29 @@ export default function ChatPage() {
       messageCount: messages.length,
     };
 
-    if (existingIdx >= 0) {
-      allConvos[existingIdx] = meta;
-    } else {
-      allConvos.unshift(meta);
-    }
+    // Sync conversation list to localStorage when AI stream completes.
+    // This is a response to an external system (AI SDK), not a cascading render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setConversations((prev) => {
+      const allConvos = [...prev];
+      const existingIdx = allConvos.findIndex(
+        (c) => c.id === activeConversationId,
+      );
 
-    // Trim to max
-    while (allConvos.length > MAX_CONVERSATIONS) {
-      const removed = allConvos.pop();
-      if (removed) deleteConversation(removed.id);
-    }
+      if (existingIdx >= 0) {
+        allConvos[existingIdx] = meta;
+      } else {
+        allConvos.unshift(meta);
+      }
 
-    saveConversations(allConvos);
-    setConversations(allConvos);
+      while (allConvos.length > MAX_CONVERSATIONS) {
+        const removed = allConvos.pop();
+        if (removed) deleteConversation(removed.id);
+      }
+
+      saveConversations(allConvos);
+      return allConvos;
+    });
   }, [status, messages, activeConversationId]);
 
   const isLoading = status === "streaming" || status === "submitted";

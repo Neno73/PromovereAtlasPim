@@ -61,9 +61,7 @@ function ImageGallery({ images }: { images: StrapiMedia[] }) {
               )}
             >
               <Image
-                src={
-                  img.formats?.thumbnail?.url || img.url
-                }
+                src={img.formats?.thumbnail?.url || img.url}
                 alt=""
                 fill
                 sizes="64px"
@@ -118,7 +116,8 @@ export function ProductDetail({ product }: ProductDetailProps) {
       }
       return `${formatPrice(product.price_min)} - ${formatPrice(product.price_max)}`;
     }
-    if (product.price_min != null) return `from ${formatPrice(product.price_min)}`;
+    if (product.price_min != null)
+      return `from ${formatPrice(product.price_min)}`;
     return null;
   })();
 
@@ -259,7 +258,10 @@ export function ProductDetail({ product }: ProductDetailProps) {
                         {product.price_tiers!.some((t) => t.buying_price) && (
                           <td className="px-3 py-2 text-sols-muted">
                             {tier.buying_price
-                              ? formatPrice(tier.buying_price, tier.currency || "EUR")
+                              ? formatPrice(
+                                  tier.buying_price,
+                                  tier.currency || "EUR",
+                                )
                               : "-"}
                           </td>
                         )}
@@ -288,9 +290,12 @@ export function ProductDetail({ product }: ProductDetailProps) {
                   <dt className="text-sols-muted">Dimensions</dt>
                   <dd className="font-medium text-sols-dark">
                     {[
-                      product.dimensions.length && `L: ${product.dimensions.length}`,
-                      product.dimensions.width && `W: ${product.dimensions.width}`,
-                      product.dimensions.height && `H: ${product.dimensions.height}`,
+                      product.dimensions.length &&
+                        `L: ${product.dimensions.length}`,
+                      product.dimensions.width &&
+                        `W: ${product.dimensions.width}`,
+                      product.dimensions.height &&
+                        `H: ${product.dimensions.height}`,
                     ]
                       .filter(Boolean)
                       .join(" x ")}{" "}
@@ -315,22 +320,24 @@ export function ProductDetail({ product }: ProductDetailProps) {
                   </dd>
                 </>
               )}
-              {product.available_colors && product.available_colors.length > 0 && (
-                <>
-                  <dt className="text-sols-muted">Colors</dt>
-                  <dd className="font-medium text-sols-dark">
-                    {product.available_colors.length}
-                  </dd>
-                </>
-              )}
-              {product.available_sizes && product.available_sizes.length > 0 && (
-                <>
-                  <dt className="text-sols-muted">Sizes</dt>
-                  <dd className="font-medium text-sols-dark">
-                    {product.available_sizes.join(", ")}
-                  </dd>
-                </>
-              )}
+              {product.available_colors &&
+                product.available_colors.length > 0 && (
+                  <>
+                    <dt className="text-sols-muted">Colors</dt>
+                    <dd className="font-medium text-sols-dark">
+                      {product.available_colors.length}
+                    </dd>
+                  </>
+                )}
+              {product.available_sizes &&
+                product.available_sizes.length > 0 && (
+                  <>
+                    <dt className="text-sols-muted">Sizes</dt>
+                    <dd className="font-medium text-sols-dark">
+                      {product.available_sizes.join(", ")}
+                    </dd>
+                  </>
+                )}
             </dl>
           </div>
 

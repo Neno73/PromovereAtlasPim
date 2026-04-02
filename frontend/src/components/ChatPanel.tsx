@@ -4,31 +4,49 @@ import { useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useChatContext } from "@/lib/chat-context";
 import { cn, formatPrice } from "@/lib/utils";
-import type { MeilisearchProduct } from "@/lib/types";
+import type {
+  FacetDistribution,
+  MeilisearchProduct,
+  SearchParams,
+} from "@/lib/types";
 
 // ---------------------------------------------------------------------------
-// Inline product card for chat results
+// Inline product card for chat results (slim preview)
 // ---------------------------------------------------------------------------
 
-function ChatProductCard({ product }: { product: MeilisearchProduct }) {
-  const name =
-    product.name_en || product.name_de || product.name_fr || product.sku;
+interface SlimProduct {
+  id: string;
+  name: string;
+  brand?: string;
+  price_min?: number;
+  price_max?: number;
+  currency?: string;
+  colors?: string[];
+  sizes?: string[];
+  category?: string;
+}
 
+function ChatProductCard({ product }: { product: SlimProduct }) {
   return (
     <a
       href={`/products/${product.id}`}
       className="flex gap-3 rounded-lg border border-sols-border/50 bg-white p-2 transition-colors hover:bg-sols-light-gray/50"
     >
-      {product.main_image_thumbnail_url && (
-        /* eslint-disable-next-line @next/next/no-img-element */
-        <img
-          src={product.main_image_thumbnail_url}
-          alt={name}
-          className="h-14 w-14 shrink-0 rounded-md bg-sols-light-gray object-contain p-1"
-        />
-      )}
+      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-sols-light-gray p-1">
+        <svg
+          className="h-6 w-6 text-sols-muted"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={1}
+        >
+          <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        </svg>
+      </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-semibold text-sols-dark">{name}</p>
+        <p className="truncate text-xs font-semibold text-sols-dark">
+          {product.name}
+        </p>
         {product.brand && (
           <p className="text-[10px] text-sols-muted">{product.brand}</p>
         )}
@@ -43,27 +61,62 @@ function ChatProductCard({ product }: { product: MeilisearchProduct }) {
 }
 
 // ---------------------------------------------------------------------------
-// Chat panel
+// Tool output types
 // ---------------------------------------------------------------------------
 
 interface ToolOutput {
-  products?: MeilisearchProduct[];
+  filters_applied?: Record<string, unknown>;
+  total?: number;
+  sample_products?: SlimProduct[];
+  available_facets?: Record<string, Record<string, number>>;
+  error?: string;
 }
 
-export function ChatPanel() {
-  const { isChatOpen, toggleChat, setChatProducts } = useChatContext();
+// ---------------------------------------------------------------------------
+// Chat panel props
+// ---------------------------------------------------------------------------
+
+interface ChatPanelProps {
+  currentFilters: SearchParams;
+  currentFacets: FacetDistribution | undefined;
+  currentTotal: number;
+  onApplyFilters: (filters: Partial<SearchParams>) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Chat panel
+// ---------------------------------------------------------------------------
+
+export function ChatPanel({
+  currentFilters,
+  currentFacets,
+  currentTotal,
+  onApplyFilters,
+}: ChatPanelProps) {
+  const { isChatOpen, toggleChat, registerClearChat } = useChatContext();
   const messagesEnd = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
 
-  // useChat with default transport (DefaultChatTransport -> /api/chat)
-  const { messages, sendMessage, status } = useChat();
+  // Track which tool output we've already applied to avoid re-applying on re-render
+  const appliedToolRef = useRef<string | null>(null);
+
+  // useChat — body is sent per-message via sendMessage options
+  const { messages, sendMessage, setMessages, status } = useChat();
+
+  // Register clear function so page.tsx can reset chat on "clear all filters"
+  useEffect(() => {
+    registerClearChat(() => {
+      setMessages([]);
+      appliedToolRef.current = null;
+    });
+  }, [registerClearChat, setMessages]);
 
   // Auto-scroll
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Extract products from tool outputs and push to chat context
+  // Extract filters from tool outputs and apply to catalog
   useEffect(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
@@ -76,16 +129,42 @@ export function ChatPanel() {
           "output" in part
         ) {
           const output = part.output as ToolOutput;
-          if (output?.products && output.products.length > 0) {
-            setChatProducts(output.products);
+          if (output?.filters_applied) {
+            // Build a unique key for this tool invocation
+            const toolKey = `${msg.id}-${i}-${JSON.stringify(output.filters_applied)}`;
+            if (appliedToolRef.current === toolKey) return;
+            appliedToolRef.current = toolKey;
+
+            const fa = output.filters_applied;
+
+            // REPLACE all filter fields with what the tool returned.
+            // The tool already merged AI args with existing filters on the
+            // server, so filters_applied is the complete intended state.
+            // Fields not present in fa get cleared to avoid stale leftovers.
+            const filterUpdate: Partial<SearchParams> = {
+              q: (fa.q as string) || undefined,
+              brand: (fa.brand as string) || undefined,
+              category: (fa.category as string) || undefined,
+              colors: (fa.colors as string) || undefined,
+              sizes: (fa.sizes as string) || undefined,
+              price_min:
+                fa.price_min != null ? (fa.price_min as number) : undefined,
+              price_max:
+                fa.price_max != null ? (fa.price_max as number) : undefined,
+              sort: (fa.sort as string) || undefined,
+              ids: (fa.ids as string) || undefined,
+              supplier_code: undefined,
+            };
+
+            if (Object.values(filterUpdate).some((v) => v !== undefined)) {
+              onApplyFilters(filterUpdate);
+            }
             return;
           }
         }
       }
     }
-  }, [messages, setChatProducts]);
-
-  if (!isChatOpen) return null;
+  }, [messages, onApplyFilters]);
 
   const isLoading = status === "streaming" || status === "submitted";
 
@@ -93,18 +172,30 @@ export function ChatPanel() {
     const text = input.trim();
     if (!text || isLoading) return;
     setInput("");
-    sendMessage({ text });
+    sendMessage(
+      { text },
+      {
+        body: {
+          currentFilters,
+          currentFacets,
+          currentTotal,
+        },
+      },
+    );
   };
 
+  // Always mounted but hidden via CSS for state persistence
   return (
     <div
       className={cn(
         // Desktop: inline push panel (not fixed, lives in page flow)
-        "hidden lg:flex lg:w-[420px] lg:shrink-0 lg:flex-col",
+        "lg:w-[420px] lg:shrink-0 lg:flex-col",
         "overflow-hidden rounded-2xl border border-sols-border bg-white shadow-lg",
         "sticky top-24 h-[calc(100vh-8rem)]",
         // Mobile: fixed overlay (full screen minus header)
-        "max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:top-16 max-lg:z-50 max-lg:flex max-lg:flex-col max-lg:rounded-none max-lg:shadow-2xl",
+        "max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:top-16 max-lg:z-50 max-lg:flex-col max-lg:rounded-none max-lg:shadow-2xl",
+        // Visibility: hidden via CSS, not unmounted
+        isChatOpen ? "flex max-lg:flex" : "hidden",
       )}
     >
       {/* Header */}
@@ -121,7 +212,13 @@ export function ChatPanel() {
           className="rounded-md p-1 text-white/60 transition-colors hover:text-white"
           aria-label="Close chat"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
             <path d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
@@ -178,7 +275,7 @@ export function ChatPanel() {
                 </div>
               ))}
 
-            {/* Tool output parts: show product cards */}
+            {/* Tool output parts: show sample product cards */}
             {msg.parts
               .filter(
                 (p) =>
@@ -187,24 +284,20 @@ export function ChatPanel() {
                   p.state === "output-available",
               )
               .map((part, i) => {
-                const output = ("output" in part ? part.output : null) as ToolOutput | null;
-                const products = output?.products;
+                const output = (
+                  "output" in part ? part.output : null
+                ) as ToolOutput | null;
+                const products = output?.sample_products;
+                const total = output?.total;
                 if (!products || products.length === 0) return null;
 
                 return (
-                  <div key={i} className="w-full max-w-[85%] space-y-1.5">
+                  <div key={i} className="w-full max-w-[85%]">
                     <p className="text-[10px] font-medium text-sols-muted">
-                      Found {products.length} product
-                      {products.length !== 1 ? "s" : ""}
+                      {total != null
+                        ? `${total} product${total !== 1 ? "s" : ""} updated in grid`
+                        : ""}
                     </p>
-                    {products.slice(0, 4).map((p) => (
-                      <ChatProductCard key={p.id} product={p} />
-                    ))}
-                    {products.length > 4 && (
-                      <p className="text-[10px] text-sols-muted">
-                        +{products.length - 4} more in the grid
-                      </p>
-                    )}
                   </div>
                 );
               })}

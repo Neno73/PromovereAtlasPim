@@ -501,14 +501,15 @@ export class MeilisearchService {
       attributesToHighlight = [],
       attributesToCrop = [],
       cropLength = 200,
+      hybrid,
     } = options;
 
     try {
       // Build filter string (AND logic)
       const filterString = filters.length > 0 ? filters.join(' AND ') : undefined;
 
-      // Execute search
-      const searchResults = await this.index!.search(query, {
+      // Build search params
+      const searchParams: Record<string, unknown> = {
         limit,
         offset,
         filter: filterString,
@@ -518,7 +519,18 @@ export class MeilisearchService {
         attributesToHighlight,
         attributesToCrop,
         cropLength,
-      });
+      };
+
+      // Add hybrid search if configured
+      if (hybrid) {
+        searchParams.hybrid = {
+          embedder: hybrid.embedder,
+          semanticRatio: hybrid.semanticRatio ?? 0.5,
+        };
+      }
+
+      // Execute search
+      const searchResults = await this.index!.search(query, searchParams);
 
       // Return normalized response
       return {

@@ -1,8 +1,31 @@
 # Architectural Decisions
 
-*Last updated: 2026-04-01*
+*Last updated: 2026-04-02*
 
 Decision log for PromoAtlas PIM. Keep decisions concise: Context → Decision → Consequences.
+
+---
+
+## [2026-04-02] AI Chat + Catalog Unified Filter Architecture + Hybrid Search
+
+**Context**: The AI chat widget and the product catalog were mutually exclusive — `isChatMode` replaced the grid with AI results, hid the sidebar, abandoned the URL, and offered no way to refine. Chat had no awareness of active filters or available facets. MeiliSearch hybrid search embedder was configured (`product_search` with OpenAI text-embedding-3-small) but never wired into search queries.
+
+**Decisions**:
+1. **Unified filter state** — Remove `isChatMode`. Chat and sidebar both control the same `SearchParams`. No separate modes.
+2. **`updateCatalogFilters` tool** — Replaces `searchProducts`. AI decomposes queries into structured filters (category, brand, colors, price) + semantic text query. Tool merges AI args with existing filters on the server, returns complete `filters_applied` for frontend to replace (not merge).
+3. **Bidirectional context** — Each chat message sends `currentFilters`, `currentFacets`, `currentTotal` via request body. Server injects this as dynamic context in the AI system prompt so it can answer facet questions without a tool call.
+4. **Hybrid search enabled** — `semanticRatio: 0.5` auto-activates when text query is present. MeiliSearch balances keyword precision and semantic meaning per query.
+5. **Zero-result protection** — Tool returns `filters_applied: null` when 0 results. Frontend keeps previous grid. AI sees `total: 0` and suggests alternatives.
+6. **Chat panel CSS persistence** — Hidden via CSS (not unmounted) so `useChat` state survives open/close. "Clear all filters" also clears chat.
+7. **Sidebar independent toggle** — Collapsible with its own state, separate from chat panel.
+8. **`ids` filter** — MeiliSearch `id IN [...]` enables AI curated selections (e.g., "my top 5 picks").
+9. **AI query decomposition** — Prompt instructs AI to split requests into structural (filters), descriptive (text query for materials/features), and qualitative (text query + price sort for "exclusive"/"premium").
+10. **Slim tool output** — Tool returns max 4 products with only name/brand/price/colors/category to save tokens over long conversations.
+11. **1920px layout** — Primary target for demo, 1440px flexible with both sidebar and chat open.
+
+**Consequences**: Chat conversation now progressively narrows the catalog through the same pipeline as manual browsing. URL is shareable at any point. Facets are always visible. The AI can answer "what brands?" from facet data without searching. Full t-shirt test case (15-20 turns → 5 curated picks) is supported.
+
+**Files changed**: 11 files across frontend and backend (see PR).
 
 ---
 

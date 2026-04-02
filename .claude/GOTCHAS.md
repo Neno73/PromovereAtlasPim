@@ -1,6 +1,6 @@
 # Known Issues & Workarounds
 
-*Last updated: 2026-04-01*
+*Last updated: 2026-04-02*
 
 Active gotchas in PromoAtlas PIM. Fixed issues archived in git history.
 
@@ -32,7 +32,10 @@ Active gotchas in PromoAtlas PIM. Fixed issues archived in git history.
 | Issue | Description | Workaround |
 |-------|-------------|------------|
 | **Image Aspect Ratio** | Hard-coded thresholds (1.2-1.8) may not fit all images | Default `contain` is safe; some images have white space |
-| **Frontend Being Rebuilt** | Current frontend will be replaced with assistant-ui + Vercel AI SDK | Don't invest in current FE fixes |
+| **AI SDK UIMessage Format** | `useChat` sends UIMessages (parts array), `streamText` expects ModelMessages | Use `convertToModelMessages()` from `ai` package in `/api/chat/route.ts` |
+| **Chat Panel Must Stay Mounted** | Returning `null` when closed destroys `useChat` state (all messages lost) | Use CSS `hidden` class, never `if (!open) return null` |
+| **Tool-Grid Result Mismatch** | AI tool queries MeiliSearch independently; if it doesn't carry forward existing filters, tool count differs from grid | Tool now merges AI args with `currentFilters` on server before querying |
+| **Hybrid Search Latency** | Hybrid search with embeddings takes ~2s vs ~50ms keyword-only | Only activates when text query is present; filter-only searches stay fast |
 
 ## Infrastructure
 

@@ -26,7 +26,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <ChatProvider>
           <header className="sticky top-0 z-40 border-b border-sols-border bg-white/80 backdrop-blur-md">
-            <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-8">
+            <div className="mx-auto flex h-14 max-w-[1920px] items-center justify-between px-4 sm:px-6 lg:px-8">
               <Link href="/" className="flex items-center gap-2">
                 <span className="text-xl font-extrabold tracking-tight text-sols-dark">
                   Promo<span className="text-sols-accent">Atlas</span>

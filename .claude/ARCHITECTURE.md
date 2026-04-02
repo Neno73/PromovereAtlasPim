@@ -1,6 +1,6 @@
 # Architecture
 
-*Last updated: 2026-04-01*
+*Last updated: 2026-04-02*
 
 System design for PromoAtlas PIM. For implementation patterns, see PATTERNS.md.
 
@@ -104,45 +104,150 @@ Redis-based distributed locking prevents duplicate syncs:
 
 **API**: `GET /api/promidata-sync/active`, `POST /api/promidata-sync/stop/:id`
 
+## AI Chat + Catalog Integration
+
+### How Chat Drives the Product Grid
+
+The AI chat assistant and the product catalog share a **unified filter state**. When the AI searches, it updates the same `SearchParams` that the sidebar, search bar, and URL use. There is no separate "chat mode" — both interfaces control the same view.
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  Search Bar  │────▶│              │     │              │
+│  + Sidebar   │     │  SearchParams│────▶│  MeiliSearch │
+│  Filters     │────▶│  (unified)   │     │  (hybrid)    │
+└──────────────┘     └──────┬───────┘     └──────┬───────┘
+      ▲                     │                     │
+      │               ┌─────▼──────┐        ┌─────▼──────┐
+      │               │  URL State │        │  Products   │
+      │               │  (synced)  │        │  + Facets   │
+      │               └────────────┘        └─────┬───────┘
+      │                                           │
+      │                                     ┌─────▼──────┐
+      │                                     │ Product Grid│
+      │                                     └────────────┘
+      │
+┌─────┴──────┐
+│  AI Chat   │── updateCatalogFilters() ──▶ SearchParams
+│  Panel     │◀── currentFilters + facets ──
+└────────────┘
+```
+
+### Data Flow: Chat → Grid
+
+1. User sends message in chat
+2. `ChatPanel` sends `currentFilters`, `currentFacets`, `currentTotal` via request body
+3. Server injects catalog state as dynamic context in AI system prompt
+4. AI calls `updateCatalogFilters` tool with structured filters + text query
+5. Tool merges AI args with existing filters, queries MeiliSearch
+6. If 0 results: returns `filters_applied: null` (grid keeps previous view)
+7. If results found: returns `filters_applied` (complete filter state) + slim product preview
+8. `ChatPanel` extracts `filters_applied`, calls `onApplyFilters` (full replacement, not merge)
+9. `SearchParams` updates → URL syncs → grid fetches → sidebar facets update
+
+### Key Design Decisions
+
+- **Chat panel always mounted** (CSS hidden, not unmounted) — `useChat` state persists across open/close
+- **Sidebar independently collapsible** — user controls layout
+- **Grid never goes blank** — zero-result searches don't update filters
+- **"Clear all" resets chat too** — prevents stale AI context
+- **Scroll to top on filter change** — viewport stays at search bar level
+
+### Tool: `updateCatalogFilters`
+
+**Location**: `frontend/src/app/api/chat/route.ts`
+
+The AI's single tool for controlling the product grid. Returns:
+
+| Field | Purpose |
+|-------|---------|
+| `filters_applied` | Complete filter state for frontend (null if 0 results) |
+| `total` | Result count |
+| `sample_products` | Slim previews (4 max) for AI reasoning |
+| `available_facets` | Facet distributions for AI context |
+
+### Hybrid Search (Semantic + Keyword)
+
+**MeiliSearch 1.41** with hybrid search enabled. The `product_search` embedder uses OpenAI `text-embedding-3-small` (1536 dimensions).
+
+**Document template** (what gets embedded):
+```
+Product: {{ doc.name_en }}. Brand: {{ doc.brand }}. Category: {{ doc.category }}.
+{{ doc.description_en | truncatewords: 30 }} Colors: {{ doc.colors | join: ", " }}.
+Supplier: {{ doc.supplier_name }}.
+```
+
+**How the AI decomposes search queries:**
+
+| User intent | Type | Approach |
+|-------------|------|----------|
+| "polo shirts", "pens" | Structural | Category filter (exact) |
+| "red", "Gildan", "under 5 EUR" | Structural | Color/brand/price filter (exact) |
+| "organic cotton", "GOTS certified" | Descriptive | Text query (semantic matching on materials/descriptions) |
+| "exclusive", "premium", "budget" | Qualitative | Text query + price sort (AI translates intent to structure) |
+| "corporate gifts", "trade show" | Cross-category | Text query only (semantic search across all categories) |
+
+**Combined example**: "exclusive organic cotton polo shirts in red" becomes:
+- `category: "TEXTILES/SHIRTS-TOPS/POLO"` (structural)
+- `colors: "Red"` (structural)
+- `query: "exclusive organic cotton premium"` (semantic)
+- `sort: "price_min:desc"` (qualitative → price)
+
+**semanticRatio: 0.5** (default) — MeiliSearch auto-balances keyword precision and semantic meaning per query. Precise queries like SKUs favor keywords; descriptive queries like "eco-friendly" favor semantic.
+
+### Admin Prompt Management
+
+**Location**: `frontend/src/app/admin/page.tsx` + `frontend/src/data/prompts.json`
+
+6 editable prompt sections control AI behavior:
+
+| Section | Purpose |
+|---------|---------|
+| `regularPrompt` | Core AI identity and personality |
+| `companyKnowledge` | Company info, values, services |
+| `industryKnowledge` | Decoration methods, certifications, market knowledge |
+| `preSearchQuestions` | Product discovery flow, filter-first strategy, Stage 1/2 logic |
+| `productSearchFlow` | Tool usage guidelines, search stages |
+| `brandVoice` | Tone, communication style |
+
+**Auth**: Email/password login against env vars, HTTP-only cookie session (24hr).
+
 ## Frontend Architecture
 
 ### Directory Structure
 
 ```
 frontend/src/
-├── components/         # ProductCard, FilterBar
-├── pages/              # ProductList, ProductDetail
-├── services/api.ts     # Singleton API client
-├── types/index.ts      # TypeScript interfaces
-└── utils/i18n.ts       # Multilingual helpers
+├── app/
+│   ├── page.tsx              # Catalog page (unified filter state)
+│   ├── admin/page.tsx        # Admin prompt editor
+│   └── api/
+│       ├── chat/route.ts     # AI chat endpoint (Vercel AI SDK + Claude)
+│       └── admin/            # Prompt CRUD + auth
+├── components/
+│   ├── ChatPanel.tsx         # AI chat (useChat, filter extraction)
+│   ├── ChatWidget.tsx        # Toggle button
+│   ├── FilterSidebar.tsx     # Collapsible sidebar with facets
+│   ├── ProductGrid.tsx       # Product card grid
+│   ├── SearchBar.tsx         # Debounced search input
+│   └── filters/              # Category, Brand, Color, Size, Price filters
+├── lib/
+│   ├── chat-context.tsx      # Chat panel + sidebar state
+│   ├── api.ts                # MeiliSearch API client
+│   ├── types.ts              # All TypeScript interfaces
+│   └── utils.ts              # Formatting, color mapping
+└── data/
+    └── prompts.json          # Persisted AI prompt sections
 ```
 
-### Key Components
+### Search API
 
-| Component | Purpose |
-|-----------|---------|
-| `ProductCard` | Display product summary, smart image fitting |
-| `FilterBar` | Search, category, supplier, price filters |
-| `ProductList` | Paginated grid with sorting (12/page) |
-| `ProductDetail` | Full product info by `documentId` |
+**Endpoint**: `GET /api/products/search` (proxied to Strapi → MeiliSearch)
 
-### API Patterns (Strapi 5)
+**Supports**: text query, category, brand, colors, sizes, price range, ids, sort, facets, hybrid search
 
-```typescript
-// Filtering
-params.append('filters[name][$containsi]', search);
-params.append('filters[categories][id][$eq]', categoryId);
+**Hybrid search** activates automatically when a text query is present (`semanticRatio: 0.5`).
 
-// Population
-params.append('populate[supplier][fields]', 'code');
-params.append('populate[main_image][fields]', 'url');
-
-// Pagination
-params.append('pagination[page]', page);
-params.append('pagination[pageSize]', 12);
-```
-
-**Note**: Strapi 5 uses `documentId` (not numeric IDs), no `.attributes` wrapper.
+The `ids` filter (`id IN [...]`) enables AI curated selections — showing exactly the products the AI recommends.
 
 ### Multilingual Handling
 
@@ -156,12 +261,12 @@ getLocalizedText(product.name, 'en')
 ### Sync Flow
 ```
 Admin trigger → Parse Import.txt → Filter by hash → Download JSON →
-Transform data → Upload images to R2 → Create/update Strapi → Gemini sync
+Transform data → Upload images to R2 → Create/update Strapi → Index to MeiliSearch
 ```
 
-### Frontend Flow
+### Search Flow
 ```
-User filters → API call → Strapi query → Populate relations → Render grid
+User/AI input → SearchParams → MeiliSearch hybrid query → Products + Facets → Grid + Sidebar
 ```
 
 ## Key Indexes

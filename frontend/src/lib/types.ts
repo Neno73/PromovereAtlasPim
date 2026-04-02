@@ -87,6 +87,7 @@ export interface SearchParams {
   price_max?: number;
   is_active?: boolean;
   semantic?: number;
+  ids?: string;
 }
 
 export interface FacetDistribution {

@@ -53,6 +53,7 @@ export async function searchProducts(
   if (params.price_min != null) qs.set("price_min", String(params.price_min));
   if (params.price_max != null) qs.set("price_max", String(params.price_max));
   if (params.is_active != null) qs.set("is_active", String(params.is_active));
+  if (params.ids) qs.set("ids", params.ids);
 
   // Always request facets for the sidebar
   qs.set(

@@ -1,6 +1,13 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { searchProducts } from "@/lib/api";
 import { useChatContext } from "@/lib/chat-context";
@@ -35,6 +42,7 @@ function paramsFromURL(sp: URLSearchParams): SearchParams {
     supplier_code: sp.get("supplier_code") || undefined,
     price_min: sp.get("price_min") ? Number(sp.get("price_min")) : undefined,
     price_max: sp.get("price_max") ? Number(sp.get("price_max")) : undefined,
+    ids: sp.get("ids") || undefined,
     offset: sp.get("offset") ? Number(sp.get("offset")) : 0,
     limit: PAGE_SIZE,
     is_active: true,
@@ -52,6 +60,7 @@ function paramsToURL(p: SearchParams): string {
   if (p.supplier_code) qs.set("supplier_code", p.supplier_code);
   if (p.price_min != null) qs.set("price_min", String(p.price_min));
   if (p.price_max != null) qs.set("price_max", String(p.price_max));
+  if (p.ids) qs.set("ids", p.ids);
   if (p.offset && p.offset > 0) qs.set("offset", String(p.offset));
   const s = qs.toString();
   return s ? `?${s}` : "";
@@ -94,6 +103,12 @@ function buildActiveFilters(p: SearchParams): ActiveFilter[] {
       label: "Max price",
       value: `${p.price_max}`,
     });
+  if (p.ids)
+    filters.push({
+      key: "ids",
+      label: "AI selection",
+      value: `${p.ids.split(",").length} products`,
+    });
   return filters;
 }
 
@@ -103,7 +118,7 @@ function buildActiveFilters(p: SearchParams): ActiveFilter[] {
 
 function CatalogSkeleton() {
   return (
-    <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8">
       <div className="mb-4 flex gap-3">
         <div className="h-10 flex-1 animate-pulse rounded-lg bg-sols-mid-gray" />
         <div className="h-10 w-40 animate-pulse rounded-lg bg-sols-mid-gray" />
@@ -135,7 +150,8 @@ function CatalogContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const { isChatMode, isChatOpen, chatProducts, exitChatMode } = useChatContext();
+  const { isChatOpen, sidebarCollapsed, toggleSidebar, clearChat } =
+    useChatContext();
 
   const [params, setParams] = useState<SearchParams>(() =>
     paramsFromURL(searchParams),
@@ -151,11 +167,8 @@ function CatalogContent() {
 
   // Fetch products
   useEffect(() => {
-    if (isChatMode) return;
     let cancelled = false;
 
-    // Use startTransition-like pattern: set loading via callback to avoid
-    // synchronous setState in effect body (React 19 lint rule)
     const run = async () => {
       try {
         const res = await searchProducts(params);
@@ -179,30 +192,30 @@ function CatalogContent() {
     return () => {
       cancelled = true;
     };
-  }, [params, isChatMode]);
+  }, [params]);
 
-  // Reset loading when params change (outside of effect)
+  // Reset loading when params change
   const paramsRef = useRef(params);
-  if (paramsRef.current !== params && !isChatMode) {
+  if (paramsRef.current !== params) {
     paramsRef.current = params;
     setLoading(true);
   }
 
-  // Push state to URL
+  // Push state to URL and scroll to top on filter/search changes
   useEffect(() => {
-    if (isChatMode) return;
     const url = paramsToURL(params);
     router.replace(`/${url}`, { scroll: false });
-  }, [params, router, isChatMode]);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [params, router]);
 
   // Update params helper (resets offset)
-  const updateParams = useCallback(
-    (next: Partial<SearchParams>) => {
-      if (isChatMode) exitChatMode();
-      setParams((prev) => ({ ...prev, ...next, offset: 0 }));
-    },
-    [isChatMode, exitChatMode],
-  );
+  const updateParams = useCallback((next: Partial<SearchParams>) => {
+    setParams((prev) => ({
+      ...prev,
+      ...next,
+      offset: 0,
+    }));
+  }, []);
 
   // Filter removal
   const removeFilter = useCallback(
@@ -213,6 +226,8 @@ function CatalogContent() {
       } else if (key === "sizes") {
         const arr = (params.sizes || "").split(",").filter((s) => s !== value);
         updateParams({ sizes: arr.length ? arr.join(",") : undefined });
+      } else if (key === "ids") {
+        updateParams({ ids: undefined });
       } else {
         updateParams({ [key]: undefined });
       }
@@ -228,16 +243,13 @@ function CatalogContent() {
       limit: PAGE_SIZE,
       is_active: true,
     });
-  }, []);
+    clearChat();
+  }, [clearChat]);
 
   const activeFilters = useMemo(() => buildActiveFilters(params), [params]);
 
-  // Determine what data the grid shows
-  const gridProducts = isChatMode ? chatProducts : products;
-  const gridTotal = isChatMode ? chatProducts.length : total;
-
   return (
-    <div className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8">
       {/* Top bar */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 items-center gap-3">
@@ -271,24 +283,8 @@ function CatalogContent() {
         />
       </div>
 
-      {/* Chat mode banner */}
-      {isChatMode && (
-        <div className="mb-4 flex items-center justify-between rounded-lg border border-sols-accent/20 bg-sols-accent/5 px-4 py-2.5">
-          <span className="text-sm font-medium text-sols-accent">
-            Showing AI-suggested products ({chatProducts.length})
-          </span>
-          <button
-            type="button"
-            onClick={exitChatMode}
-            className="text-xs font-semibold text-sols-accent hover:text-sols-accent-hover"
-          >
-            Back to catalog
-          </button>
-        </div>
-      )}
-
       {/* Active filters */}
-      {!isChatMode && activeFilters.length > 0 && (
+      {activeFilters.length > 0 && (
         <div className="mb-4">
           <ActiveFilters
             filters={activeFilters}
@@ -300,26 +296,26 @@ function CatalogContent() {
 
       {/* Content area: filters | products | chat panel */}
       <div className="flex gap-8">
-        {!isChatMode && (
-          <FilterSidebar
-            facets={facets}
-            params={params}
-            onParamsChange={updateParams}
-            mobileOpen={mobileFiltersOpen}
-            onMobileClose={() => setMobileFiltersOpen(false)}
-          />
-        )}
+        <FilterSidebar
+          facets={facets}
+          params={params}
+          onParamsChange={updateParams}
+          mobileOpen={mobileFiltersOpen}
+          onMobileClose={() => setMobileFiltersOpen(false)}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebar}
+        />
 
         <div className="min-w-0 flex-1">
           <ProductGrid
-            products={gridProducts}
-            total={gridTotal}
-            loading={!isChatMode && loading}
+            products={products}
+            total={total}
+            loading={loading}
             chatOpen={isChatOpen}
           />
 
           {/* Pagination */}
-          {!isChatMode && pageCount > 1 && (
+          {pageCount > 1 && (
             <div className="mt-8 flex items-center justify-center gap-2">
               <button
                 type="button"
@@ -356,8 +352,13 @@ function CatalogContent() {
           )}
         </div>
 
-        {/* Chat panel: pushes grid on desktop, overlays on mobile */}
-        <ChatPanel />
+        {/* Chat panel: always mounted, hidden via CSS for state persistence */}
+        <ChatPanel
+          currentFilters={params}
+          currentFacets={facets}
+          currentTotal={total}
+          onApplyFilters={updateParams}
+        />
       </div>
 
       {/* Chat toggle button */}

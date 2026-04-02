@@ -62,6 +62,7 @@ export default factories.createCoreController('api::product.product', ({ strapi 
         price_min,
         price_max,
         is_active = 'true',
+        ids,                              // Comma-separated product IDs for curated selection
       } = ctx.query;
 
       // Build filters array
@@ -98,13 +99,21 @@ export default factories.createCoreController('api::product.product', ({ strapi 
         }
       }
 
+      // Handle product IDs filter (for AI curated selections)
+      if (ids) {
+        const idList = Array.isArray(ids) ? ids : String(ids).split(',').map(i => i.trim());
+        if (idList.length > 0) {
+          filters.push(`id IN [${idList.map(i => `"${i}"`).join(', ')}]`);
+        }
+      }
+
       // Parse facets (comma-separated list to array)
       const facetsList = facets ? String(facets).split(',').map(f => f.trim()).filter(Boolean) : [];
 
       // Parse sort (comma-separated list to array)
       const sortList = sort ? String(sort).split(',').map(s => s.trim()).filter(Boolean) : [];
 
-      // Execute Meilisearch search
+      // Execute Meilisearch search with hybrid (semantic + keyword) when there's a text query
       const searchResult = await meilisearchService.searchProducts({
         query: q,
         limit: parseInt(String(limit), 10),
@@ -112,6 +121,12 @@ export default factories.createCoreController('api::product.product', ({ strapi 
         filters,
         facets: facetsList,
         sort: sortList,
+        ...(q ? {
+          hybrid: {
+            embedder: 'product_search',
+            semanticRatio: 0.5,
+          },
+        } : {}),
       });
 
       // Return in Strapi-compatible format

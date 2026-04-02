@@ -4,56 +4,58 @@ import {
   createContext,
   useCallback,
   useContext,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-import type { MeilisearchProduct } from "./types";
 
 interface ChatContextValue {
-  /** Products surfaced by the AI chat */
-  chatProducts: MeilisearchProduct[];
-  /** Whether the grid should display chat results instead of normal browse */
-  isChatMode: boolean;
-  /** Push products found by the AI into the grid */
-  setChatProducts: (products: MeilisearchProduct[]) => void;
-  /** Return to normal filter browsing */
-  exitChatMode: () => void;
   /** Is the chat panel open? */
   isChatOpen: boolean;
-  /** Toggle chat panel */
+  /** Toggle chat panel visibility */
   toggleChat: () => void;
+  /** Is the filter sidebar collapsed on desktop? */
+  sidebarCollapsed: boolean;
+  /** Toggle filter sidebar */
+  toggleSidebar: () => void;
+  /** Register a function to clear chat messages (called by ChatPanel) */
+  registerClearChat: (fn: () => void) => void;
+  /** Clear all chat messages (called by page.tsx on "clear all filters") */
+  clearChat: () => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const [chatProducts, setChatProductsRaw] = useState<MeilisearchProduct[]>([]);
-  const [isChatMode, setIsChatMode] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
-
-  const setChatProducts = useCallback((products: MeilisearchProduct[]) => {
-    setChatProductsRaw(products);
-    setIsChatMode(true);
-  }, []);
-
-  const exitChatMode = useCallback(() => {
-    setChatProductsRaw([]);
-    setIsChatMode(false);
-  }, []);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const clearChatRef = useRef<(() => void) | null>(null);
 
   const toggleChat = useCallback(() => {
     setIsChatOpen((prev) => !prev);
   }, []);
 
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => !prev);
+  }, []);
+
+  const registerClearChat = useCallback((fn: () => void) => {
+    clearChatRef.current = fn;
+  }, []);
+
+  const clearChat = useCallback(() => {
+    clearChatRef.current?.();
+  }, []);
+
   return (
     <ChatContext.Provider
       value={{
-        chatProducts,
-        isChatMode,
-        setChatProducts,
-        exitChatMode,
         isChatOpen,
         toggleChat,
+        sidebarCollapsed,
+        toggleSidebar,
+        registerClearChat,
+        clearChat,
       }}
     >
       {children}

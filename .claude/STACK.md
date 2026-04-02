@@ -1,6 +1,6 @@
 # Tech Stack
 
-*Last updated: 2026-04-01*
+*Last updated: 2026-04-02*
 
 Complete technology stack for PromoAtlas PIM system with versions and rationale.
 
@@ -37,12 +37,14 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
   - **Features**: Public bucket access, automatic image URL generation
 
 ### Search Engine
-- **Meilisearch** (^0.54.0) - Full-text search engine
-  - **Why**: Fast, typo-tolerant search with faceting and filtering
-  - **Host**: External Meilisearch instance (search.sols.mk)
+- **Meilisearch 1.41** (SDK ^0.54.0) - Hybrid search engine (keyword + semantic)
+  - **Why**: Fast, typo-tolerant search with faceting, filtering, and AI-powered semantic understanding
+  - **Host**: Local Docker (dev:7700) / External (search.sols.mk)
   - **Index**: `pim_products` - Flattened product documents
-  - **Features**: Faceted search, typo tolerance, instant results
-  - **Integration**: strapi-plugin-meilisearch for automatic indexing
+  - **Hybrid Search**: Enabled with `semanticRatio: 0.5` when text query present
+  - **Embedder**: `product_search` — OpenAI `text-embedding-3-small` (1536 dimensions)
+  - **Features**: Faceted search, typo tolerance, semantic search, hybrid scoring, instant results
+  - **Integration**: Custom MeiliSearch service + strapi-plugin-meilisearch for lifecycle indexing
 
 ### HTTP Client
 - **node-fetch** (2.7.0) - HTTP requests for Promidata API integration
@@ -71,16 +73,24 @@ Complete technology stack for PromoAtlas PIM system with versions and rationale.
 - **Vite** (^6.1.12) - Fast build tool and dev server
 - **@strapi/sdk-plugin** (5.17.0) - Plugin development SDK
 
-## Frontend Stack (React + TypeScript)
+## Frontend Stack (Next.js 16 + React 19)
 
 ### Core Framework
-- **React** (18.2.0) - UI library
-  - **Why**: Component-based architecture, large ecosystem, TypeScript support
-  - **React DOM**: 18.2.0
-  - **React Router DOM**: 6.26.0 - Client-side routing
+- **Next.js** (16.2.2) - Full-stack React framework
+  - **Why**: Server-side API routes for AI streaming, Turbopack for fast dev, static + dynamic rendering
+  - **React** (19.2.4) + **React DOM** (19.2.4)
+  - **Routing**: App Router (file-system based)
+
+### AI Chat
+- **Vercel AI SDK** (ai ^6.0.143) - Streaming AI chat with tool use
+  - **@ai-sdk/anthropic** (^3.0.64) - Claude integration
+  - **@ai-sdk/react** (^3.0.145) - `useChat` hook for streaming UI
+  - **Model**: Claude Sonnet 4 (`claude-sonnet-4-20250514`)
+  - **Tools**: `updateCatalogFilters` — AI controls product grid via structured filters
+  - **Zod** (^5) - Tool input schema validation
 
 ### Build Tool
-- **Vite** (5.0.8) - Build tool and dev server
+- **Next.js Turbopack** - Build tool and dev server (replaced Vite)
   - **Why**: Fast HMR, optimized production builds, TypeScript support out-of-box
   - **Dev Server Port**: 3000 (auto-increments to 3001, 3002, etc. if port is occupied)
   - **Proxy**: `/api/*` → `http://localhost:1337` for backend API

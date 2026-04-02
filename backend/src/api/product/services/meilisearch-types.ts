@@ -117,6 +117,12 @@ export interface MeilisearchSearchOptions {
   limit?: number;                 // Number of results (default: 20)
   offset?: number;                // Pagination offset
 
+  // Hybrid search (semantic + keyword)
+  hybrid?: {
+    semanticRatio?: number;       // 0.0 = pure keyword, 1.0 = pure semantic (default: 0.5)
+    embedder?: string;            // Embedder name (default: 'product_search')
+  };
+
   // Filters (Meilisearch filter syntax)
   filters?: string[];             // Array of filter expressions
 

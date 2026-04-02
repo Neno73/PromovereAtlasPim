@@ -494,6 +494,7 @@ export class MeilisearchService {
       query = '',
       limit = 20,
       offset = 0,
+      hybrid,
       filters = [],
       facets = [],
       sort = [],
@@ -507,8 +508,8 @@ export class MeilisearchService {
       // Build filter string (AND logic)
       const filterString = filters.length > 0 ? filters.join(' AND ') : undefined;
 
-      // Execute search
-      const searchResults = await this.index!.search(query, {
+      // Build search params
+      const searchParams: any = {
         limit,
         offset,
         filter: filterString,
@@ -518,7 +519,18 @@ export class MeilisearchService {
         attributesToHighlight,
         attributesToCrop,
         cropLength,
-      });
+      };
+
+      // Add hybrid search if configured
+      if (hybrid) {
+        searchParams.hybrid = {
+          semanticRatio: hybrid.semanticRatio ?? 0.5,
+          embedder: hybrid.embedder || 'product_search',
+        };
+      }
+
+      // Execute search
+      const searchResults = await this.index!.search(query, searchParams);
 
       // Return normalized response
       return {

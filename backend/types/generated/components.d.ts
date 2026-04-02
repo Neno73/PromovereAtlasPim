@@ -7,6 +7,13 @@ export interface ProductDimensions extends Struct.ComponentSchema {
     displayName: 'Dimensions';
   };
   attributes: {
+    depth: Schema.Attribute.Decimal &
+      Schema.Attribute.SetMinMax<
+        {
+          min: 0;
+        },
+        number
+      >;
     diameter: Schema.Attribute.Decimal &
       Schema.Attribute.SetMinMax<
         {

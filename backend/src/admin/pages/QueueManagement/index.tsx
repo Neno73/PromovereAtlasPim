@@ -347,28 +347,19 @@ const QueueManagement: React.FC = () => {
             </Grid.Root>
           </Box>
 
-          {/* Processing Queues */}
+          {/* Image Processing */}
           <Box paddingBottom={4}>
             <Typography variant="sigma" textColor="neutral600" paddingBottom={2}>
-              Processing & Storage
+              Image Processing
             </Typography>
             <Grid.Root gap={4}>
-              <Grid.Item col={4} s={12}>
+              <Grid.Item col={12} s={12}>
                 <QueueCard
                   stats={allStats.imageUpload}
                   onPause={() => handlePauseQueue('image-upload')}
                   onResume={() => handleResumeQueue('image-upload')}
                   onClean={() => handleCleanQueue('image-upload')}
                   onRetryFailed={() => handleRetryFailedJobs('image-upload')}
-                />
-              </Grid.Item>
-              <Grid.Item col={4} s={12}>
-                <QueueCard
-                  stats={allStats.meilisearchSync}
-                  onPause={() => handlePauseQueue('meilisearch-sync')}
-                  onResume={() => handleResumeQueue('meilisearch-sync')}
-                  onClean={() => handleCleanQueue('meilisearch-sync')}
-                  onRetryFailed={() => handleRetryFailedJobs('meilisearch-sync')}
                 />
               </Grid.Item>
             </Grid.Root>
@@ -400,7 +391,6 @@ const QueueManagement: React.FC = () => {
                 <SingleSelectOption value="supplier-sync">Supplier Sync</SingleSelectOption>
                 <SingleSelectOption value="product-family">Product Family</SingleSelectOption>
                 <SingleSelectOption value="image-upload">Image Upload</SingleSelectOption>
-                <SingleSelectOption value="meilisearch-sync">Meilisearch Sync</SingleSelectOption>
               </SingleSelect>
 
               <SingleSelect

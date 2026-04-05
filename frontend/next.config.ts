@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Produce a self-contained production bundle at .next/standalone so the
+  // Docker image can run `node server.js` without the full node_modules tree.
+  output: "standalone",
+
   async rewrites() {
     return {
       // beforeFiles rewrites are checked before pages/public files and after

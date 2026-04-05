@@ -88,7 +88,7 @@ services:
   # BullMQ automatically distributes jobs across all worker instances
 
   # ============================================
-  # Frontend (React + Nginx)
+  # Frontend (Next.js 16 standalone server)
   # ============================================
   frontend:
     build:
@@ -109,17 +109,18 @@ services:
       - "traefik.http.routers.frontend-https.entrypoints=https"
       - "traefik.http.routers.frontend-https.tls=true"
       - "traefik.http.routers.frontend-https.tls.certresolver=letsencrypt"
-      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
 
     expose:
-      - "80"
+      - "3000"
 
+    # Alpine base has wget but not curl. Any HTTP response means the server is up.
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:80/"]
+      test: ["CMD", "sh", "-c", "wget --quiet --tries=1 --spider --server-response http://127.0.0.1:3000/ 2>&1 | grep -q 'HTTP/'"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
     logging:
       driver: "json-file"

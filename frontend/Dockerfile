@@ -12,7 +12,13 @@ WORKDIR /app
 # ============================================
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci
+# --include=dev forces devDependencies to install even if NODE_ENV=production
+# leaks into the build environment (e.g. via a Coolify build-arg).
+# The `builder` stage below needs devDeps like @tailwindcss/postcss and
+# typescript to run `next build`. DevDeps never reach the final image —
+# the production stage copies from `.next/standalone`, which only contains
+# runtime deps traced by Next.js.
+RUN npm ci --include=dev
 
 # ============================================
 # Builder — compile Next.js with standalone output

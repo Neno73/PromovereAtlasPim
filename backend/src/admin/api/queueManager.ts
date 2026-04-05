@@ -29,7 +29,6 @@ export interface AllQueueStats {
   supplierSync: QueueStats;
   productFamily: QueueStats;
   imageUpload: QueueStats;
-  meilisearchSync: QueueStats;
 }
 
 export interface WorkerStatus {

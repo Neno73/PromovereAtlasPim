@@ -9,7 +9,7 @@ import { Trash } from '@strapi/icons';
 import type { QueueStats } from '../../api/queueManager';
 
 interface QueueCardProps {
-  stats: QueueStats;
+  stats: QueueStats | undefined;
   onPause: () => void;
   onResume: () => void;
   onClean: () => void;
@@ -23,6 +23,11 @@ const QueueCard: React.FC<QueueCardProps> = ({
   onClean,
   onRetryFailed,
 }) => {
+  // Defensive: the backend may return fewer queues than the UI expects if
+  // queues are added/removed without updating both sides. Render nothing
+  // rather than crashing the whole admin page.
+  if (!stats) return null;
+
   const isPaused = stats.paused || false;
 
   // Get queue display name
@@ -31,7 +36,6 @@ const QueueCard: React.FC<QueueCardProps> = ({
       'supplier-sync': 'Supplier Sync',
       'product-family': 'Product Family',
       'image-upload': 'Image Upload',
-      'meilisearch-sync': 'Meilisearch Sync',
     };
     return names[queueName] || queueName;
   };

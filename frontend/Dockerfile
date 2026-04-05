@@ -21,6 +21,13 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# next.config.ts reads STRAPI_PROXY_URL at build time and bakes it into the
+# rewrites config inside the standalone server bundle. Must be passed as a
+# build arg from Coolify (or `docker build --build-arg`); falls back to the
+# local dev URL so `docker build` without an arg still succeeds.
+ARG STRAPI_PROXY_URL=http://localhost:1337
+ENV STRAPI_PROXY_URL=$STRAPI_PROXY_URL
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 

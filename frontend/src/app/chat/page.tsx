@@ -408,9 +408,21 @@ export default function ChatPage() {
 
   const [input, setInput] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [conversations, setConversations] = useState(loadConversations);
-  const [activeConversationId, setActiveConversationId] = useState(generateId);
+  const [conversations, setConversations] = useState<ConversationMeta[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState("");
   const [restoredMessages, setRestoredMessages] = useState<StoredMessage[]>([]);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Hydrate from localStorage after mount to avoid SSR mismatch.
+  // setState in effect is intentional — localStorage is an external store
+  // that is only available on the client.
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setConversations(loadConversations());
+    setActiveConversationId(generateId());
+    /* eslint-enable react-hooks/set-state-in-effect */
+    setHydrated(true);
+  }, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -430,7 +442,12 @@ export default function ChatPage() {
 
   // Persist messages to localStorage when stream completes
   useEffect(() => {
-    if (status !== "ready" || messages.length === 0 || !activeConversationId)
+    if (
+      !hydrated ||
+      status !== "ready" ||
+      messages.length === 0 ||
+      !activeConversationId
+    )
       return;
 
     const stored: StoredMessage[] = messages.map((msg) => {
@@ -509,7 +526,7 @@ export default function ChatPage() {
       saveConversations(allConvos);
       return allConvos;
     });
-  }, [status, messages, activeConversationId]);
+  }, [hydrated, status, messages, activeConversationId]);
 
   const isLoading = status === "streaming" || status === "submitted";
 

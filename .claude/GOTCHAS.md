@@ -44,7 +44,6 @@ Active gotchas in PromoAtlas PIM. Fixed issues archived in git history.
 
 | Issue | Description | Workaround |
 |-------|-------------|------------|
-| **Dual MeiliSearch Sync** | Plugin writes to `pim_products`, custom service to `MEILISEARCH_INDEX_NAME` | Consolidate to one path (planned) |
 | **CORS localhost only** | `middlewares.ts` only allows localhost origins | Add production FE domain before deploying |
 
 ## Security Notes

@@ -181,6 +181,25 @@ class SyncSessionTracker {
   }
 
   /**
+   * Mark a stage as skipped. Use when a stage has no work to do in the new
+   * architecture (e.g. meilisearch indexing is handled inline by the plugin's
+   * lifecycle hooks, so the session's meilisearch stage is vestigial).
+   * 'skipped' is treated as a success state by downstream code that checks
+   * stage completion.
+   */
+  async skipStage(sessionId: string, stage: SyncStage, reason?: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.updateSession(sessionId, {
+      [`${stage}_status`]: 'skipped',
+      [`${stage}_started_at`]: now,
+      [`${stage}_completed_at`]: now
+    } as any);
+
+    const suffix = reason ? `: ${reason}` : '';
+    strapi.log.info(`⏭️  [Session] Skipped ${stage} for ${sessionId}${suffix}`);
+  }
+
+  /**
    * Fail a stage
    */
   async failStage(sessionId: string, stage: SyncStage, error: string): Promise<void> {

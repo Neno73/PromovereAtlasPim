@@ -1,6 +1,6 @@
 /**
  * Custom product routes
- * Includes Meilisearch search and reindex endpoints
+ * Includes Meilisearch search and verification endpoints
  */
 
 export default {
@@ -19,14 +19,6 @@ export default {
       handler: 'product.search',
       config: {
         policies: [], // Public endpoint - anyone can search
-      },
-    },
-    {
-      method: 'POST',
-      path: '/products/reindex',
-      handler: 'product.reindex',
-      config: {
-        policies: ['admin::isAuthenticatedAdmin'],
       },
     },
     {

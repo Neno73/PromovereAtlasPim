@@ -126,9 +126,6 @@ describe('Product Family Worker', () => {
                 exists: false,
             });
 
-            // Mock Meilisearch queue
-            (queueService.enqueueMeilisearchSync as jest.Mock).mockResolvedValue({ id: 'meilisearch-job' });
-
             // Create worker
             worker = createProductFamilyWorker();
             const processor = (worker as any).processFn;
@@ -144,7 +141,9 @@ describe('Product Family Worker', () => {
             expect(groupingService.groupByColor).toHaveBeenCalledWith(mockJob.data!.variants);
             expect(productSyncService.createOrUpdate).toHaveBeenCalledWith(mockProductData);
             expect(variantSyncService.createOrUpdate).toHaveBeenCalledTimes(3);
-            expect(queueService.enqueueMeilisearchSync).toHaveBeenCalledTimes(3);
+            // NOTE: Meilisearch indexing is handled by strapi-plugin-meilisearch
+            // lifecycle hooks directly, so the worker no longer enqueues jobs
+            // to a meilisearch-sync queue.
         });
 
         it('should handle image deduplication', async () => {
@@ -184,7 +183,6 @@ describe('Product Family Worker', () => {
             });
 
             (variantSyncService.updateImages as jest.Mock).mockResolvedValue({});
-            (queueService.enqueueMeilisearchSync as jest.Mock).mockResolvedValue({ id: 'meilisearch-job' });
 
             worker = createProductFamilyWorker();
             const processor = (worker as any).processFn;

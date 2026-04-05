@@ -20,7 +20,6 @@ export const QUEUE_NAMES = {
   SUPPLIER_SYNC: 'supplier-sync',
   PRODUCT_FAMILY: 'product-family',
   IMAGE_UPLOAD: 'image-upload',
-  MEILISEARCH_SYNC: 'meilisearch-sync',
 } as const;
 
 /**
@@ -182,35 +181,6 @@ export const imageUploadJobOptions = {
     delay: 30000, // 30 seconds fixed delay
   },
   timeout: getEnvNumber('BULLMQ_JOB_TIMEOUT_IMAGE', 120000), // 2 minutes default
-};
-
-/**
- * Meilisearch Sync Worker Configuration
- */
-export const meilisearchSyncWorkerOptions: WorkerOptions = {
-  connection: redisConnection,
-  concurrency: getEnvNumber('BULLMQ_CONCURRENCY_MEILISEARCH', 5),
-  limiter: {
-    max: 10,
-    duration: 1000,
-  },
-  settings: {
-    backoffStrategy: (attemptsMade: number) => {
-      return Math.pow(2, attemptsMade) * 5000;
-    },
-  },
-};
-
-/**
- * Meilisearch Sync Job Options
- */
-export const meilisearchSyncJobOptions = {
-  attempts: 3,
-  backoff: {
-    type: 'exponential' as const,
-    delay: 5000,
-  },
-  timeout: getEnvNumber('BULLMQ_JOB_TIMEOUT_MEILISEARCH', 60000), // 1 minute default
 };
 
 /**

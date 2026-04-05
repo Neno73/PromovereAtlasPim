@@ -189,40 +189,6 @@ export interface MeilisearchIndexSettings {
 }
 
 /**
- * Queue job data for Meilisearch sync operations
- */
-export interface MeilisearchSyncJobData {
-  operation: 'add' | 'update' | 'delete';
-  entityType: 'product' | 'product-variant';
-  entityId: number;               // Numeric Strapi ID
-  documentId: string;             // Strapi documentId (string)
-  priority?: number;              // Job priority (higher = more important)
-}
-
-/**
- * Bulk indexing batch
- */
-export interface MeilisearchBulkIndexBatch {
-  documents: MeilisearchProductDocument[];
-  batchNumber: number;
-  totalBatches: number;
-}
-
-/**
- * Indexing statistics
- */
-export interface MeilisearchIndexStats {
-  totalDocuments: number;
-  indexedDocuments: number;
-  failedDocuments: number;
-  processingTimeMs: number;
-  errors: Array<{
-    documentId: string;
-    error: string;
-  }>;
-}
-
-/**
  * Filter builder helpers (type-safe filter construction)
  */
 export type FilterOperator =

@@ -217,27 +217,9 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
 
         strapi.log.info(`  ✓ ${aNumber}: Product + ${variantResults.length} variants, ${imageJobs.length} images enqueued`);
 
-        // Enqueue Meilisearch sync for each variant with 5-minute delay
-        // This allows time for image uploads to complete before indexing
-        let meilisearchJobsEnqueued = 0;
-        for (const variantResult of variantResults) {
-          if (variantResult.documentId) {
-            await queueService.enqueueMeilisearchSync(
-              'update',
-              'product-variant',
-              Number(variantResult.variantId),
-              variantResult.documentId,
-              5, // Low priority since it's delayed anyway
-              300000, // 5 minutes delay (300,000 ms)
-              sessionId // Pass session ID for tracking
-            );
-            meilisearchJobsEnqueued++;
-          } else {
-            strapi.log.warn(`  ⚠️  Variant ${variantResult.variantId} missing documentId, skipping Meilisearch sync`);
-          }
-        }
-
-        strapi.log.info(`  └─ ${meilisearchJobsEnqueued} Meilisearch sync jobs enqueued (5-min delay)`);
+        // NOTE: No Meilisearch enqueue here. strapi-plugin-meilisearch indexes
+        // products and variants directly via its own lifecycle hooks when the
+        // product/variant records are created or updated above.
 
         // Update session counters
         if (sessionId) {
@@ -245,8 +227,6 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
           await syncSessionTracker.incrementCounter(sessionId, 'promidata_families_updated');
           // Add image jobs to session total
           await syncSessionTracker.incrementCounter(sessionId, 'images_total', imageJobs.length);
-          // Add meilisearch jobs to session total
-          await syncSessionTracker.incrementCounter(sessionId, 'meilisearch_total', meilisearchJobsEnqueued);
         }
 
         return {
@@ -295,15 +275,16 @@ export function createProductFamilyWorker(): Worker<ProductFamilyJobData> {
               await syncSessionTracker.startStage(sessionId, 'images');
               strapi.log.info(`📋 Session ${sessionId}: All ${familiesCreated} families processed. Starting images stage (${imagesTotal} images)`);
             } else {
-              // No images to process, skip to meilisearch
+              // No images to process; close out images and skip the vestigial
+              // meilisearch stage (indexing is inline via plugin lifecycle).
               await syncSessionTracker.completeStage(sessionId, 'images', {
                 images_total: 0,
                 images_uploaded: 0,
                 images_deduplicated: session.images_deduplicated || 0,
                 images_failed: 0
               });
-              await syncSessionTracker.startStage(sessionId, 'meilisearch');
-              strapi.log.info(`📋 Session ${sessionId}: No images to upload. Starting meilisearch stage.`);
+              await syncSessionTracker.skipStage(sessionId, 'meilisearch', 'handled by plugin lifecycle');
+              strapi.log.info(`📋 Session ${sessionId}: No images to upload.`);
             }
           }
         }

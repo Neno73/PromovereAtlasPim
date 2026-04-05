@@ -312,6 +312,7 @@ function CatalogContent() {
             total={total}
             loading={loading}
             chatOpen={isChatOpen}
+            activeColor={params.colors?.split(",")[0] || undefined}
           />
 
           {/* Pagination */}

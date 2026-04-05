@@ -41,6 +41,7 @@ type StoredPart =
       products: RichProduct[];
       total: number;
       noResults: boolean;
+      activeColor?: string;
     };
 
 const MAX_CONVERSATIONS = 30;
@@ -174,10 +175,17 @@ const SUGGESTIONS = [
 
 const ChatProductCard = React.memo(function ChatProductCard({
   product,
+  activeColor,
 }: {
   product: RichProduct;
+  activeColor?: string;
 }) {
-  const imgSrc = product.main_image_url || product.main_image_thumbnail_url;
+  const variantImg =
+    activeColor && product.color_image_map?.[activeColor]
+      ? product.color_image_map[activeColor]
+      : undefined;
+  const imgSrc =
+    variantImg || product.main_image_url || product.main_image_thumbnail_url;
   const priceLabel = formatPriceRange(
     product.price_min,
     product.price_max,
@@ -268,6 +276,9 @@ interface ToolOutput {
   total?: number;
   no_results?: boolean;
   filters_applied?: Record<string, unknown>;
+  /** First color from the AI's `colors` filter, if any. Used to pick the
+   *  matching variant image in each ChatProductCard. */
+  active_color?: string;
   error?: string;
 }
 
@@ -320,7 +331,11 @@ const InlineProductGrid = React.memo(function InlineProductGrid({
     <div className="mt-2 space-y-2">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {products.map((p) => (
-          <ChatProductCard key={p.id} product={p} />
+          <ChatProductCard
+            key={p.id}
+            product={p}
+            activeColor={output.active_color}
+          />
         ))}
       </div>
       {total > products.length && (
@@ -382,6 +397,7 @@ function StoredMessageBubble({ msg }: { msg: StoredMessage }) {
                   products: part.products,
                   total: part.total,
                   no_results: part.noResults,
+                  active_color: part.activeColor,
                 }}
               />
             );
@@ -471,6 +487,7 @@ export default function ChatPage() {
             products: output.products || [],
             total: output.total || 0,
             noResults: output.no_results || false,
+            activeColor: output.active_color,
           });
         }
       }

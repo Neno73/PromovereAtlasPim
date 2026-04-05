@@ -66,19 +66,10 @@ EXPOSE 1337
 ENV NODE_ENV=production
 ENV STRAPI_TELEMETRY_DISABLED=true
 
-# Health check - waits for Strapi to fully start (90s) then checks connectivity
-# Using 127.0.0.1 to avoid IPv6 issues, checking any response (including 404) means server is up
-HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
-  CMD wget --quiet --tries=1 --spider --server-response http://127.0.0.1:1337/ 2>&1 | grep -q "HTTP/" || exit 1
+# Health check - waits 120s for first boot (fresh DB schema creation, supplier
+# bootstrap, worker startup), then probes /api/health for a strict 200 OK.
+# Using 127.0.0.1 to avoid IPv6 issues.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+  CMD wget --quiet --tries=1 --spider --server-response http://127.0.0.1:1337/api/health 2>&1 | grep -q "200 OK" || exit 1
 
 CMD ["npm", "start"]
-
-# Workers stage - for running BullMQ workers separately
-FROM production AS workers
-WORKDIR /app
-
-# Workers don't need HTTP port exposure
-# Remove healthcheck since workers don't have HTTP endpoint
-
-# Run the standalone worker process (note: path includes 'src/')
-CMD ["node", "dist/src/workers/start-workers.js"]

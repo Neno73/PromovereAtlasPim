@@ -13,7 +13,6 @@ import { Worker } from 'bullmq';
 import { createSupplierSyncWorker } from './workers/supplier-sync-worker';
 import { createProductFamilyWorker } from './workers/product-family-worker';
 import { createImageUploadWorker } from './workers/image-upload-worker';
-import { createMeilisearchSyncWorker } from './workers/meilisearch-sync-worker';
 import queueMonitor from './queue-monitor';
 
 /**
@@ -35,17 +34,17 @@ class WorkerManager {
     strapi.log.info('🚀 Starting BullMQ workers...');
 
     try {
-      // Create workers
+      // Create workers. MeiliSearch indexing is handled by strapi-plugin-meilisearch
+      // lifecycle hooks directly, so no custom meilisearch-sync worker is needed.
       const supplierSyncWorker = createSupplierSyncWorker();
       const productFamilyWorker = createProductFamilyWorker();
       const imageUploadWorker = createImageUploadWorker();
-      const meilisearchSyncWorker = createMeilisearchSyncWorker();
+
       // Register workers
       this.workers = [
         supplierSyncWorker,
         productFamilyWorker,
         imageUploadWorker,
-        meilisearchSyncWorker,
       ];
 
       // CRITICAL: Wait for all workers to be ready (connected to Redis)
@@ -63,7 +62,6 @@ class WorkerManager {
       strapi.log.info('   - supplier-sync (concurrency: 1)');
       strapi.log.info('   - product-family (concurrency: 3)');
       strapi.log.info('   - image-upload (concurrency: 10)');
-      strapi.log.info('   - meilisearch-sync (concurrency: 5)');
 
     } catch (error) {
       strapi.log.error('❌ Failed to start workers:', error);

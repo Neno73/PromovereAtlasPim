@@ -15,7 +15,6 @@ import {
   supplierSyncJobOptions,
   productFamilyJobOptions,
   imageUploadJobOptions,
-  meilisearchSyncJobOptions,
   generateJobId,
   QUEUE_NAMES
 } from './queue-config';
@@ -23,7 +22,10 @@ import {
 import type { SupplierSyncJobData } from './workers/supplier-sync-worker';
 import type { ProductFamilyJobData } from './workers/product-family-worker';
 import type { ImageUploadJobData } from './workers/image-upload-worker';
-import type { MeilisearchSyncJobData } from './job-types';
+
+// NOTE: Meilisearch indexing is handled by strapi-plugin-meilisearch lifecycle
+// hooks directly (configured in backend/config/plugins.ts). No custom queue,
+// worker, or enqueue method is needed here.
 
 /**
  * Queue Service Class
@@ -32,7 +34,6 @@ class QueueService {
   private supplierSyncQueue: Queue<SupplierSyncJobData> | null = null;
   private productFamilyQueue: Queue<ProductFamilyJobData> | null = null;
   private imageUploadQueue: Queue<ImageUploadJobData> | null = null;
-  private meilisearchSyncQueue: Queue<MeilisearchSyncJobData> | null = null;
   private initialized: boolean = false;
 
   /**
@@ -53,7 +54,6 @@ class QueueService {
       this.supplierSyncQueue,
       this.productFamilyQueue,
       this.imageUploadQueue,
-      this.meilisearchSyncQueue,
     ];
 
     return queues.filter(q => q !== null) as Queue[];
@@ -98,13 +98,8 @@ class QueueService {
       defaultQueueOptions
     );
 
-    this.meilisearchSyncQueue = new Queue<MeilisearchSyncJobData>(
-      QUEUE_NAMES.MEILISEARCH_SYNC,
-      defaultQueueOptions
-    );
-
     this.initialized = true;
-    strapi.log.info('✅ Queue service initialized (4 queues)');
+    strapi.log.info('✅ Queue service initialized (3 queues)');
   }
 
   /**
@@ -137,49 +132,10 @@ class QueueService {
   }
 
   /**
-   * Enqueue Meilisearch sync job
-   */
-  public async enqueueMeilisearchSync(
-    operation: 'add' | 'update' | 'delete',
-    entityType: 'product' | 'product-variant',
-    entityId: number,
-    documentId: string,
-    priority?: number,
-    delay?: number, // Delay in milliseconds
-    sessionId?: string // Sync session ID for tracking across pipeline
-  ): Promise<Job<MeilisearchSyncJobData>> {
-    this.ensureInitialized();
-
-    const jobId = generateJobId('meili-sync', entityType, documentId);
-    const jobData: MeilisearchSyncJobData = {
-      operation,
-      entityType,
-      entityId,
-      documentId,
-      priority,
-      sessionId
-    };
-
-    const job = await this.meilisearchSyncQueue!.add(
-      jobId,
-      jobData,
-      {
-        ...meilisearchSyncJobOptions,
-        priority: priority || 0, // Higher = more important
-        delay: delay || 0 // Delay in milliseconds (0 = immediate)
-      } as JobsOptions
-    );
-
-    const delayMsg = delay ? ` (delayed ${delay}ms)` : '';
-    strapi.log.debug(`🔍 Enqueued Meilisearch ${operation} job: ${documentId}${delayMsg}`);
-    return job;
-  }
-
-  /**
    * Get job by ID
    */
   public async getJob(
-    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync',
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload',
     jobId: string
   ): Promise<Job | undefined> {
     this.ensureInitialized();
@@ -190,7 +146,7 @@ class QueueService {
   /**
    * Get queue statistics
    */
-  public async getQueueStats(queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync') {
+  public async getQueueStats(queueName: 'supplier-sync' | 'product-family' | 'image-upload') {
     this.ensureInitialized();
     const queue = this.getQueue(queueName);
 
@@ -281,11 +237,10 @@ class QueueService {
    */
   public async getAllStats() {
     this.ensureInitialized();
-    const [supplierSync, productFamily, imageUploadBasic, meilisearchSync] = await Promise.all([
+    const [supplierSync, productFamily, imageUploadBasic] = await Promise.all([
       this.getQueueStats('supplier-sync'),
       this.getQueueStats('product-family'),
       this.getQueueStats('image-upload'),
-      this.getQueueStats('meilisearch-sync'),
     ]);
 
     // Get detailed image upload stats with deduplication
@@ -295,7 +250,6 @@ class QueueService {
       supplierSync,
       productFamily,
       imageUpload,
-      meilisearchSync,
     };
   }
 
@@ -306,7 +260,7 @@ class QueueService {
    * @param limit - Maximum number of jobs to clean per call. Default: 1000
    */
   public async cleanCompletedJobs(
-    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync',
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload',
     olderThanMs: number = 24 * 60 * 60 * 1000, // 24 hours default
     limit: number = 1000
   ): Promise<{ deletedCount: number }> {
@@ -337,7 +291,7 @@ class QueueService {
    * @param limit - Maximum number of jobs to clean per call. Default: 1000
    */
   public async cleanFailedJobs(
-    queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync',
+    queueName: 'supplier-sync' | 'product-family' | 'image-upload',
     olderThanMs: number = 7 * 24 * 60 * 60 * 1000, // 7 days default
     limit: number = 1000
   ): Promise<{ deletedCount: number }> {
@@ -370,11 +324,10 @@ class QueueService {
   ): Promise<{ totalDeleted: number; details: Record<string, { completed: number; failed: number }> }> {
     this.ensureInitialized();
 
-    const queueNames: Array<'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync'> = [
+    const queueNames: Array<'supplier-sync' | 'product-family' | 'image-upload'> = [
       'supplier-sync',
       'product-family',
       'image-upload',
-      'meilisearch-sync',
     ];
 
     const results: Record<string, { completed: number; failed: number }> = {};
@@ -412,7 +365,6 @@ class QueueService {
       this.supplierSyncQueue,
       this.productFamilyQueue,
       this.imageUploadQueue,
-      this.meilisearchSyncQueue,
     ];
 
     await Promise.all(
@@ -422,7 +374,6 @@ class QueueService {
     this.supplierSyncQueue = null;
     this.productFamilyQueue = null;
     this.imageUploadQueue = null;
-    this.meilisearchSyncQueue = null;
     this.initialized = false;
 
     strapi.log.info('✅ All queues closed');
@@ -431,7 +382,7 @@ class QueueService {
   /**
    * Get queue instance (internal helper)
    */
-  private getQueue(queueName: 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync'): Queue {
+  private getQueue(queueName: 'supplier-sync' | 'product-family' | 'image-upload'): Queue {
     let queue: Queue | null = null;
 
     switch (queueName) {
@@ -443,9 +394,6 @@ class QueueService {
         break;
       case 'image-upload':
         queue = this.imageUploadQueue;
-        break;
-      case 'meilisearch-sync':
-        queue = this.meilisearchSyncQueue;
         break;
     }
 

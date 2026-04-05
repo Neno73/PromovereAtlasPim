@@ -158,13 +158,63 @@ class SyncSessionTracker {
   }
 
   /**
-   * Complete a stage
+   * Check whether a stage has already reached a terminal state. Used by
+   * completeStage/skipStage/failStage to make them idempotent — workers may
+   * fire their completion handlers multiple times as jobs finish, and we
+   * don't want each redundant call to re-run transitions + rollup logic.
+   */
+  private isStageTerminal(status: StageStatus | undefined): boolean {
+    return status === 'completed' || status === 'skipped' || status === 'failed';
+  }
+
+  /**
+   * If every stage has reached a terminal state, finalize the overall
+   * session.status. 'failed' wins over 'completed' — any failed stage
+   * marks the whole session as failed.
+   */
+  private async maybeFinalizeSession(sessionId: string): Promise<void> {
+    const session = await this.getSession(sessionId);
+    if (!session) return;
+
+    // Don't re-finalize an already-terminal session
+    if (session.status !== 'running' && session.status !== 'pending') return;
+
+    const stages: SyncStage[] = ['promidata', 'images', 'meilisearch'];
+    const allTerminal = stages.every(s =>
+      this.isStageTerminal(session[`${s}_status`] as StageStatus)
+    );
+    if (!allTerminal) return;
+
+    const anyFailed = stages.some(s => session[`${s}_status`] === 'failed');
+    const finalStatus: SessionStatus = anyFailed ? 'failed' : 'completed';
+
+    const completedAt = new Date();
+    const startedAt = new Date(session.started_at);
+    const durationSeconds = Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000);
+
+    await this.updateSession(sessionId, {
+      status: finalStatus,
+      completed_at: completedAt.toISOString(),
+      duration_seconds: durationSeconds
+    } as any);
+
+    strapi.log.info(`🏁 [Session] ${sessionId} finalized as ${finalStatus} (${durationSeconds}s)`);
+  }
+
+  /**
+   * Complete a stage. Idempotent — if the stage is already terminal, this is
+   * a no-op (workers fire completion handlers once per job, so the same
+   * stage transition can be triggered many times in quick succession).
    */
   async completeStage(
     sessionId: string,
     stage: SyncStage,
     stats?: Record<string, number>
   ): Promise<void> {
+    const session = await this.getSession(sessionId);
+    if (!session) return;
+    if (this.isStageTerminal(session[`${stage}_status`] as StageStatus)) return;
+
     const data: any = {
       [`${stage}_status`]: 'completed',
       [`${stage}_completed_at`]: new Date().toISOString()
@@ -178,12 +228,41 @@ class SyncSessionTracker {
 
     await this.updateSession(sessionId, data);
     strapi.log.info(`✅ [Session] Completed ${stage} for ${sessionId}`);
+    await this.maybeFinalizeSession(sessionId);
   }
 
   /**
-   * Fail a stage
+   * Mark a stage as skipped. Use when a stage has no work to do in the new
+   * architecture (e.g. meilisearch indexing is handled inline by the plugin's
+   * lifecycle hooks, so the session's meilisearch stage is vestigial).
+   * 'skipped' is treated as a success state by downstream code that checks
+   * stage completion. Idempotent — no-op if already terminal.
+   */
+  async skipStage(sessionId: string, stage: SyncStage, reason?: string): Promise<void> {
+    const session = await this.getSession(sessionId);
+    if (!session) return;
+    if (this.isStageTerminal(session[`${stage}_status`] as StageStatus)) return;
+
+    const now = new Date().toISOString();
+    await this.updateSession(sessionId, {
+      [`${stage}_status`]: 'skipped',
+      [`${stage}_started_at`]: now,
+      [`${stage}_completed_at`]: now
+    } as any);
+
+    const suffix = reason ? `: ${reason}` : '';
+    strapi.log.info(`⏭️  [Session] Skipped ${stage} for ${sessionId}${suffix}`);
+    await this.maybeFinalizeSession(sessionId);
+  }
+
+  /**
+   * Fail a stage. Idempotent — no-op if already terminal.
    */
   async failStage(sessionId: string, stage: SyncStage, error: string): Promise<void> {
+    const session = await this.getSession(sessionId);
+    if (!session) return;
+    if (this.isStageTerminal(session[`${stage}_status`] as StageStatus)) return;
+
     await this.updateSession(sessionId, {
       [`${stage}_status`]: 'failed',
       [`${stage}_completed_at`]: new Date().toISOString(),
@@ -192,6 +271,7 @@ class SyncSessionTracker {
 
     await this.addError(sessionId, stage, error);
     strapi.log.error(`❌ [Session] Failed ${stage} for ${sessionId}: ${error}`);
+    await this.maybeFinalizeSession(sessionId);
   }
 
   /**

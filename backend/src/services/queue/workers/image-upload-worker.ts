@@ -122,72 +122,74 @@ export function createImageUploadWorker(): Worker<ImageUploadJobData> {
 
       } catch (error) {
         strapi.log.error(`❌ Failed to upload image ${fileName}:`, error);
-        // Update session failure counter
-        if (sessionId) {
-          await syncSessionTracker.incrementCounter(sessionId, 'images_failed');
-          await syncSessionTracker.addError(sessionId, 'images', error?.message || 'Unknown error', {
-            fileName,
-            imageUrl,
-            entityType,
-            entityId
-          });
-        }
+        // NOTE: we deliberately don't increment images_failed here. This catch
+        // block runs on every retry attempt (BullMQ retries up to 5×), so
+        // counting here inflates the failure count by the retry multiplier.
+        // The worker.on('failed') handler below fires exactly once per job
+        // after all retries are exhausted — that's where we count.
         throw error;
       }
     },
     imageUploadWorkerOptions
   );
 
-  // Event handlers
+  // The session's meilisearch stage is vestigial — indexing now happens
+  // inline via strapi-plugin-meilisearch lifecycle hooks during the
+  // promidata stage, so we skip the stage as soon as images finish.
+  const PLUGIN_LIFECYCLE_REASON = 'handled by plugin lifecycle';
+
+  /**
+   * After any image job settles (success or final failure), check whether the
+   * whole images stage is done and, if so, advance the session to the
+   * vestigial meilisearch stage which we immediately skip. The stage
+   * transition methods on the tracker are idempotent, so it's safe for this
+   * to run many times in quick succession as the last batch of jobs finishes.
+   *
+   * We deliberately don't pass an `images_uploaded`/`images_failed` override
+   * here — the tracker's incremental counters (bumped once per job in the
+   * processor and the on('failed') handler below) are the source of truth.
+   */
+  const advanceStageIfComplete = async (sessionId: string) => {
+    try {
+      const stageStatus = await syncSessionTracker.isStageComplete(sessionId, 'images');
+      if (!stageStatus.complete) return;
+
+      await syncSessionTracker.completeStage(sessionId, 'images');
+      await syncSessionTracker.skipStage(sessionId, 'meilisearch', PLUGIN_LIFECYCLE_REASON);
+    } catch (sessionError) {
+      strapi.log.error(`Failed to advance session ${sessionId}:`, sessionError);
+    }
+  };
+
   worker.on('completed', async (job) => {
     const { sessionId } = job.returnvalue || {};
     strapi.log.info(`✅ [Worker] Image upload job ${job.id} completed`);
-
-    // Check if images stage is complete
-    if (sessionId) {
-      try {
-        const stageStatus = await syncSessionTracker.isStageComplete(sessionId, 'images');
-        if (stageStatus.complete) {
-          await syncSessionTracker.completeStage(sessionId, 'images', {
-            images_total: stageStatus.total,
-            images_uploaded: stageStatus.processed - (stageStatus.failed || 0),
-            images_failed: stageStatus.failed
-          });
-          strapi.log.info(`📋 Session ${sessionId}: Images stage complete (${stageStatus.processed}/${stageStatus.total})`);
-
-          // Start meilisearch stage
-          await syncSessionTracker.startStage(sessionId, 'meilisearch');
-          strapi.log.info(`📋 Session ${sessionId}: Starting meilisearch stage`);
-        }
-      } catch (sessionError) {
-        strapi.log.error(`Failed to check session ${sessionId}:`, sessionError);
-      }
-    }
+    if (sessionId) await advanceStageIfComplete(sessionId);
   });
 
+  // Fires once per job after BullMQ exhausts all retries. This is the correct
+  // place to increment images_failed and record the error, NOT the processor's
+  // catch block (which fires on every retry attempt).
   worker.on('failed', async (job, error) => {
-    strapi.log.error(`❌ [Worker] Image upload job ${job?.id} failed:`, error);
+    strapi.log.error(`❌ [Worker] Image upload job ${job?.id} failed after ${job?.attemptsMade} attempts:`, error);
 
-    // Session failure tracking is handled in the catch block above
-    // Check if images stage should be marked as complete (even with failures)
-    if (job?.data?.sessionId) {
-      try {
-        const stageStatus = await syncSessionTracker.isStageComplete(job.data.sessionId, 'images');
-        if (stageStatus.complete) {
-          await syncSessionTracker.completeStage(job.data.sessionId, 'images', {
-            images_total: stageStatus.total,
-            images_uploaded: stageStatus.processed - (stageStatus.failed || 0),
-            images_failed: stageStatus.failed
-          });
-          strapi.log.info(`📋 Session ${job.data.sessionId}: Images stage complete with failures (${stageStatus.failed} failed)`);
+    const sessionId = job?.data?.sessionId;
+    if (!sessionId) return;
 
-          // Continue to meilisearch stage despite failures
-          await syncSessionTracker.startStage(job.data.sessionId, 'meilisearch');
-        }
-      } catch (sessionError) {
-        strapi.log.error(`Failed to check session:`, sessionError);
-      }
+    try {
+      await syncSessionTracker.incrementCounter(sessionId, 'images_failed');
+      await syncSessionTracker.addError(sessionId, 'images', error?.message || 'Unknown error', {
+        fileName: job?.data?.fileName,
+        imageUrl: job?.data?.imageUrl,
+        entityType: job?.data?.entityType,
+        entityId: job?.data?.entityId,
+        attempts: job?.attemptsMade
+      });
+    } catch (sessionError) {
+      strapi.log.error(`Failed to record image failure for session ${sessionId}:`, sessionError);
     }
+
+    await advanceStageIfComplete(sessionId);
   });
 
   worker.on('error', (error) => {

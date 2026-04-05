@@ -87,28 +87,6 @@ export interface ImageUploadJobResult {
 }
 
 /**
- * Meilisearch Sync Job
- * Indexes/updates/deletes product or variant document in Meilisearch
- */
-export interface MeilisearchSyncJobData {
-  operation: 'add' | 'update' | 'delete';
-  entityType: 'product' | 'product-variant';
-  entityId: number;        // Numeric Strapi ID
-  documentId: string;      // Strapi documentId (string)
-  priority?: number;       // Higher = more important (user-initiated changes)
-  sessionId?: string; // Sync session ID for tracking across pipeline
-}
-
-export interface MeilisearchSyncJobResult {
-  success: boolean;
-  operation: 'add' | 'update' | 'delete';
-  documentId: string;
-  taskUid?: number;        // Meilisearch task UID
-  error?: string;
-  sessionId?: string; // Sync session ID for tracking across pipeline
-}
-
-/**
  * Job Progress Data
  * Standardized progress reporting across all jobs
  */
@@ -121,25 +99,3 @@ export interface JobProgress {
     phase?: string;
   };
 }
-
-/**
- * Queue Names
- * Centralized queue name constants
- */
-export const QUEUE_NAMES = {
-  SUPPLIER_SYNC: 'supplier-sync',
-  PRODUCT_FAMILY: 'product-family',
-  IMAGE_UPLOAD: 'image-upload',
-  MEILISEARCH_SYNC: 'meilisearch-sync',
-} as const;
-
-/**
- * Job Name Prefixes
- * Used for job ID generation and filtering
- */
-export const JOB_PREFIXES = {
-  SUPPLIER_SYNC: 'sup-sync',
-  PRODUCT_FAMILY: 'prod-fam',
-  IMAGE_UPLOAD: 'img-up',
-  MEILISEARCH_SYNC: 'meili-sync',
-} as const;

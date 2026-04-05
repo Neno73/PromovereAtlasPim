@@ -30,12 +30,12 @@ type JobState = 'waiting' | 'active' | 'completed' | 'failed' | 'delayed';
 /**
  * Queue names
  */
-type QueueName = 'supplier-sync' | 'product-family' | 'image-upload' | 'meilisearch-sync';
+type QueueName = 'supplier-sync' | 'product-family' | 'image-upload';
 
 /**
  * Valid queue names for validation
  */
-const VALID_QUEUE_NAMES: readonly QueueName[] = ['supplier-sync', 'product-family', 'image-upload', 'meilisearch-sync'];
+const VALID_QUEUE_NAMES: readonly QueueName[] = ['supplier-sync', 'product-family', 'image-upload'];
 
 /**
  * Valid job states for validation

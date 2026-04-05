@@ -10,14 +10,12 @@
  * @module MeilisearchService
  */
 
-import { MeiliSearch, Index, EnqueuedTask } from 'meilisearch';
+import { MeiliSearch, Index } from 'meilisearch';
 import type {
   MeilisearchProductDocument,
   MeilisearchSearchOptions,
   MeilisearchSearchResponse,
   MeilisearchIndexSettings,
-  MeilisearchIndexStats,
-  MeilisearchBulkIndexBatch,
 } from './meilisearch-types';
 
 /**
@@ -235,252 +233,6 @@ export class MeilisearchService {
   }
 
   /**
-   * Transform Strapi product to Meilisearch document
-   */
-  async transformProductToDocument(
-    product: any
-  ): Promise<MeilisearchProductDocument> {
-    // Extract multilingual fields from JSON
-    const name = product.name || {};
-    const description = product.description || {};
-    const shortDescription = product.short_description || {};
-    const material = product.material || {};
-
-    // Use stored aggregation fields from Product schema (schema consolidation 2025-01-16)
-    // These fields are now calculated during sync and stored in the database for better performance
-    const colors: string[] = product.available_colors || [];
-    const sizes: string[] = product.available_sizes || [];
-    const hexColors: string[] = product.hex_colors || [];
-
-    // Extract category - check both relation and text field
-    const categoryCodesList: string[] = [];
-    let primaryCategory = '';
-
-    // First try the categories relation (array of Category objects)
-    if (product.categories && Array.isArray(product.categories) && product.categories.length > 0) {
-      product.categories.forEach((cat: any) => {
-        if (cat.code) {
-          categoryCodesList.push(cat.code);
-          if (!primaryCategory) {
-            primaryCategory = typeof cat.name === 'object' ? cat.name.en || cat.code : cat.name;
-          }
-        }
-      });
-    }
-    // Fall back to category text field (e.g., "HOME/PLANTS")
-    else if (product.category && typeof product.category === 'string') {
-      primaryCategory = product.category;
-      categoryCodesList.push(product.category);
-    }
-
-    // Use stored price range from Product schema (schema consolidation 2025-01-16)
-    // price_min and price_max are now calculated during sync and stored in the database
-    const priceMin: number | undefined = product.price_min;
-    const priceMax: number | undefined = product.price_max;
-
-    // Extract currency from first selling price tier (currency not stored at product level)
-    let currency = 'EUR';
-    if (product.price_tiers && Array.isArray(product.price_tiers)) {
-      const sellingTier = product.price_tiers.find(
-        (tier: any) => tier.price_type === 'selling' && tier.currency
-      );
-      if (sellingTier?.currency) {
-        currency = sellingTier.currency;
-      }
-    }
-
-    // Extract main image URL
-    let mainImageUrl: string | undefined;
-    let mainImageThumbnailUrl: string | undefined;
-    if (product.main_image) {
-      if (typeof product.main_image === 'object') {
-        mainImageUrl = product.main_image.url;
-        mainImageThumbnailUrl = product.main_image.formats?.thumbnail?.url || product.main_image.url;
-      } else if (typeof product.main_image === 'string') {
-        mainImageUrl = product.main_image;
-        mainImageThumbnailUrl = product.main_image;
-      }
-    }
-
-    // Build Meilisearch document
-    const document: MeilisearchProductDocument = {
-      id: product.documentId,
-      sku: product.sku,
-      a_number: product.a_number,
-
-      // Multilingual names (flattened)
-      name_en: name.en,
-      name_de: name.de,
-      name_fr: name.fr,
-      name_es: name.es,
-
-      // Multilingual descriptions
-      description_en: description.en,
-      description_de: description.de,
-      description_fr: description.fr,
-      description_es: description.es,
-
-      // Short descriptions
-      short_description_en: shortDescription.en,
-      short_description_de: shortDescription.de,
-      short_description_fr: shortDescription.fr,
-      short_description_es: shortDescription.es,
-
-      // Materials
-      material_en: material.en,
-      material_de: material.de,
-      material_fr: material.fr,
-      material_es: material.es,
-
-      // Single-value searchable fields
-      brand: product.brand,
-      supplier_name: product.supplier?.name || product.supplier_name || '',
-      supplier_code: product.supplier?.code || '',
-      supplier_sku: product.supplier_sku,
-
-      // Filterable fields
-      is_active: product.is_active !== false, // Default true
-      category: primaryCategory,
-      category_codes: categoryCodesList,
-      country_of_origin: product.country_of_origin,
-      delivery_time: product.delivery_time,
-
-      // Product attributes
-      colors,
-      sizes,
-      hex_colors: hexColors,
-
-      // Pricing
-      price_min: priceMin,
-      price_max: priceMax,
-      currency,
-      price_region: product.price_region,
-      minimum_order_quantity: product.minimum_order_quantity,
-      quantity_increments: product.quantity_increments,
-
-      // Additional product data
-      ean: product.ean,
-      customs_tariff_number: product.customs_tariff_number,
-
-      // Timestamps (convert to Unix timestamp for sorting)
-      createdAt: new Date(product.createdAt).getTime(),
-      updatedAt: new Date(product.updatedAt).getTime(),
-      last_synced: product.last_synced ? new Date(product.last_synced).getTime() : undefined,
-
-      // Metadata
-      total_variants_count: product.total_variants_count || 0,
-      promidata_hash: product.promidata_hash,
-
-      // Image URLs
-      main_image_url: mainImageUrl,
-      main_image_thumbnail_url: mainImageThumbnailUrl,
-    };
-
-    return document;
-  }
-
-  /**
-   * Add or update a single product document
-   */
-  async addOrUpdateDocument(product: any): Promise<EnqueuedTask> {
-    if (!this.index) {
-      await this.initializeIndex();
-    }
-
-    const document = await this.transformProductToDocument(product);
-    const task = await this.index!.addDocuments([document]);
-
-    this.strapi.log.debug(`Enqueued Meilisearch add/update for product ${product.sku}`);
-    return task;
-  }
-
-  /**
-   * Delete a product document
-   */
-  async deleteDocument(documentId: string): Promise<EnqueuedTask> {
-    if (!this.index) {
-      await this.initializeIndex();
-    }
-
-    const task = await this.index!.deleteDocument(documentId);
-    this.strapi.log.debug(`Enqueued Meilisearch delete for document ${documentId}`);
-    return task;
-  }
-
-  /**
-   * Bulk add/update documents (for initial indexing or reindex)
-   */
-  async bulkAddOrUpdateDocuments(
-    products: any[],
-    batchSize: number = 1000
-  ): Promise<MeilisearchIndexStats> {
-    if (!this.index) {
-      await this.initializeIndex();
-    }
-
-    const stats: MeilisearchIndexStats = {
-      totalDocuments: products.length,
-      indexedDocuments: 0,
-      failedDocuments: 0,
-      processingTimeMs: 0,
-      errors: [],
-    };
-
-    const startTime = Date.now();
-
-    // Process in batches
-    for (let i = 0; i < products.length; i += batchSize) {
-      const batch = products.slice(i, i + batchSize);
-      const batchNumber = Math.floor(i / batchSize) + 1;
-      const totalBatches = Math.ceil(products.length / batchSize);
-
-      this.strapi.log.info(
-        `Indexing batch ${batchNumber}/${totalBatches} (${batch.length} products)`
-      );
-
-      try {
-        // Transform all products in batch
-        const documents = await Promise.all(
-          batch.map((product) => this.transformProductToDocument(product))
-        );
-
-        // Add documents to Meilisearch
-        const task = await this.index!.addDocuments(documents);
-
-        // Wait for task completion (SDK's waitForTask returns the completed Task)
-        const taskInfo = await this.client.tasks.waitForTask(task.taskUid);
-
-        // Check task status
-        if (taskInfo.status === 'succeeded') {
-          stats.indexedDocuments += batch.length;
-        } else {
-          stats.failedDocuments += batch.length;
-          stats.errors.push({
-            documentId: `batch-${batchNumber}`,
-            error: taskInfo.error?.message || 'Unknown error',
-          });
-        }
-      } catch (error) {
-        this.strapi.log.error(`Failed to index batch ${batchNumber}`, error);
-        stats.failedDocuments += batch.length;
-        stats.errors.push({
-          documentId: `batch-${batchNumber}`,
-          error: error.message || 'Unknown error',
-        });
-      }
-    }
-
-    stats.processingTimeMs = Date.now() - startTime;
-
-    this.strapi.log.info(
-      `Bulk indexing complete: ${stats.indexedDocuments}/${stats.totalDocuments} indexed, ` +
-      `${stats.failedDocuments} failed, ${stats.processingTimeMs}ms`
-    );
-
-    return stats;
-  }
-
-  /**
    * Search products with advanced options
    */
   async searchProducts(
@@ -552,26 +304,12 @@ export class MeilisearchService {
   /**
    * Get index statistics
    */
-  async getIndexStats() {
+  async getStats() {
     if (!this.index) {
       await this.initializeIndex();
     }
 
-    const stats = await this.index!.getStats();
-    return stats;
-  }
-
-  /**
-   * Clear all documents from index (use with caution!)
-   */
-  async clearIndex(): Promise<EnqueuedTask> {
-    if (!this.index) {
-      await this.initializeIndex();
-    }
-
-    this.strapi.log.warn('Clearing all documents from Meilisearch index');
-    const task = await this.index!.deleteAllDocuments();
-    return task;
+    return this.index!.getStats();
   }
 
   /**

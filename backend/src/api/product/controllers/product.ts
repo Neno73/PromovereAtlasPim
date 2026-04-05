@@ -160,59 +160,6 @@ export default factories.createCoreController('api::product.product', ({ strapi 
   },
 
   /**
-   * Reindex all products to Meilisearch
-   * Admin-only endpoint for bulk reindexing
-   */
-  async reindex(ctx) {
-    try {
-      // Get Meilisearch service
-      // @ts-ignore - Custom service not in Strapi types
-      const meilisearchService = strapi.service('api::product.meilisearch');
-
-      // Initialize Meilisearch index (creates if doesn't exist, configures settings)
-      await meilisearchService.initializeIndex();
-
-      // Fetch all products with relations
-      const products = await strapi.db.query('api::product.product').findMany({
-        populate: [
-          'supplier',
-          'categories',
-          'variants',
-          'main_image',
-          'gallery_images',
-          'price_tiers',
-          'dimensions',
-        ],
-        where: {
-          is_active: true, // Only index active products
-        },
-      });
-
-      strapi.log.info(`Starting reindex of ${products.length} products...`);
-
-      // Bulk index products
-      const stats = await meilisearchService.bulkAddOrUpdateDocuments(products);
-
-      strapi.log.info(`Reindex complete: ${stats.indexedDocuments}/${stats.totalDocuments} indexed`);
-
-      ctx.send({
-        success: true,
-        data: {
-          totalDocuments: stats.totalDocuments,
-          indexedDocuments: stats.indexedDocuments,
-          failedDocuments: stats.failedDocuments,
-          processingTimeMs: stats.processingTimeMs,
-          errors: stats.errors,
-        },
-        message: `Successfully reindexed ${stats.indexedDocuments} products`,
-      });
-    } catch (error) {
-      strapi.log.error('Reindex failed:', error);
-      ctx.badRequest('Reindex failed', { error: error.message });
-    }
-  },
-
-  /**
    * Get verification status for multiple products
    * Returns Meilisearch and hash status for batch verification
    */

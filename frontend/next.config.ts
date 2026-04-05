@@ -1,5 +1,12 @@
 import type { NextConfig } from "next";
 
+// Where to proxy /api/* requests that don't have a local Route Handler.
+// Read at build time and serialized into the server bundle — must therefore
+// be passed as a Docker build arg in production (see frontend/Dockerfile).
+// Defaults to the local Strapi dev server for `npm run dev`.
+const STRAPI_PROXY_URL =
+  process.env.STRAPI_PROXY_URL || "http://localhost:1337";
+
 const nextConfig: NextConfig = {
   // Produce a self-contained production bundle at .next/standalone so the
   // Docker image can run `node server.js` without the full node_modules tree.
@@ -18,7 +25,7 @@ const nextConfig: NextConfig = {
               key: "x-rewrite-to-strapi",
             },
           ],
-          destination: "http://localhost:1337/api/:path*",
+          destination: `${STRAPI_PROXY_URL}/api/:path*`,
         },
       ],
       afterFiles: [],
@@ -29,7 +36,7 @@ const nextConfig: NextConfig = {
       fallback: [
         {
           source: "/api/:path*",
-          destination: "http://localhost:1337/api/:path*",
+          destination: `${STRAPI_PROXY_URL}/api/:path*`,
         },
       ],
     };

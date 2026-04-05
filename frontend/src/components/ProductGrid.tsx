@@ -10,6 +10,9 @@ interface ProductGridProps {
   total: number;
   loading: boolean;
   chatOpen?: boolean;
+  /** Active color filter (first color if multi-selected). Forwarded to
+   *  ProductCard so each card renders the matching variant image. */
+  activeColor?: string;
 }
 
 function SkeletonCard() {
@@ -36,6 +39,7 @@ export function ProductGrid({
   total,
   loading,
   chatOpen = false,
+  activeColor,
 }: ProductGridProps) {
   const gridCols = chatOpen
     ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
@@ -89,7 +93,11 @@ export function ProductGrid({
       <div className={cn("grid gap-4", gridCols)}>
         <AnimatePresence mode="popLayout">
           {products.map((product) => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard
+              key={product.id}
+              product={product}
+              activeColor={activeColor}
+            />
           ))}
         </AnimatePresence>
       </div>

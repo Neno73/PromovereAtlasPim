@@ -9,9 +9,16 @@ import type { MeilisearchProduct } from "@/lib/types";
 
 interface ProductCardProps {
   product: MeilisearchProduct;
+  /**
+   * Active color filter from the catalog state. When set, the card will
+   * prefer that color's variant image over the product's default main_image.
+   * Falls back to main_image_url if the product has no variant image for
+   * the active color (older indexed documents, or color not in map).
+   */
+  activeColor?: string;
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+export function ProductCard({ product, activeColor }: ProductCardProps) {
   const name =
     product.name_en ||
     product.name_de ||
@@ -19,7 +26,12 @@ export function ProductCard({ product }: ProductCardProps) {
     product.name_es ||
     product.sku;
 
-  const imgSrc = product.main_image_url || product.main_image_thumbnail_url;
+  const variantImg =
+    activeColor && product.color_image_map?.[activeColor]
+      ? product.color_image_map[activeColor]
+      : undefined;
+  const imgSrc =
+    variantImg || product.main_image_url || product.main_image_thumbnail_url;
   const maxSwatches = 5;
   const visibleColors = product.colors.slice(0, maxSwatches);
   const overflowCount = product.colors.length - maxSwatches;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { cn, formatPrice, getLocalizedText } from "@/lib/utils";
@@ -88,25 +88,47 @@ export function ProductDetail({ product }: ProductDetailProps) {
   const description = getLocalizedText(product.description);
   const material = getLocalizedText(product.material);
 
-  // Gather all images
-  const allImages: StrapiMedia[] = [];
-  if (product.main_image) allImages.push(product.main_image);
-  if (product.model_image) allImages.push(product.model_image);
-  if (product.gallery_images) allImages.push(...product.gallery_images);
+  // Product-level fallback gallery (main + model + gallery).
+  const productLevelImages = useMemo(() => {
+    const imgs: StrapiMedia[] = [];
+    if (product.main_image) imgs.push(product.main_image);
+    if (product.model_image) imgs.push(product.model_image);
+    if (product.gallery_images) imgs.push(...product.gallery_images);
+    return imgs;
+  }, [product]);
 
   // Group variants by color
-  const colorGroups = new Map<string, ProductVariant[]>();
-  for (const v of product.variants || []) {
-    const color = v.color || "Default";
-    if (!colorGroups.has(color)) colorGroups.set(color, []);
-    colorGroups.get(color)!.push(v);
-  }
+  const colorGroups = useMemo(() => {
+    const groups = new Map<string, ProductVariant[]>();
+    for (const v of product.variants || []) {
+      const color = v.color || "Default";
+      if (!groups.has(color)) groups.set(color, []);
+      groups.get(color)!.push(v);
+    }
+    return groups;
+  }, [product.variants]);
 
   const [selectedColor, setSelectedColor] = useState<string>(
     colorGroups.keys().next().value || "",
   );
 
-  const variantsForColor = colorGroups.get(selectedColor) || [];
+  const variantsForColor = useMemo(
+    () => colorGroups.get(selectedColor) || [],
+    [colorGroups, selectedColor],
+  );
+
+  // Images shown in the gallery: prefer the images from variants of the
+  // currently-selected color. Fall back to product-level images when the
+  // variants have no primary/gallery images of their own (graceful for
+  // products whose variants haven't had their images populated yet).
+  const displayedImages = useMemo(() => {
+    const variantImages: StrapiMedia[] = [];
+    for (const v of variantsForColor) {
+      if (v.primary_image) variantImages.push(v.primary_image);
+      if (v.gallery_images) variantImages.push(...v.gallery_images);
+    }
+    return variantImages.length > 0 ? variantImages : productLevelImages;
+  }, [variantsForColor, productLevelImages]);
 
   // Price display
   const priceLabel = (() => {
@@ -141,8 +163,12 @@ export function ProductDetail({ product }: ProductDetailProps) {
       </Link>
 
       <div className="grid gap-8 md:grid-cols-2 lg:gap-12">
-        {/* Left: Images */}
-        <ImageGallery images={allImages} />
+        {/* Left: Images — keyed on selectedColor so the internal thumbnail
+         *  state (`selected` index) resets when the user switches colors. */}
+        <ImageGallery
+          key={selectedColor || "default"}
+          images={displayedImages}
+        />
 
         {/* Right: Info */}
         <div className="flex flex-col gap-5">

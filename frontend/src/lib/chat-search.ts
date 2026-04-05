@@ -60,6 +60,7 @@ export function mapToRichProduct(p: Record<string, unknown>): RichProduct {
     main_image_url: (p.main_image_url as string) || undefined,
     main_image_thumbnail_url:
       (p.main_image_thumbnail_url as string) || undefined,
+    color_image_map: (p.color_image_map as Record<string, string>) || undefined,
     description,
   };
 }

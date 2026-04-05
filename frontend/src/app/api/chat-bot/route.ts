@@ -164,6 +164,13 @@ export async function POST(req: Request) {
             if (k !== "limit" && v) filtersApplied[k] = v;
           }
 
+          // If the AI filtered by one or more colors, surface the first one
+          // as the "active" color so ChatProductCard can render the matching
+          // variant image from product.color_image_map.
+          const activeColor = args.colors
+            ? args.colors.split(",")[0]?.trim() || undefined
+            : undefined;
+
           try {
             const searchResult = await searchStrapi(params);
             const products = searchResult.data || [];
@@ -175,6 +182,7 @@ export async function POST(req: Request) {
                 products: [],
                 total: 0,
                 filters_applied: filtersApplied,
+                active_color: activeColor,
                 no_results: true,
               };
             }
@@ -187,6 +195,7 @@ export async function POST(req: Request) {
               products: richProducts,
               total,
               filters_applied: filtersApplied,
+              active_color: activeColor,
               no_results: false,
             };
           } catch {

@@ -66,6 +66,11 @@ export interface MeilisearchProduct {
   // Images
   main_image_url?: string;
   main_image_thumbnail_url?: string;
+
+  // Per-color variant image map (populated by the backend transformEntry).
+  // Keys are color names (e.g. "Red"), values are the primary_image URL of
+  // the first variant with that color. Undefined for old index documents.
+  color_image_map?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +271,7 @@ export interface RichProduct {
   supplier_name: string;
   main_image_url?: string;
   main_image_thumbnail_url?: string;
+  color_image_map?: Record<string, string>;
   description?: string;
 }
 

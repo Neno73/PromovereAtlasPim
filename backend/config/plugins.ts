@@ -28,6 +28,7 @@ export default ({ env }) => ({
             "supplier",
             "categories",
             "variants",
+            "variants.primary_image",
             "main_image",
             "gallery_images",
             "price_tiers",
@@ -38,6 +39,19 @@ export default ({ env }) => ({
           const name = entry.name || {};
           const description = entry.description || {};
           const shortDescription = entry.short_description || {};
+
+          // Build color -> primary_image URL map from variants so the
+          // frontend can display the correct image when a color filter is
+          // active. First variant per color wins (later duplicates ignored).
+          const colorImageMap: Record<string, string> = {};
+          for (const variant of entry.variants || []) {
+            const color = variant?.color;
+            const url = variant?.primary_image?.url;
+            if (color && url && !colorImageMap[color]) {
+              colorImageMap[color] = url;
+            }
+          }
+
           return {
             id: entry.documentId,
             sku: entry.sku,
@@ -62,6 +76,7 @@ export default ({ env }) => ({
             ean: entry.ean || '',
             customs_tariff_number: entry.customs_tariff_number || '',
             main_image_url: entry.main_image?.url || '',
+            color_image_map: colorImageMap,
             is_active: entry.is_active !== false,
             updated_at: entry.updatedAt,
           };

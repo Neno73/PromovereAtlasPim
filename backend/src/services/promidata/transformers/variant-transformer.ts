@@ -492,6 +492,11 @@ class VariantTransformer {
         }
       }
 
+      // Promidata duplicates the same MediaGalleryImages across all
+      // language variants (nl, de, en, fr, es). The loop above collects
+      // them all, so deduplicate by URL to avoid 5× queue inflation.
+      result.galleryImages = [...new Set(result.galleryImages)];
+
       // If we found images, return them
       if (result.primaryImage || result.galleryImages.length > 0) {
         return result;
